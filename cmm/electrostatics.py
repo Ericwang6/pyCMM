@@ -75,12 +75,15 @@ def computePermElecAndPolarizationEnergy(
     doPolarization: bool = True,
     alpha: Optional[torch.Tensor] = None,
     eta: Optional[torch.Tensor] = None,
-    groupCharges: Optional[torch.Tensor] = None
+    groupCharges: Optional[torch.Tensor] = None,
+    groupChargesCT: Optional[torch.Tensor] = None,
+    pairs: Optional[torch.Tensor] = None
 ):
     numSites = coords.shape[0]
     numGroups = len(groups)
 
-    pairs = getPairsFromGroups(groups)
+    if pairs is None:
+        pairs = getPairsFromGroups(groups)
 
     # expand mpoles
     mPoles_i, mPoles_j = mPoles[pairs[0]], mPoles[pairs[1]]
@@ -119,7 +122,7 @@ def computePermElecAndPolarizationEnergy(
     elec = torch.sum(elecPairwiseEnergies) / 2
 
     if not doPolarization:
-        return elec
+        return elec, torch.tensor(0.0), torch.tensor(0.0)
     else:
         # fill B vector
         ePotCore = scatter(ePotCore_i + ePot_i, pairs[1])
@@ -132,7 +135,7 @@ def computePermElecAndPolarizationEnergy(
 
         # fill A matrix
         dimA = numSites + numGroups + numSites * 3
-        matA = torch.zeros((dimA, dimA), dtype=torch.float64)
+        matA = torch.zeros((dimA, dimA))
 
         numRange = torch.arange(numSites)
         # diag qq - hardness
@@ -160,48 +163,15 @@ def computePermElecAndPolarizationEnergy(
         
         # solution vector
         vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
-        pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).flatten()
+        pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).squeeze()
 
-        return elec, pol
-    
-
-
-    
-
-    # ePot = torch.rand(numSites)
-    # eField = torch.rand(numSites, 3)
-    # matA, vecB = fill_A_B(numSites, numGroups, ePot, eField, eta, alpha, groups, groupCharges)
-    # return matA, vecB
-
-#     # drInv2 = torch.pow(drInv, 2)
-#     # drInv3 = drInv2 * drInv
-#     # drInv5 = drInv3 * drInv2
-#     # drInv7 = drInv5 * drInv2
-#     # drInv9 = drInv7 * drInv2
-
-#     # oneCenterDampFactors = computePermElecOneCenterDampFactors(drBatch, b[[pairs[]]])
-#     # if dampFactors is not None:
-#     #     drInv  = drInv  * dampFactors[0]
-#     #     drInv3 = drInv3 * dampFactors[1]
-#     #     drInv5 = drInv5 * dampFactors[2]
-#     #     drInv7 = drInv7 * dampFactors[3]
-#     #     drInv9 = drInv9 * dampFactors[4]
-
-#     # drVec2 = torch.pow(drVecBatch, 2)
-
-#     # x, y, z = drVecBatch[:, 0], drVecBatch[:, 1], drVecBatch[:, 2]
-#     # x2, y2, z2 = drVec2[:, 0], drVec2[:, 1], drVec2[:, 2]
-#     # xy, xz, yz = x * y, x * z, y * z
-
-#     # # Interaction Tensors
-#     # tx, ty, tz = -x * drInv3, -y * drInv3, -z * drInv3
-    
-#     # txx = 3 * x2 * drInv5 - drInv3
-#     # txy = 3 * xy * drInv5
-#     # txz = 3 * xz * drInv5
-#     # tyy = 3 * y2 * drInv5 - drInv3
-#     # tyz = 3 * yz * drInv5
-#     # tzz = 3 * z2 * drInv5 - drInv3
+        if groupChargesCT is not None:
+            vecB_ct = torch.hstack((-ePotCore, groupCharges + groupChargesCT, eField.flatten())).unsqueeze(1)
+            vecSolution_ct = torch.matmul(torch.linalg.inv(matA), vecB_ct)
+            pol_ct = torch.matmul(vecSolution_ct.T, (0.5 * torch.matmul(matA, vecSolution_ct) - vecB_ct)).squeeze()
+            return elec, pol, pol_ct
+        else:
+            return elec, pol, torch.tensor(0.0)
 
 
 if __name__ == '__main__':
