@@ -137,7 +137,7 @@ class CMMWater(nn.Module):
             "b_eq": torch.tensor([0.958413 / cmm.BOHR2ANG]),
             "k_bb": torch.tensor([-61.1423 / cmm.HARTREE2KJ * cmm.BOHR2ANG * cmm.BOHR2ANG]),
             "k_ba": torch.tensor([-159.886 / cmm.HARTREE2KJ * cmm.BOHR2ANG]),
-            "theta_eq": torch.tensor([104.4234 / math.pi]),
+            "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
             "k_theta": torch.tensor([452.183 / cmm.HARTREE2KJ])
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
