@@ -2,6 +2,7 @@ import math
 from typing import List, Optional
 import torch
 
+from .pbc import applyPBC
 
 HALF_SQRT3 = math.sqrt(3) / 2
 
@@ -10,13 +11,17 @@ def normVec(vec):
     return vec / torch.norm(vec, dim=1, keepdim=True)
 
 
-def computeLocal2GlobalRotationMatrix(pos, pos1, pos2, pos3, axisTypes):
+def computeLocal2GlobalRotationMatrix(pos, pos1, pos2, pos3, axisTypes, box=None, boxInv=None):
     """
     Compute local to global rotation matrix
     """
     # ZThenX
-    zvec = normVec(pos1 - pos)
-    xvec = normVec(pos2 - pos)
+    if (box is not None) and (boxInv is not None):
+        zvec = normVec(applyPBC(pos1 - pos, box, boxInv))
+        xvec = normVec(applyPBC(pos2 - pos, box, boxInv))
+    else:
+        zvec = normVec(pos1 - pos)
+        xvec = normVec(pos2 - pos)
     # Bisector  
     zvec += xvec * (axisTypes == 1).unsqueeze(1)
     zvec = normVec(zvec)
@@ -188,7 +193,6 @@ def computeInteractionTensor(drVec: torch.Tensor, dampFactors: Optional[List[tor
     return iTensor
 
 
-
 def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Tensor, mPoles_j: torch.Tensor, rank: int = 2):
     """
     Compute permanent electrostatic energy without damping between site i-s and site j-s
@@ -210,8 +214,6 @@ def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Ten
     else:
         energies = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return energies
-
-
 
 
 # def computeEletrostaticData(drVec: torch.Tensor, mPoles: torch.Tensor, dampFactors: Optional[List[torch.Tensor]] = None, drInv: Optional[torch.Tensor] = None):
