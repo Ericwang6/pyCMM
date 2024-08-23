@@ -23,31 +23,26 @@ def computeShortRangeDampFactors(dr, bij):
     return [p * exp_u for p in [p1, p3, p5, p7, p9]]
 
 
-def scaleMultipoles(mPoles, monoScales, dipoScales, quadScales):
+def scaleMultipoles(
+    mPoles: torch.Tensor, 
+    monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor, 
+    modCharges: Optional[torch.Tensor] = None
+):
     mPolesScaled = torch.zeros_like(mPoles)
     mPolesScaled[:, 0]   += mPoles[:, 0] * monoScales
     mPolesScaled[:, 1:4] += mPoles[:, 1:4] * dipoScales.unsqueeze(1)
     mPolesScaled[:, 4:]  += mPoles[:, 4:] * quadScales.unsqueeze(1)
+    if modCharges is not None:
+        mPolesScaled[:, 0] += modCharges
     return mPolesScaled
 
 
 def computeShortRangeEnergy(
     drVec: torch.Tensor,
     mPoles_i: torch.Tensor, mPoles_j: torch.Tensor,
-    Kmono_i: torch.Tensor, Kmono_j: torch.Tensor,
-    Kdipo_i: torch.Tensor, Kdipo_j: torch.Tensor,
-    Kquad_i: torch.Tensor, Kquad_j: torch.Tensor,
     b_i: torch.Tensor, b_j: torch.Tensor,
     positive: bool = True,
-    modCharge_i: Optional[torch.Tensor] = None, modCharge_j: Optional[torch.Tensor] = None
 ):
-    mPolesShortRange_i = scaleMultipoles(mPoles_i, Kmono_i, Kdipo_i, Kquad_i)
-    mPolesShortRange_j = scaleMultipoles(mPoles_j, Kmono_j, Kdipo_j, Kquad_j)
-
-    if modCharge_i is not None:
-        mPolesShortRange_i[:, 0] += modCharge_i
-    if modCharge_j is not None:
-        mPolesShortRange_j[:, 0] += modCharge_j
 
     dr = torch.norm(drVec, dim=1)
     drInv = 1 / dr
@@ -58,5 +53,31 @@ def computeShortRangeEnergy(
         damps = [-d for d in damps]
 
     iTensor = computeInteractionTensor(drVec, damps, drInv, 2)
-    enes = torch.bmm(mPolesShortRange_j.unsqueeze(1), torch.bmm(iTensor, mPolesShortRange_i.unsqueeze(2))).flatten()
+    enes = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return enes
+
+
+def computePairwiseChargeTransfer(
+    drVec: torch.Tensor,
+    mPoles_acc_i: torch.Tensor, mPoles_acc_j: torch.Tensor,
+    mPoles_don_i: torch.Tensor, mPoles_don_j: torch.Tensor,
+    b_i: torch.Tensor, b_j: torch.Tensor,
+    eps_ij: torch.Tensor
+):
+    dr = torch.norm(drVec, dim=1)
+    drInv = 1 / dr
+
+    b_ij = torch.sqrt(b_i * b_j)
+    damps = computeShortRangeDampFactors(dr, b_ij)
+    damps = [-d for d in damps]
+
+    iTensor = computeInteractionTensor(drVec, damps, drInv, 2)
+    enes_ij = torch.bmm(mPoles_don_j.unsqueeze(1), torch.bmm(iTensor, mPoles_acc_i.unsqueeze(2))).flatten()
+    enes_ji = torch.bmm(mPoles_acc_j.unsqueeze(1), torch.bmm(iTensor, mPoles_don_i.unsqueeze(2))).flatten()
+    enes = enes_ij + enes_ji
+
+    # forward means i -> j, backward means j -> i
+    drInvDamp = iTensor[:, 0, 0].flatten()
+    dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp / eps_ij
+    dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp / eps_ij
+    return enes, dq_forward - dq_backward
