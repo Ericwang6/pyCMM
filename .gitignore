@@ -1,3 +1,9 @@
+# Misc
+*/temp.xyz
+
+# Notebooks
+notebooks/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -7,6 +13,7 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+.vscode/
 .Python
 build/
 develop-eggs/

@@ -28,7 +28,7 @@ def computeLocal2GlobalRotationMatrix(pos, pos1, pos2, pos3, axisTypes, box=None
     
     xvec = xvec - torch.sum(zvec * xvec, dim=1, keepdim=True) * zvec
     xvec = normVec(xvec)
-    yvec = torch.cross(zvec, xvec)
+    yvec = torch.linalg.cross(zvec, xvec)
     rotMatrix = torch.hstack((xvec, yvec, zvec)).reshape(-1, 3, 3)
     return rotMatrix
 

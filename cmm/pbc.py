@@ -3,7 +3,7 @@ import torch
 
 def applyPBC(drVecs: torch.Tensor, box: torch.Tensor, boxInv: torch.Tensor):
     """
-    Apply peroidic boundary conditions to a set of vectors
+    Apply periodic boundary conditions to a set of vectors
 
     Parameters
     ----------

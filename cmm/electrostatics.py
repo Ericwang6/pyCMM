@@ -1,6 +1,7 @@
 from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
+
 from .multipole import computeInteractionTensor
 
 
@@ -40,7 +41,7 @@ def computePermElecTwoCenterDampFactors(dr, bij):
     return [1 - p * exp_u for p in [p1, p3, p5, p7, p9]]
 
 
-def computePolairzationDampFactors(dr, bij):
+def computePolarizationDampFactors(dr, bij):
     u = bij * dr
     u2 = u * u
     u3 = u2 * u
@@ -76,7 +77,6 @@ def computePermElecAndPolarizationEnergy(
     alpha: Optional[torch.Tensor] = None,
     eta: Optional[torch.Tensor] = None,
     groupCharges: Optional[torch.Tensor] = None,
-    groupChargesCT: Optional[torch.Tensor] = None,
     pairs: Optional[torch.Tensor] = None
 ):
     numSites = coords.shape[0]
@@ -122,7 +122,7 @@ def computePermElecAndPolarizationEnergy(
     elec = torch.sum(elecPairwiseEnergies) / 2
 
     if not doPolarization:
-        return elec, torch.tensor(0.0), torch.tensor(0.0)
+        return elec, torch.tensor(0.0)
     else:
         # fill B vector
         ePotCore = scatter(ePotCore_i + ePot_i, pairs[1])
@@ -149,8 +149,8 @@ def computePermElecAndPolarizationEnergy(
         for i in range(numGroups):
             matA[numSites + i, groups[i]] = 1.0
             matA[groups[i], numSites + i] = 1.0
-        
-        polDamps_i = computePolairzationDampFactors(dr, b_ij)
+
+        polDamps_i = computePolarizationDampFactors(dr, b_ij)
         polTensor = computeInteractionTensor(drVec, polDamps_i, rank=1)
         for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
             # dipo-dipo 
@@ -160,18 +160,12 @@ def computePermElecAndPolarizationEnergy(
             # charge-dipo
             matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
             matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
-        
+
         # solution vector
         vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
         pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).squeeze()
-
-        if groupChargesCT is not None:
-            vecB_ct = torch.hstack((-ePotCore, groupCharges + groupChargesCT, eField.flatten())).unsqueeze(1)
-            vecSolution_ct = torch.matmul(torch.linalg.inv(matA), vecB_ct)
-            pol_ct = torch.matmul(vecSolution_ct.T, (0.5 * torch.matmul(matA, vecSolution_ct) - vecB_ct)).squeeze()
-            return elec, pol, pol_ct
-        else:
-            return elec, pol, torch.tensor(0.0)
+        
+        return elec, pol
 
 
 if __name__ == '__main__':

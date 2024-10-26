@@ -14,8 +14,6 @@ import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import cmm
 
-
-
 def read_tinker_xyz(fname):
     atoms = []
     coords = []
@@ -232,7 +230,7 @@ class CMMWater(nn.Module):
             groupChargesCT = self.nb_params['groupCharges'] + dq_groups
         else:
             groupCharges = self.nb_params['groupCharges'] + dq_groups
-            groupCharges = None
+            groupChargesCT = None
         ene_perm_elec, ene_pol, ene_ct_indirect = cmm.computePermElecAndPolarizationEnergy(
             coords,
             self.nb_params['groups'],
