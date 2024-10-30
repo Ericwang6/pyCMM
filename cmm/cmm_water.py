@@ -1,29 +1,16 @@
-import itertools
-from pprint import pprint
 import math
-import time
-
-import numpy as np
-
 import torch
-torch.set_printoptions(precision=8)
+torch.set_printoptions(precision=9)
 import torch.nn as nn
 from torch_scatter import scatter
 
-import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-import cmm
-
-def read_tinker_xyz(fname):
-    atoms = []
-    coords = []
-    with open(fname) as f:
-        num_atoms = int(f.readline().strip().split()[0])
-        for _ in range(num_atoms):
-            line = f.readline().strip().split()
-            atoms.append(line[1])
-            coords.append([float(x) for x in line[2: 5]])
-    return atoms, coords
+from .units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG
+from .bonded import *
+from .pbc import *
+from .multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
+from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
+from .dispersion import computeDispersion
+from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups
 
 
 class CMMWater(nn.Module):
@@ -49,7 +36,7 @@ class CMMWater(nn.Module):
             "mono": mono,
             "dipo": dipo,
             "quad_s": quad_s,
-            "quad": cmm.computeCartesianQuadrupoles(quad_s),
+            "quad": computeCartesianQuadrupoles(quad_s),
             "b": torch.tensor([2.13358, 2.33322]),
             # Pauli repulsion
             "b_pauli": torch.tensor([2.1975, 1.96474]),
@@ -130,40 +117,46 @@ class CMMWater(nn.Module):
         self.bonds = torch.tensor(self.bonds, dtype=torch.long).T
 
         self.bonded_params_raw = {
-            "D": torch.tensor([524.265 / cmm.HARTREE2KJ]),
-            "k_b": torch.tensor([5098.15 / cmm.HARTREE2KJ * cmm.BOHR2ANG * cmm.BOHR2ANG]),
-            "b_eq": torch.tensor([0.958413 / cmm.BOHR2ANG]),
-            "k_bb": torch.tensor([-61.1423 / cmm.HARTREE2KJ * cmm.BOHR2ANG * cmm.BOHR2ANG]),
-            "k_ba": torch.tensor([-159.886 / cmm.HARTREE2KJ * cmm.BOHR2ANG]),
+            "D": torch.tensor([524.265 / HARTREE2KJ]),
+            "k_b": torch.tensor([5098.15 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
+            "b_eq": torch.tensor([0.958929 / BOHR2ANG]),
+            "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
+            "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
             "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
-            "k_theta": torch.tensor([452.183 / cmm.HARTREE2KJ])
+            "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
+            "j_cf": torch.tensor([-0.024794]),
+            "j_cf_bb": torch.tensor([-0.0332338]),
+            "j_cf_angle": torch.tensor([0.0220891 * 2.0]),
+            # NOTE(JOE): ^^^ I accidentally compute this twice before summing in the Julia CMM code
+            # which corresponds to doubling the value of this parameter which is why I do so here.
+
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
 
         # expand bonded parameters
         self.bonded_params = {}
         for key in self.bonded_params_raw:
-            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D']:
+            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters, dtype=torch.long)]
         
-        self.all_pairs = cmm.getPairsFromGroups(self.nb_params['groups'])
-        self.rcut = rcut / cmm.BOHR2ANG
+        self.all_pairs = getPairsFromGroups(self.nb_params['groups'])
+        self.rcut = rcut / BOHR2ANG
 
         self.use_pme = use_pme
         self.do_polarization = do_polarization
 
     def computeEnergy(self, coords: torch.Tensor, box: torch.Tensor):
         boxInv = torch.linalg.inv(box)
-        bondVecs = cmm.applyPBC(coords[self.bonds[1]] - coords[self.bonds[0]], box, boxInv)
+        bondVecs = applyPBC(coords[self.bonds[1]] - coords[self.bonds[0]], box, boxInv)
         bonds = torch.norm(bondVecs, dim=1)
         # morse-bond
-        ene_bond_list = cmm.computeMorseBondPotential(bonds, self.bonded_params['b_eq'], self.bonded_params['D'], self.bonded_params['beta'])
+        ene_bond_list = computeMorseBondPotential(bonds, self.bonded_params['b_eq'], self.bonded_params['D'], self.bonded_params['beta'])
         ene_bonds = torch.sum(ene_bond_list)
 
         # bond-bond couplings
-        ene_bbs_list = cmm.computeBondBondCoupling(
+        ene_bbs_list = computeBondBondCoupling(
             bonds[self.bbs[0]], bonds[self.bbs[1]],
             self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
             self.bonded_params['k_bb']
@@ -171,22 +164,43 @@ class CMMWater(nn.Module):
         ene_bbs = torch.sum(ene_bbs_list)
 
         # angles
-        angles = cmm.computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
-        ene_angles_list = cmm.computeCosAnglePotential(
+        angles = computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
+        ene_angles_list = computeCosAnglePotential(
             angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
         )
         ene_angles = torch.sum(ene_angles_list)
 
         # bond-angle couplings
-        ene_bas_list = cmm.computeBondAngleCoupling(
+        ene_bas_list = computeBondAngleCoupling(
             bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
             angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
             self.bonded_params['k_ba']
         )
         ene_bas = torch.sum(ene_bas_list)
 
-        # non-bonded interactions
-        rotMatrix = cmm.computeLocal2GlobalRotationMatrix(
+        ### bonding-dependent parameters ###
+        flux_charges = torch.zeros_like(self.nb_params['q_shell'])
+        charge_flux_bond_list = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
+        # @SPEED: Is there a way to do this without having to flatten and therefore
+        # make a copy since self.bonds is non-contiguous?
+        flux_charges.scatter_add_(0, self.bonds.flatten(), charge_flux_bond_list.flatten())
+        
+        charge_flux_bond_bond_list_1, charge_flux_bond_bond_list_2 = computeChargeFluxBondBond(
+            bonds[self.bbs[0]], bonds[self.bbs[1]],
+            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
+            self.bonded_params['j_cf_bb'][self.bbs[0]], self.bonded_params['j_cf_bb'][self.bbs[1]],
+        )
+        charge_flux_angle_list = computeChargeFluxAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['j_cf_angle'])
+        #print(charge_flux_bond_bond_list_1)
+
+        # HERE: Need to have some way to go from the bond indices or angle indices
+        # back to the atomic indices so that we can accumulate charges into the
+        # appropriate charge tensor.
+
+        #ene_bonds = torch.sum(ene_bond_list)
+
+        ### non-bonded interactions ###
+        rotMatrix = computeLocal2GlobalRotationMatrix(
             coords, 
             coords[self.nb_params['zatoms']],
             coords[self.nb_params['xatoms']],
@@ -196,22 +210,22 @@ class CMMWater(nn.Module):
             boxInv
         )
 
-        mPoles = cmm.rotateMultipoles(
+        mPoles = rotateMultipoles(
             self.nb_params['q_shell'],
             self.nb_params['dipo'],
             self.nb_params['quad'],
             rotMatrix
         ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
 
-        polarizabilities = cmm.rotateQuadrupoles(self.nb_params['alpha'], rotMatrix)
+        polarizabilities = rotateQuadrupoles(self.nb_params['alpha'], rotMatrix)
 
         pairs, drVecs = self.computeNeighborList(coords, box, boxInv)
 
         # direct charge-transfer
-        mPoles_ct_acc = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_ct_acc'], self.nb_params['Kdipo_ct_acc'], self.nb_params['Kquad_ct_acc'])
-        mPoles_ct_don = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_ct_don'], self.nb_params['Kdipo_ct_don'], self.nb_params['Kquad_ct_don'])
+        mPoles_ct_acc = scaleMultipoles(mPoles, self.nb_params['Kmono_ct_acc'], self.nb_params['Kdipo_ct_acc'], self.nb_params['Kquad_ct_acc'])
+        mPoles_ct_don = scaleMultipoles(mPoles, self.nb_params['Kmono_ct_don'], self.nb_params['Kdipo_ct_don'], self.nb_params['Kquad_ct_don'])
 
-        ct_direct_pairwise, dq_pairwise = cmm.computePairwiseChargeTransfer(
+        ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
             drVecs,
             mPoles_ct_acc[pairs[0]], mPoles_ct_acc[pairs[1]],
             mPoles_ct_don[pairs[0]], mPoles_ct_don[pairs[1]],
@@ -225,7 +239,7 @@ class CMMWater(nn.Module):
 
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
-        ene_perm_elec, ene_pol = cmm.computePermElecAndPolarizationEnergy(
+        ene_perm_elec, ene_pol = computePermElecAndPolarizationEnergy(
             coords,
             self.nb_params['groups'],
             mPoles,
@@ -239,8 +253,8 @@ class CMMWater(nn.Module):
         )
         
         # Pauli repulsion
-        mPoles_pauli = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
-        pauli_pairwise = cmm.computeShortRangeEnergy(
+        mPoles_pauli = scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
+        pauli_pairwise = computeShortRangeEnergy(
             drVecs,
             mPoles_pauli[pairs[0]], mPoles_pauli[pairs[1]],
             self.nb_params['b_pauli'][pairs[0]], self.nb_params['b_pauli'][pairs[1]]
@@ -248,7 +262,7 @@ class CMMWater(nn.Module):
         ene_pauli = torch.sum(pauli_pairwise) / 2
 
         # dispersion
-        disp_pairwise = cmm.computeDispersion(
+        disp_pairwise = computeDispersion(
             drVecs, 
             self.nb_params['C6_disp'][pairs[0]], self.nb_params['C6_disp'][pairs[1]],
             self.nb_params['b_disp'][pairs[0]], self.nb_params['b_disp'][pairs[1]]
@@ -256,8 +270,8 @@ class CMMWater(nn.Module):
         ene_disp = torch.sum(disp_pairwise) / 2
 
         # exchange-polarization
-        mPoles_xpol = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_xpol'], self.nb_params['Kdipo_xpol'], self.nb_params['Kquad_xpol'])
-        xpol_pairwise = cmm.computeShortRangeEnergy(
+        mPoles_xpol = scaleMultipoles(mPoles, self.nb_params['Kmono_xpol'], self.nb_params['Kdipo_xpol'], self.nb_params['Kquad_xpol'])
+        xpol_pairwise = computeShortRangeEnergy(
             drVecs,
             mPoles_xpol[pairs[0]], mPoles_xpol[pairs[1]],
             self.nb_params['b_xpol'][pairs[0]], self.nb_params['b_xpol'][pairs[1]],
@@ -283,43 +297,8 @@ class CMMWater(nn.Module):
 
         
     def computeNeighborList(self, coords: torch.Tensor, box: torch.Tensor, boxInv: torch.Tensor):
-        drVecs = cmm.pbc.applyPBC(coords[self.all_pairs[1]] - coords[self.all_pairs[0]], box, boxInv)
+        drVecs = applyPBC(coords[self.all_pairs[1]] - coords[self.all_pairs[0]], box, boxInv)
         mask = torch.norm(drVecs, dim=1) < self.rcut
         pairs = self.all_pairs[:, mask]
         drVecs = drVecs[mask]
         return pairs, drVecs
-
-
-if __name__ == '__main__':
-    model = CMMWater(2, do_polarization=True)
-    coords = torch.tensor(np.array([
-        [ 1.5165013870,  -0.0000008497,   0.1168590962],
-        [ 0.5714469342,   0.0000007688,  -0.0477240756],
-        [ 1.9206469769,   0.0000030303,  -0.7531309382],
-        [-1.3965797657,   0.0000005579,  -0.1058991347],
-        [-1.7503737705,  -0.7612400781,   0.3583839434],
-        [-1.7503754020,   0.7612382608,   0.3583875091]
-    ]) / cmm.BOHR2ANG, dtype=torch.float32, requires_grad=True)
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float32, requires_grad=True)
-
-    energies = model.computeEnergy(coords, box)
-    energies['tot'].backward()
-    grad = coords.grad
-
-    for key in energies:
-        energies[key] *= cmm.HARTREE2KCAL
-    pprint(energies)
-
-    with torch.no_grad():
-        grad_numerical = np.zeros_like(coords.detach().numpy())
-        for i in range(coords.shape[0]):
-            for j in range(coords.shape[1]):
-                h = 0.01
-                coords[i, j] += h
-                ene_u = model.computeEnergy(coords, box)['tot']
-                coords[i, j] -= 2 * h
-                ene_d = model.computeEnergy(coords, box)['tot']
-                grad_numerical[i, j] += (ene_u.detach().item() - ene_d.detach().item()) / (2 * h)
-                coords[i, j] += h
-
-    print(grad, grad_numerical, sep='\n')    
