@@ -182,19 +182,27 @@ class CMMWater(nn.Module):
 
         ### bonding-dependent parameters ###
         flux_charges = torch.zeros_like(self.nb_params['q_shell'])
-        charge_flux_bond_list = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
-        flux_charges.scatter_add_(0, self.bonds.flatten(), charge_flux_bond_list.flatten())
+        charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
+        flux_charges.scatter_add_(0, self.bonds[0], charge_flux_bond_1)
+        flux_charges.scatter_add_(0, self.bonds[1], charge_flux_bond_2)
 
-        charge_flux_bond_bond_list_1 = computeChargeFluxBondBond(
+        charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],
             self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
             self.bonded_params['j_cf_bb'][self.bbs[0]], self.bonded_params['j_cf_bb'][self.bbs[1]],
         )
-        flux_charges.scatter_add_(0, self.bonds.T[self.bbs.flatten()].T.flatten(), charge_flux_bond_bond_list_1.flatten())
+        flux_charges.scatter_add_(0, self.bonds.T[self.bbs[0]].T[0], charge_flux_bb_1)
+        flux_charges.scatter_add_(0, self.bonds.T[self.bbs[0]].T[1], charge_flux_bb_2)
+        flux_charges.scatter_add_(0, self.bonds.T[self.bbs[1]].T[0], charge_flux_bb_3)
+        flux_charges.scatter_add_(0, self.bonds.T[self.bbs[1]].T[1], charge_flux_bb_4)
+        # ^^^ @SPEED: If it is actually faster, these could be stacked and scattered all at
+        # once but I am guessing that is not more efficient.
+
         charge_flux_angle_list_i, charge_flux_angle_list_j, charge_flux_angle_list_k = computeChargeFluxAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['j_cf_angle'])
         flux_charges.scatter_add_(0, self.angles[0], charge_flux_angle_list_i)
         flux_charges.scatter_add_(0, self.angles[1], charge_flux_angle_list_j)
         flux_charges.scatter_add_(0, self.angles[2], charge_flux_angle_list_k)
+        print(flux_charges)
 
         ### non-bonded interactions ###
         rotMatrix = computeLocal2GlobalRotationMatrix(

@@ -13,20 +13,20 @@ def computeAngleFromVecs(drVecs1, drVecs2):
     cosVal = torch.sum(drVecs1 * drVecs2, dim=1) / torch.norm(drVecs1, dim=1) / torch.norm(drVecs2, dim=1)
     return torch.arccos(cosVal)
 
-def computeChargeFluxBond(r: torch.Tensor, req: torch.Tensor, j_cf: torch.Tensor):
-    return torch.stack((-j_cf * (r - req), j_cf * (r - req)))
+def computeChargeFluxBond(r: torch.Tensor, req: torch.Tensor, j_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    return (-j_cf * (r - req), j_cf * (r - req))
 
 def computeChargeFluxBondBond(
         r1: torch.Tensor, r2: torch.Tensor,
         req1: torch.Tensor, req2: torch.Tensor,
         j_bb_cf_1: torch.Tensor, j_bb_cf_2: torch.Tensor
-) -> torch.Tensor:
-    return torch.stack((
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    return (
         -j_bb_cf_1 * (r2 - req2),
-        -j_bb_cf_2 * (r1 - req1),
          j_bb_cf_1 * (r2 - req2),
+        -j_bb_cf_2 * (r1 - req1),
          j_bb_cf_2 * (r1 - req1),
-    ))
+    )
 
 def computeChargeFluxAngle(
         theta: torch.Tensor,
