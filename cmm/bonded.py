@@ -20,11 +20,19 @@ def computeChargeFluxBondBond(
         r1: torch.Tensor, r2: torch.Tensor,
         req1: torch.Tensor, req2: torch.Tensor,
         j_bb_cf_1: torch.Tensor, j_bb_cf_2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    return (j_bb_cf_1 * (r2 - req2), j_bb_cf_2 * (r1 - req1))
+) -> torch.Tensor:
+    return torch.stack((
+        -j_bb_cf_1 * (r2 - req2),
+        -j_bb_cf_2 * (r1 - req1),
+         j_bb_cf_1 * (r2 - req2),
+         j_bb_cf_2 * (r1 - req1),
+    ))
 
-def computeChargeFluxAngle(theta: torch.Tensor, thetaeq: torch.Tensor, theta_cf: torch.Tensor) -> torch.Tensor:
-    return theta_cf * (theta - thetaeq)
+def computeChargeFluxAngle(
+        theta: torch.Tensor,
+        thetaeq: torch.Tensor,
+        theta_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return (theta_cf * (theta - thetaeq), -2 * theta_cf * (theta - thetaeq), theta_cf * (theta - thetaeq))
     
 
 def computeMorseBondPotential(r: torch.Tensor, req: torch.Tensor, d: torch.Tensor, a: torch.Tensor):

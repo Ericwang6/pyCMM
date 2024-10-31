@@ -116,6 +116,11 @@ class CMMWater(nn.Module):
             self.bonds.append([i, i+2])
         self.bonds = torch.tensor(self.bonds, dtype=torch.long).T
 
+        self.angles = []
+        for i in range(0, num_waters * 3, 3):
+            self.angles.append([i+1, i, i+2])
+        self.angles = torch.tensor(self.angles, dtype=torch.long).T
+
         self.bonded_params_raw = {
             "D": torch.tensor([524.265 / HARTREE2KJ]),
             "k_b": torch.tensor([5098.15 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
@@ -126,10 +131,7 @@ class CMMWater(nn.Module):
             "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
             "j_cf": torch.tensor([-0.024794]),
             "j_cf_bb": torch.tensor([-0.0332338]),
-            "j_cf_angle": torch.tensor([0.0220891 * 2.0]),
-            # NOTE(JOE): ^^^ I accidentally compute this twice before summing in the Julia CMM code
-            # which corresponds to doubling the value of this parameter which is why I do so here.
-
+            "j_cf_angle": torch.tensor([0.0220891]),
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
 
@@ -181,23 +183,18 @@ class CMMWater(nn.Module):
         ### bonding-dependent parameters ###
         flux_charges = torch.zeros_like(self.nb_params['q_shell'])
         charge_flux_bond_list = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
-        # @SPEED: Is there a way to do this without having to flatten and therefore
-        # make a copy since self.bonds is non-contiguous?
         flux_charges.scatter_add_(0, self.bonds.flatten(), charge_flux_bond_list.flatten())
-        
-        charge_flux_bond_bond_list_1, charge_flux_bond_bond_list_2 = computeChargeFluxBondBond(
+
+        charge_flux_bond_bond_list_1 = computeChargeFluxBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],
             self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
             self.bonded_params['j_cf_bb'][self.bbs[0]], self.bonded_params['j_cf_bb'][self.bbs[1]],
         )
-        charge_flux_angle_list = computeChargeFluxAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['j_cf_angle'])
-        #print(charge_flux_bond_bond_list_1)
-
-        # HERE: Need to have some way to go from the bond indices or angle indices
-        # back to the atomic indices so that we can accumulate charges into the
-        # appropriate charge tensor.
-
-        #ene_bonds = torch.sum(ene_bond_list)
+        flux_charges.scatter_add_(0, self.bonds.T[self.bbs.flatten()].T.flatten(), charge_flux_bond_bond_list_1.flatten())
+        charge_flux_angle_list_i, charge_flux_angle_list_j, charge_flux_angle_list_k = computeChargeFluxAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['j_cf_angle'])
+        flux_charges.scatter_add_(0, self.angles[0], charge_flux_angle_list_i)
+        flux_charges.scatter_add_(0, self.angles[1], charge_flux_angle_list_j)
+        flux_charges.scatter_add_(0, self.angles[2], charge_flux_angle_list_k)
 
         ### non-bonded interactions ###
         rotMatrix = computeLocal2GlobalRotationMatrix(
