@@ -3,7 +3,8 @@ import torch
 __all__ = [
     "computeBondFromVecs", "computeAngleFromVecs", "computeMorseBondPotential",
     "computeBondBondCoupling", "computeCosAnglePotential", "computeBondAngleCoupling",
-    "computeChargeFluxBond", "computeChargeFluxBondBond", "computeChargeFluxAngle"
+    "computeChargeFluxBond", "computeChargeFluxBondBond", "computeChargeFluxAngle",
+    "computeHardnessChangeBond", "computeHardnessChangeBondBond", "computeHardnessChangeAngle"
 ]
 
 def computeBondFromVecs(drVecs):
@@ -33,7 +34,25 @@ def computeChargeFluxAngle(
         thetaeq: torch.Tensor,
         theta_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return (theta_cf * (theta - thetaeq), -2 * theta_cf * (theta - thetaeq), theta_cf * (theta - thetaeq))
-    
+
+def computeHardnessChangeBond(r: torch.Tensor, req: torch.Tensor, k_hardness: torch.Tensor) -> torch.Tensor:
+    return torch.pow(req / r, k_hardness)
+
+def computeHardnessChangeBondBond(
+        r1: torch.Tensor, r2: torch.Tensor,
+        req1: torch.Tensor, req2: torch.Tensor,
+        k_bb_hardness_1: torch.Tensor, k_bb_hardness_2: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return (
+         torch.pow(req2 / r2, k_bb_hardness_1),
+         torch.pow(req1 / r1, k_bb_hardness_2)
+    )
+
+def computeHardnessChangeAngle(
+        theta: torch.Tensor,
+        thetaeq: torch.Tensor,
+        theta_hardness: torch.Tensor) -> torch.Tensor:
+    return theta_hardness * (theta - thetaeq)
 
 def computeMorseBondPotential(r: torch.Tensor, req: torch.Tensor, d: torch.Tensor, a: torch.Tensor):
     return d * (1 - torch.exp(-a * (r - req))) ** 2

@@ -51,7 +51,7 @@ class CMMWater(nn.Module):
                 [[4.45992, 0.0, 0.0], [0.0, 6.07259, 0.0], [0.0, 0.0, 4.55391]],
                 [[2.22001, 0.0, 0.0], [0.0, 1.66835, 0.0], [0.0, 0.0, 0.183855]]
             ]),
-            "eta": torch.tensor([6.18699e-6, 0.561535]) * 2,          
+            "eta": torch.tensor([6.18699e-6, 0.561535]),
             # Exchange-polarization
             "b_xpol": torch.tensor([2.73582, 2.04028]),
             "Kmono_xpol": torch.tensor([1.26592, 0.200089]) / qShell,
@@ -132,13 +132,16 @@ class CMMWater(nn.Module):
             "j_cf": torch.tensor([-0.024794]),
             "j_cf_bb": torch.tensor([-0.0332338]),
             "j_cf_angle": torch.tensor([0.0220891]),
+            "k_hardness_b": torch.tensor([2.32191]),
+            "k_hardness_bb": torch.tensor([0.958157]),
+            "k_hardness_angle": torch.tensor([-0.0991956]),
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
 
         # expand bonded parameters
         self.bonded_params = {}
         for key in self.bonded_params_raw:
-            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb']:
+            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters, dtype=torch.long)]
@@ -181,6 +184,7 @@ class CMMWater(nn.Module):
         ene_bas = torch.sum(ene_bas_list)
 
         ### bonding-dependent parameters ###
+        # charges #
         flux_charges = torch.zeros_like(self.nb_params['q_shell'])
         charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
         flux_charges.scatter_add_(0, self.bonds[0], charge_flux_bond_1)
@@ -202,11 +206,27 @@ class CMMWater(nn.Module):
         flux_charges.scatter_add_(0, self.angles[0], charge_flux_angle_list_i)
         flux_charges.scatter_add_(0, self.angles[1], charge_flux_angle_list_j)
         flux_charges.scatter_add_(0, self.angles[2], charge_flux_angle_list_k)
-        print(flux_charges)
+        self.nb_params['q_shell'] += flux_charges
+
+        # atomic hardness #
+        hardness_product = torch.ones_like(self.nb_params['eta'])
+        hardness_change_b = computeHardnessChangeBond(bonds, self.bonded_params['b_eq'], self.bonded_params['k_hardness_b'])
+        hardness_change_bb_1, hardness_change_bb_2 = computeHardnessChangeBondBond(
+            bonds[self.bbs[0]], bonds[self.bbs[1]],
+            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
+            self.bonded_params['k_hardness_bb'][self.bbs[0]], self.bonded_params['k_hardness_bb'][self.bbs[1]]
+        )
+        hardness_change_angle = computeHardnessChangeAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['k_hardness_angle'])
+        hardness_product.scatter_reduce_(0, self.bonds[1], hardness_change_b, reduce="prod")
+        hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[0]].T[1], hardness_change_bb_1, reduce="prod")
+        hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[1]].T[1], hardness_change_bb_2, reduce="prod")
+        self.nb_params['eta'] *= hardness_product
+        self.nb_params['eta'].scatter_add_(0, self.angles[0], hardness_change_angle)
+        self.nb_params['eta'].scatter_add_(0, self.angles[2], hardness_change_angle)
 
         ### non-bonded interactions ###
         rotMatrix = computeLocal2GlobalRotationMatrix(
-            coords, 
+            coords,
             coords[self.nb_params['zatoms']],
             coords[self.nb_params['xatoms']],
             coords[self.nb_params['yatoms']],
@@ -252,10 +272,21 @@ class CMMWater(nn.Module):
             self.nb_params['b'],
             self.do_polarization,
             polarizabilities,
-            self.nb_params['eta'],
+            self.nb_params['eta'] * 2,
             groupCharges,
             pairs = pairs
         )
+        # NOTE(JOE): ^^^ The hardness parameters, eta, get multiplied by two because they enter the polarization
+        # energy as a quadratic penalty. When we solve the polarization equations, we are solving a minimization
+        # problem over the charges, dipoles, etc. So, when we take the derivative to find that minimum, the exponent gets pulled
+        # down. We could just pre-compute this but when I originally implemented CMM, the modifications of
+        # the hardness parameter occur before this multiplication by 2 which only presents a problem because
+        # the modifications are a mixture of multiplication and addition which makes the whole thing depend
+        # on the order of operations. This model of the variation in hardness is not very satisfying but
+        # does work reasonably well for water. It has very little effect on the overall energy though,
+        # but quite a large effect on the polarizability and its derivatives. So, in the future, we should
+        # explore more general and robust alternatives since the current variable hardness model is a bit
+        # clunky. -Joe, 11/1/24
         
         # Pauli repulsion
         mPoles_pauli = scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
