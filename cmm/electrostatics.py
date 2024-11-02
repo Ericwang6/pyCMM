@@ -66,6 +66,87 @@ def getPairsFromGroups(groups: List[List[int]]):
     pairs = torch.tensor(pairs).T
     return pairs
 
+def computeElectricPotentialExpansion(
+    coords: torch.Tensor,
+    pairs: torch.Tensor,
+    mPoles: torch.Tensor,
+    Z: torch.Tensor,
+    b: torch.Tensor
+):
+    # expand mpoles
+    mPoles_i, mPoles_j = mPoles[pairs[0]], mPoles[pairs[1]]
+
+    drVec = coords[pairs[1]] - coords[pairs[0]]
+    dr = torch.norm(drVec, dim=1)
+    drInv = 1 / dr
+    drInv3 = torch.pow(drInv, 3)
+    drInv5 = torch.pow(drInv, 5)
+
+    # damping factors
+    b_i, b_j = b[pairs[0]], b[pairs[1]]
+    b_ij = torch.sqrt(b_i * b_j)
+    oneCenterDamps_i = computePermElecOneCenterDampFactors(dr, b_i)
+    oneCenterDamps_j = computePermElecOneCenterDampFactors(dr, b_j)
+    twoCenterDamps = computePermElecTwoCenterDampFactors(dr, b_ij)
+
+    # NOTE(JOE): I am only taking one of the rows of pairs because this
+    # list has both the forward and backward pairs in it.
+    Z_pairs = Z[pairs[0]]
+    # core-core interactions
+    ePotCore = Z_pairs * drInv
+    eFieldCore = drVec * (Z_pairs * drInv3).unsqueeze(-1)
+    eFieldGradCore_1 = torch.vmap(torch.mul)(torch.vmap(torch.outer)(drVec, drVec), (3 * Z_pairs * drInv5))
+    I = torch.eye(3)
+    I = I.reshape((1, 3, 3))
+    I = I.repeat((pairs[0].size(0), 1, 1))
+    eFieldGradCore_2 = torch.vmap(torch.mul)(I, (Z_pairs * drInv3))
+    eFieldGradCore = eFieldGradCore_2 - eFieldGradCore_1 # This is off by a minus sign for a reason I don't understand
+    eFieldGradCore = eFieldGradCore.view(-1, 9)
+
+    # core-shell interactions
+    cs_tensor_ij = computeInteractionTensor(drVec, oneCenterDamps_i, drInv)
+    cs_tensor_ji = computeInteractionTensor(-drVec, oneCenterDamps_j, drInv)
+
+    eData_i = torch.bmm(cs_tensor_ij, mPoles_i.unsqueeze(2))
+    eData_j = torch.bmm(cs_tensor_ji, mPoles_j.unsqueeze(2))
+    ePot_i, ePot_j = eData_i[:, 0].flatten(), eData_j[:, 0].flatten()
+    eField_i, eField_j = eData_i[:, 1:4].reshape(-1, 3), eData_j[:, 1:4].reshape(-1, 3)
+
+    E_potentials = torch.zeros(coords.size(0)) # N
+    E_fields = torch.zeros_like(coords) # Nx3
+    E_field_grads = torch.zeros(coords.size(0), 9) # Nx3x3
+
+    # @SPEED: This makes a copy because I accumulate into x, y, and z
+    # separately. I am guessing there is a way to do this in one scatter
+    # and reduce operation but I am not sure how. Just a bunch of reshaping?
+    # One way to do it would be to expand the pairs array into indices into
+    # the field array and similarly for field gradients array. Can just
+    # precompute these I suppose.
+    E_potentials.scatter_add_(0, pairs[1], ePot_i + ePotCore)
+    E_fields[:, 0].scatter_add_(0, pairs[1], eFieldCore[:, 0])
+    E_fields[:, 1].scatter_add_(0, pairs[1], eFieldCore[:, 1])
+    E_fields[:, 2].scatter_add_(0, pairs[1], eFieldCore[:, 2])
+    # Yes, I am doing it like this. Please help.
+    E_field_grads[:, 0].scatter_add_(0, pairs[1], eFieldGradCore[:, 0])
+    E_field_grads[:, 1].scatter_add_(0, pairs[1], eFieldGradCore[:, 1])
+    E_field_grads[:, 2].scatter_add_(0, pairs[1], eFieldGradCore[:, 2])
+    E_field_grads[:, 3].scatter_add_(0, pairs[1], eFieldGradCore[:, 3])
+    E_field_grads[:, 4].scatter_add_(0, pairs[1], eFieldGradCore[:, 4])
+    E_field_grads[:, 5].scatter_add_(0, pairs[1], eFieldGradCore[:, 5])
+    E_field_grads[:, 6].scatter_add_(0, pairs[1], eFieldGradCore[:, 6])
+    E_field_grads[:, 7].scatter_add_(0, pairs[1], eFieldGradCore[:, 7])
+    E_field_grads[:, 8].scatter_add_(0, pairs[1], eFieldGradCore[:, 8])
+
+    print(E_potentials)
+    print(E_fields)
+    print(E_field_grads)
+
+    # shell-shell interactions
+    ss_tensor_ij = computeInteractionTensor(drVec, twoCenterDamps, drInv)
+    ss_edata = torch.bmm(ss_tensor_ij, mPoles_i.unsqueeze(2))
+    #print(eData_i)
+    #print(eData_j)
+    #print(ss_edata)
 
 def computePermElecAndPolarizationEnergy(
     coords: torch.Tensor,

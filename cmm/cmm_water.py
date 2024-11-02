@@ -10,7 +10,7 @@ from .pbc import *
 from .multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from .dispersion import computeDispersion
-from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups
+from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups, computeElectricPotentialExpansion
 
 
 class CMMWater(nn.Module):
@@ -220,6 +220,10 @@ class CMMWater(nn.Module):
         hardness_product.scatter_reduce_(0, self.bonds[1], hardness_change_b, reduce="prod")
         hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[0]].T[1], hardness_change_bb_1, reduce="prod")
         hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[1]].T[1], hardness_change_bb_2, reduce="prod")
+        
+        # We MUST multiply before adding the angle-dependent part since that is how the original
+        # CMM implementation worked. Hopefully we can find a better model for variable hardness
+        # in the future.
         self.nb_params['eta'] *= hardness_product
         self.nb_params['eta'].scatter_add_(0, self.angles[0], hardness_change_angle)
         self.nb_params['eta'].scatter_add_(0, self.angles[2], hardness_change_angle)
@@ -261,6 +265,15 @@ class CMMWater(nn.Module):
         dq = scatter(dq_pairwise, pairs[1])
 
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
+
+        # Get electric potential, field, and field gradients
+        computeElectricPotentialExpansion(
+            coords,
+            pairs,
+            mPoles,
+            self.nb_params['Z'],
+            self.nb_params['b']
+        )
 
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
