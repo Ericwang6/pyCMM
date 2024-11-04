@@ -74,9 +74,13 @@ def computeElectricPotentialExpansion(
     b: torch.Tensor
 ):
 
-    # expand mpoles
-    mPoles_i, mPoles_j = mPoles[pairs[0]], mPoles[pairs[1]]
+    # @SPEED: Currently, we are only computing electrostatic fields and such here.
+    # In the future, we can compute the Pauli and CT (and other) potential expansions
+    # here as well where the only difference is the scaling of the multipoles and the
+    # damping factors we multiply by. -Joe, 11/4/24
 
+    # expand mpoles
+    mPoles_i, _ = mPoles[pairs[0]], mPoles[pairs[1]]
 
     drVec = coords[pairs[1]] - coords[pairs[0]]
     dr = torch.norm(drVec, dim=1)
@@ -93,33 +97,43 @@ def computeElectricPotentialExpansion(
 
     # NOTE(JOE): I am only taking one of the rows of pairs because this
     # list has both the forward and backward pairs in it.
+    # HERE: I am getting the right shell-shell gradients. Accumulate the rest of this
+    # and make sure the rest of this works as well.
     Z_pairs = Z[pairs[0]]
     # core-core interactions
     ePotCore = Z_pairs * drInv
+    ePotCore_s = Z_pairs * drInv * oneCenterDamps_j[0]
     eFieldCore = drVec * (Z_pairs * drInv3).unsqueeze(-1)
+    eFieldCore_s = drVec * (Z_pairs * drInv3).unsqueeze(-1) * oneCenterDamps_j[1].view(-1, 1)
     eFieldGradCore_1 = torch.vmap(torch.mul)(torch.vmap(torch.outer)(drVec, drVec), (3 * Z_pairs * drInv5))
+    
+    expanded_1c_damps_1_i = oneCenterDamps_j[1].view(-1, 1, 1).expand_as(eFieldGradCore_1)
+    expanded_1c_damps_2_i = oneCenterDamps_j[2].view(-1, 1, 1).expand_as(eFieldGradCore_1)
+    eFieldGradCore_s_1 = torch.vmap(torch.mul)(torch.vmap(torch.outer)(drVec, drVec), (3 * Z_pairs * drInv5)) * expanded_1c_damps_2_i
     I = torch.eye(3)
     I = I.reshape((1, 3, 3))
     I = I.repeat((pairs[0].size(0), 1, 1))
     eFieldGradCore_2 = torch.vmap(torch.mul)(I, (Z_pairs * drInv3))
-    eFieldGradCore = eFieldGradCore_2 - eFieldGradCore_1 # This is off by a minus sign for a reason I don't understand
+    eFieldGradCore_s_2 = torch.vmap(torch.mul)(I, (Z_pairs * drInv3)) * expanded_1c_damps_1_i
+    eFieldGradCore = eFieldGradCore_2 - eFieldGradCore_1
+    eFieldGradCore_s = eFieldGradCore_s_2 - eFieldGradCore_s_1
     eFieldGradCore = eFieldGradCore.view(-1, 9)
+    eFieldGradCore_s = eFieldGradCore_s.view(-1, 9)
 
     # core-shell interactions
     cs_tensor_ij = computeInteractionTensor(drVec, oneCenterDamps_i, drInv)
-    cs_tensor_ji = computeInteractionTensor(-drVec, oneCenterDamps_j, drInv)
-
-    cs_tensor_ij_0 = computeInteractionTensor(drVec, oneCenterDamps_i, drInv, rank=0)
-    ePotCore_i = cs_tensor_ij_0 * Z_pairs
 
     eData_i = torch.bmm(cs_tensor_ij, mPoles_i.unsqueeze(2))
-    eData_j = torch.bmm(cs_tensor_ji, mPoles_j.unsqueeze(2))
-    ePot_i, ePot_j = eData_i[:, 0].flatten(), eData_j[:, 0].flatten()
-    eField_i, eField_j = eData_i[:, 1:4].reshape(-1, 3), eData_j[:, 1:4].reshape(-1, 3)
+    ePot_i = eData_i[:, 0].flatten()
+    eField_i = eData_i[:, 1:4].reshape(-1, 3)
+    eFieldGrad_i = eData_i[:, 4:].reshape(-1, 6)
 
     E_potentials = torch.zeros(coords.size(0)) # N
     E_fields = torch.zeros_like(coords) # Nx3
-    E_field_grads = torch.zeros(coords.size(0), 9) # Nx3x3
+    E_field_grads = torch.zeros(coords.size(0), 6) # Nx6 because only store upper triangle
+    E_potentials_ss = torch.zeros(coords.size(0)) # N
+    E_fields_ss = torch.zeros_like(coords) # Nx3
+    E_field_grads_ss = torch.zeros(coords.size(0), 6) # Nx6 because only store upper triangle
 
     # @SPEED: This makes a copy because I accumulate into x, y, and z
     # separately. I am guessing there is a way to do this in one scatter
@@ -132,35 +146,32 @@ def computeElectricPotentialExpansion(
     E_fields[:, 1].scatter_add_(0, pairs[1], eFieldCore[:, 1] - eField_i[:, 1])
     E_fields[:, 2].scatter_add_(0, pairs[1], eFieldCore[:, 2] - eField_i[:, 2])
     # Yes, I am doing it like this. Please help.
-    E_field_grads[:, 0].scatter_add_(0, pairs[1], eFieldGradCore[:, 0])
-    E_field_grads[:, 1].scatter_add_(0, pairs[1], eFieldGradCore[:, 1])
-    E_field_grads[:, 2].scatter_add_(0, pairs[1], eFieldGradCore[:, 2])
-    E_field_grads[:, 3].scatter_add_(0, pairs[1], eFieldGradCore[:, 3])
-    E_field_grads[:, 4].scatter_add_(0, pairs[1], eFieldGradCore[:, 4])
-    E_field_grads[:, 5].scatter_add_(0, pairs[1], eFieldGradCore[:, 5])
-    E_field_grads[:, 6].scatter_add_(0, pairs[1], eFieldGradCore[:, 6])
-    E_field_grads[:, 7].scatter_add_(0, pairs[1], eFieldGradCore[:, 7])
-    E_field_grads[:, 8].scatter_add_(0, pairs[1], eFieldGradCore[:, 8])
-
-    #print(E_fields)
-    #print(E_field_grads)
+    E_field_grads[:, 0].scatter_add_(0, pairs[1], eFieldGradCore[:, 0] - eFieldGrad_i[:, 0])
+    E_field_grads[:, 1].scatter_add_(0, pairs[1], eFieldGradCore[:, 1] - eFieldGrad_i[:, 1])
+    E_field_grads[:, 2].scatter_add_(0, pairs[1], eFieldGradCore[:, 2] - eFieldGrad_i[:, 2])
+    E_field_grads[:, 3].scatter_add_(0, pairs[1], eFieldGradCore[:, 4] - eFieldGrad_i[:, 3])
+    E_field_grads[:, 4].scatter_add_(0, pairs[1], eFieldGradCore[:, 5] - eFieldGrad_i[:, 4])
+    E_field_grads[:, 5].scatter_add_(0, pairs[1], eFieldGradCore[:, 8] - eFieldGrad_i[:, 5])
 
     # shell-shell interactions
     ss_tensor_ij = computeInteractionTensor(drVec, twoCenterDamps, drInv)
-    ss_edata = torch.bmm(ss_tensor_ij, mPoles_i.unsqueeze(2))
-    ePot_ss = ss_edata[:, 0].flatten()
-    eField_ss = ss_edata[:, 1:4].reshape(-1, 3)
+    ss_eData_i = torch.bmm(ss_tensor_ij, mPoles_i.unsqueeze(2))
+    ePot_ss_i = ss_eData_i[:, 0].flatten()
+    eField_ss_i = ss_eData_i[:, 1:4].reshape(-1, 3)
+    eFieldGrad_ss_i = ss_eData_i[:, 4:].reshape(-1, 6)
 
-    #E_potentials_shell = torch.zeros(coords.size(0)) # N
-    #E_fields_shell = torch.zeros_like(coords) # Nx3
-    #E_field_grads_shell = torch.zeros(coords.size(0), 9) # Nx3x3
-    #E_potentials_shell.scatter_add_(0, pairs[1], ePot_ss + ePotCore_i)
-    #E_fields_shell[:, 0].scatter_add_(0, pairs[1], eField_i[:, 0])
-    #E_fields_shell[:, 1].scatter_add_(0, pairs[1], eField_i[:, 1])
-    #E_fields_shell[:, 2].scatter_add_(0, pairs[1], eField_i[:, 2])
-    #print(E_potentials_shell)
-    #print(E_fields_shell)
-    #print(E_field_grads_shell)
+    E_potentials_ss.scatter_add_(0, pairs[1], ePot_ss_i + ePotCore_s)
+    E_fields_ss[:, 0].scatter_add_(0, pairs[1], eFieldCore_s[:, 0] - eField_ss_i[:, 0])
+    E_fields_ss[:, 1].scatter_add_(0, pairs[1], eFieldCore_s[:, 1] - eField_ss_i[:, 1])
+    E_fields_ss[:, 2].scatter_add_(0, pairs[1], eFieldCore_s[:, 2] - eField_ss_i[:, 2])
+    E_field_grads_ss[:, 0].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 0] - eFieldGrad_ss_i[:, 0])
+    E_field_grads_ss[:, 1].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 1] - eFieldGrad_ss_i[:, 1])
+    E_field_grads_ss[:, 2].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 2] - eFieldGrad_ss_i[:, 2])
+    E_field_grads_ss[:, 3].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 4] - eFieldGrad_ss_i[:, 3])
+    E_field_grads_ss[:, 4].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 5] - eFieldGrad_ss_i[:, 4])
+    E_field_grads_ss[:, 5].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 8] - eFieldGrad_ss_i[:, 5])
+
+    return (E_potentials, E_fields, E_field_grads), (E_potentials_ss, E_fields_ss, E_field_grads_ss)
 
 def computePermElecAndPolarizationEnergy(
     coords: torch.Tensor,
