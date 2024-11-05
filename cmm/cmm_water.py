@@ -279,23 +279,11 @@ class CMMWater(nn.Module):
 
         elec_potential, elec_field, elec_field_grad = elec_field_data
 
-        # HERE: Need to get the appropriate bond vectors to pass into the
-        # field dependent morse function. I then need to use the bonds[1]
-        # array to select the appropriate field and project it onto the
-        # right bond vector. I think I really just pass in the bond pair
-        # indices and compute just the bond vectors I need. In the future,
-        # we should organize all of this to make it easier to map between
-        # and and pair indices.
-
-        #print(drVecs)
-        #print(elec_field)
-        #print(self.bonds)
-
-        #re_fd, ke_fd = computeFieldDependentMorseParams(
-        #    drVecs, torch.norm(drVecs, dim=1), elec_field,
-        #    self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
-        #    self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
-        #)
+        re_fd, ke_fd = computeFieldDependentMorseParams(
+            coords, self.bonds, elec_field,
+            self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
+            self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
+        )
         #print(re_fd)
         #print(ke_fd)
 

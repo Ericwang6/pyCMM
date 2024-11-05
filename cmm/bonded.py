@@ -71,7 +71,7 @@ def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Te
     return k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
 
 def computeFieldDependentMorseParams(
-        dR_vec: torch.Tensor, dR: torch.Tensor, E: torch.Tensor,
+        coords: torch.Tensor, bond_indices: torch.Tensor, E: torch.Tensor,
         k_e: torch.Tensor, D_e: torch.Tensor, r_e: torch.Tensor,
         dipole_1: torch.Tensor, dipole_2: torch.Tensor#,
         #ct_slope_1: torch.Tensor, ct_slope_2: torch.Tensor, dQ_ct: torch.Tensor
@@ -83,7 +83,16 @@ def computeFieldDependentMorseParams(
     Note that dR_vec gets dotted with E, so you need to ensure that the distance
     vectors are computed in the right direction.
     """
-    E_proj = torch.func.vmap(torch.dot)(dR_vec, E) / dR
+    dR_bonds = coords[bond_indices[1]] - coords[bond_indices[0]]
+    dR = torch.norm(dR_bonds, dim=1)
+    # We are making an assumption here which will have to be enforced by the topology
+    # builder. The field is considered only for the second atom of the bond vector.
+    # For water, for instance, this means we consider the field at the H atom.
+    # In general, the specific atom will depend on the bond in question, so the
+    # topology builder will have to look at the specific bond and force field terms
+    # requested so that it can set up the bond indices appropriately. -Joe
+    E_bonds = E[bond_indices[1]]
+    E_proj = torch.func.vmap(torch.dot)(dR_bonds, E_bonds) / dR
     dr_e = E_proj * dipole_1 / (k_e - E_proj * dipole_2) #+ ct_slope_1 * dQ_ct * dQ_ct
     k_e_fd = k_e - (3 * k_e * torch.sqrt(0.5 * k_e / D_e) * dr_e + E_proj * dipole_2) #+ ct_slope_2 * dQ_ct * dQ_ct
     
