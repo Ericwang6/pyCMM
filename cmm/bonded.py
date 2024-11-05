@@ -4,7 +4,8 @@ __all__ = [
     "computeBondFromVecs", "computeAngleFromVecs", "computeMorseBondPotential",
     "computeBondBondCoupling", "computeCosAnglePotential", "computeBondAngleCoupling",
     "computeChargeFluxBond", "computeChargeFluxBondBond", "computeChargeFluxAngle",
-    "computeHardnessChangeBond", "computeHardnessChangeBondBond", "computeHardnessChangeAngle"
+    "computeHardnessChangeBond", "computeHardnessChangeBondBond", "computeHardnessChangeAngle",
+    "computeFieldDependentMorseParams"
 ]
 
 def computeBondFromVecs(drVecs):
@@ -69,3 +70,27 @@ def computeCosAnglePotential(theta: torch.Tensor, thetaeq: torch.Tensor, k: torc
 def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor):
     return k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
 
+def computeFieldDependentMorseParams(
+        dR_vec: torch.Tensor, dR: torch.Tensor, E: torch.Tensor,
+        k_e: torch.Tensor, D_e: torch.Tensor, r_e: torch.Tensor,
+        dipole_1: torch.Tensor, dipole_2: torch.Tensor#,
+        #ct_slope_1: torch.Tensor, ct_slope_2: torch.Tensor, dQ_ct: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Evaluates the field-dependent force constants and equilibrium distances
+    used in the CMM Morse potential. All of these tensors should have N_fd_bond
+    entries where N_fd_bond is the number of bonds which are field-dependent.
+    Note that dR_vec gets dotted with E, so you need to ensure that the distance
+    vectors are computed in the right direction.
+    """
+    E_proj = torch.func.vmap(torch.dot)(dR_vec, E) / dR
+    dr_e = E_proj * dipole_1 / (k_e - E_proj * dipole_2) #+ ct_slope_1 * dQ_ct * dQ_ct
+    k_e_fd = k_e - (3 * k_e * torch.sqrt(0.5 * k_e / D_e) * dr_e + E_proj * dipole_2) #+ ct_slope_2 * dQ_ct * dQ_ct
+    
+    # Ideally this will never happen but this is how I implemented it originally
+    # to avoid the possiblity of taking a sqrt of a negative force constant
+    # during the energy evaluation. Really hitting this branch indicates
+    # the field is too strong for this model to be reasonable or that the
+    # parameters determining the change in force constant are unrealistic.
+    k_e_fd = torch.clamp(k_e_fd, 0.4 * k_e)
+    return (r_e + dr_e, k_e_fd)

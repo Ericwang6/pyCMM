@@ -135,13 +135,15 @@ class CMMWater(nn.Module):
             "k_hardness_b": torch.tensor([2.32191]),
             "k_hardness_bb": torch.tensor([0.958157]),
             "k_hardness_angle": torch.tensor([-0.0991956]),
+            "dip_deriv_1": torch.Tensor([0.1654220912271531]),
+            "dip_deriv_2": torch.Tensor([-0.012458400000000472]),
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
 
         # expand bonded parameters
         self.bonded_params = {}
         for key in self.bonded_params_raw:
-            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb']:
+            if key in ['k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb', 'dip_deriv_1', 'dip_deriv_2']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters, dtype=torch.long)]
@@ -267,13 +269,35 @@ class CMMWater(nn.Module):
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # Get electric potential, field, and field gradients
-        computeElectricPotentialExpansion(
+        elec_field_data, elec_field_data_overlap = computeElectricPotentialExpansion(
             coords,
             pairs,
             mPoles,
             self.nb_params['Z'],
             self.nb_params['b']
         )
+
+        elec_potential, elec_field, elec_field_grad = elec_field_data
+
+        # HERE: Need to get the appropriate bond vectors to pass into the
+        # field dependent morse function. I then need to use the bonds[1]
+        # array to select the appropriate field and project it onto the
+        # right bond vector. I think I really just pass in the bond pair
+        # indices and compute just the bond vectors I need. In the future,
+        # we should organize all of this to make it easier to map between
+        # and and pair indices.
+
+        #print(drVecs)
+        #print(elec_field)
+        #print(self.bonds)
+
+        #re_fd, ke_fd = computeFieldDependentMorseParams(
+        #    drVecs, torch.norm(drVecs, dim=1), elec_field,
+        #    self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
+        #    self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
+        #)
+        #print(re_fd)
+        #print(ke_fd)
 
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
@@ -297,7 +321,7 @@ class CMMWater(nn.Module):
         # the modifications are a mixture of multiplication and addition which makes the whole thing depend
         # on the order of operations. This model of the variation in hardness is not very satisfying but
         # does work reasonably well for water. It has very little effect on the overall energy though,
-        # but quite a large effect on the polarizability and its derivatives. So, in the future, we should
+        # but quite a large effect on the polarizability derivatives. So, in the future, we should
         # explore more general and robust alternatives since the current variable hardness model is a bit
         # clunky. -Joe, 11/1/24
         
