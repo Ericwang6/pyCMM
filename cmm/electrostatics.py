@@ -171,7 +171,14 @@ def computeElectricPotentialExpansion(
     E_field_grads_ss[:, 4].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 5] - eFieldGrad_ss_i[:, 4])
     E_field_grads_ss[:, 5].scatter_add_(0, pairs[1], eFieldGradCore_s[:, 8] - eFieldGrad_ss_i[:, 5])
 
-    return (E_potentials, E_fields, E_field_grads), (E_potentials_ss, E_fields_ss, E_field_grads_ss)
+    perm_elec_energy = 0.5 * (
+        torch.dot(E_potentials, Z) +
+        torch.dot(E_potentials_ss , mPoles[:, 0]) -
+        torch.dot(E_fields_ss.flatten(), mPoles[:, 1:4].flatten()) -
+        torch.dot(E_field_grads_ss.flatten(), mPoles[:, 4:].flatten())
+    )
+
+    return (E_potentials, E_fields, E_field_grads), (E_potentials_ss, E_fields_ss, E_field_grads_ss), perm_elec_energy
 
 def computePermElecAndPolarizationEnergy(
     coords: torch.Tensor,

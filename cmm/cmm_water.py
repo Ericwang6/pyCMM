@@ -269,7 +269,7 @@ class CMMWater(nn.Module):
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # Get electric potential, field, and field gradients
-        elec_field_data, elec_field_data_overlap = computeElectricPotentialExpansion(
+        elec_field_data, elec_field_data_overlap, perm_elec_energy = computeElectricPotentialExpansion(
             coords,
             pairs,
             mPoles,
@@ -278,14 +278,13 @@ class CMMWater(nn.Module):
         )
 
         elec_potential, elec_field, elec_field_grad = elec_field_data
+        elec_potential_overlap, elec_field_overlap, elec_field_grad_overlap = elec_field_data_overlap
 
         re_fd, ke_fd = computeFieldDependentMorseParams(
             coords, self.bonds, elec_field,
             self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
             self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
         )
-        #print(re_fd)
-        #print(ke_fd)
 
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
@@ -301,6 +300,7 @@ class CMMWater(nn.Module):
             groupCharges,
             pairs = pairs
         )
+        print(ene_perm_elec * 627.51)
         # NOTE(JOE): ^^^ The hardness parameters, eta, get multiplied by two because they enter the polarization
         # energy as a quadratic penalty. When we solve the polarization equations, we are solving a minimization
         # problem over the charges, dipoles, etc. So, when we take the derivative to find that minimum, the exponent gets pulled
