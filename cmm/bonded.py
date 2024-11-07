@@ -102,4 +102,5 @@ def computeFieldDependentMorseParams(
     # the field is too strong for this model to be reasonable or that the
     # parameters determining the change in force constant are unrealistic.
     k_e_fd = torch.clamp(k_e_fd, 0.4 * k_e)
-    return (r_e + dr_e, k_e_fd)
+    beta_fd = torch.sqrt(k_e_fd / 2 / D_e)
+    return (r_e + dr_e, beta_fd)

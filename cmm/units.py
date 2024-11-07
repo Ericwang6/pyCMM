@@ -1,7 +1,8 @@
 from scipy import constants
 
+# Using 0.529177 for BOHR2ANG makes the comparison with Julia CMM exact.
 
-BOHR2ANG = constants.value("atomic unit of length") * 1e10
+BOHR2ANG = 0.529177 #constants.value("atomic unit of length") * 1e10
 BOHR2NM = constants.value("atomic unit of length") * 1e9
 
 ELE_CHG = constants.elementary_charge

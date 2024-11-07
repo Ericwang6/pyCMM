@@ -10,7 +10,7 @@ from .pbc import *
 from .multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from .dispersion import computeDispersion
-from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups, computeElectricPotentialExpansion
+from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups, computeElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles
 
 
 class CMMWater(nn.Module):
@@ -158,32 +158,7 @@ class CMMWater(nn.Module):
         boxInv = torch.linalg.inv(box)
         bondVecs = applyPBC(coords[self.bonds[1]] - coords[self.bonds[0]], box, boxInv)
         bonds = torch.norm(bondVecs, dim=1)
-        # morse-bond
-        ene_bond_list = computeMorseBondPotential(bonds, self.bonded_params['b_eq'], self.bonded_params['D'], self.bonded_params['beta'])
-        ene_bonds = torch.sum(ene_bond_list)
-
-        # bond-bond couplings
-        ene_bbs_list = computeBondBondCoupling(
-            bonds[self.bbs[0]], bonds[self.bbs[1]],
-            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
-            self.bonded_params['k_bb']
-        )
-        ene_bbs = torch.sum(ene_bbs_list)
-
-        # angles
         angles = computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
-        ene_angles_list = computeCosAnglePotential(
-            angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
-        )
-        ene_angles = torch.sum(ene_angles_list)
-
-        # bond-angle couplings
-        ene_bas_list = computeBondAngleCoupling(
-            bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
-            angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
-            self.bonded_params['k_ba']
-        )
-        ene_bas = torch.sum(ene_bas_list)
 
         ### bonding-dependent parameters ###
         # charges #
@@ -208,7 +183,7 @@ class CMMWater(nn.Module):
         flux_charges.scatter_add_(0, self.angles[0], charge_flux_angle_list_i)
         flux_charges.scatter_add_(0, self.angles[1], charge_flux_angle_list_j)
         flux_charges.scatter_add_(0, self.angles[2], charge_flux_angle_list_k)
-        self.nb_params['q_shell'] += flux_charges
+        self.nb_params['q_shell'] = self.nb_params['q_shell'] + flux_charges
 
         # atomic hardness #
         hardness_product = torch.ones_like(self.nb_params['eta'])
@@ -219,16 +194,18 @@ class CMMWater(nn.Module):
             self.bonded_params['k_hardness_bb'][self.bbs[0]], self.bonded_params['k_hardness_bb'][self.bbs[1]]
         )
         hardness_change_angle = computeHardnessChangeAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['k_hardness_angle'])
-        hardness_product.scatter_reduce_(0, self.bonds[1], hardness_change_b, reduce="prod")
-        hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[0]].T[1], hardness_change_bb_1, reduce="prod")
-        hardness_product.scatter_reduce_(0, self.bonds.T[self.bbs[1]].T[1], hardness_change_bb_2, reduce="prod")
         
+        # Cannot do in-place operations or else computational graphs breaks. Sad.
+        hardness_product = hardness_product.scatter_reduce(0, self.bonds[1], hardness_change_b, reduce="prod")
+        hardness_product = hardness_product.scatter_reduce(0, self.bonds.T[self.bbs[0]].T[1], hardness_change_bb_1, reduce="prod")
+        hardness_product = hardness_product.scatter_reduce(0, self.bonds.T[self.bbs[1]].T[1], hardness_change_bb_2, reduce="prod")
+
         # We MUST multiply before adding the angle-dependent part since that is how the original
         # CMM implementation worked. Hopefully we can find a better model for variable hardness
         # in the future.
-        self.nb_params['eta'] *= hardness_product
-        self.nb_params['eta'].scatter_add_(0, self.angles[0], hardness_change_angle)
-        self.nb_params['eta'].scatter_add_(0, self.angles[2], hardness_change_angle)
+        eta_geom_dependent = self.nb_params['eta'] * hardness_product
+        eta_geom_dependent.scatter_add_(0, self.angles[0], hardness_change_angle)
+        eta_geom_dependent.scatter_add_(0, self.angles[2], hardness_change_angle)
 
         ### non-bonded interactions ###
         rotMatrix = computeLocal2GlobalRotationMatrix(
@@ -269,7 +246,7 @@ class CMMWater(nn.Module):
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # Get electric potential, field, and field gradients
-        elec_field_data, elec_field_data_overlap, perm_elec_energy = computeElectricPotentialExpansion(
+        elec_field_data, elec_field_data_overlap, ene_perm_elec = computeElectricPotentialExpansion(
             coords,
             pairs,
             mPoles,
@@ -280,27 +257,75 @@ class CMMWater(nn.Module):
         elec_potential, elec_field, elec_field_grad = elec_field_data
         elec_potential_overlap, elec_field_overlap, elec_field_grad_overlap = elec_field_data_overlap
 
-        re_fd, ke_fd = computeFieldDependentMorseParams(
+        re_fd, beta_fd = computeFieldDependentMorseParams(
             coords, self.bonds, elec_field,
             self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
             self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
         )
 
+        # morse-bond
+        ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
+        ene_bonds = torch.sum(ene_bond_list)
+
+        # bond-bond couplings
+        ene_bbs_list = computeBondBondCoupling(
+            bonds[self.bbs[0]], bonds[self.bbs[1]],
+            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
+            self.bonded_params['k_bb']
+        )
+        ene_bbs = torch.sum(ene_bbs_list)
+
+        # angles
+        ene_angles_list = computeCosAnglePotential(
+            angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
+        )
+        ene_angles = torch.sum(ene_angles_list)
+
+        # bond-angle couplings
+        ene_bas_list = computeBondAngleCoupling(
+            bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
+            angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
+            self.bonded_params['k_ba']
+        )
+        ene_bas = torch.sum(ene_bas_list)
+
         # elec, pol and charge-transfer
-        groupCharges = self.nb_params['groupCharges'] + dq_groups
-        ene_perm_elec, ene_pol = computePermElecAndPolarizationEnergy(
+        groupCharges = self.nb_params['groupCharges'] #+ dq_groups
+
+        #ene_pol = torch.zeros(1)
+        ene_pol, solution_vector = computePolarizationEnergyAndInducedMultipoles(
             coords,
             self.nb_params['groups'],
-            mPoles,
-            self.nb_params['Z'],
             self.nb_params['b'],
-            self.do_polarization,
+            elec_potential,
+            elec_field,
             polarizabilities,
-            self.nb_params['eta'] * 2,
+            eta_geom_dependent * 2,
             groupCharges,
             pairs = pairs
         )
-        print(ene_perm_elec * 627.51)
+        q_end = len(self.nb_params['q_shell'])
+        lagrange_end = q_end + len(groupCharges)
+        induced_q_shell = solution_vector[0:q_end]
+        lagrange_multipliers = solution_vector[q_end:lagrange_end]
+        induced_dipoles = solution_vector[lagrange_end:].reshape(-1, 3)
+        #print(solution_vector)
+        #print(induced_q_shell)
+        #print(lagrange_multipliers)
+        #print(induced_dipoles)
+
+        #ene_perm_elec, ene_pol = computePermElecAndPolarizationEnergy(
+        #    coords,
+        #    self.nb_params['groups'],
+        #    mPoles,
+        #    self.nb_params['Z'],
+        #    self.nb_params['b'],
+        #    True,
+        #    polarizabilities,
+        #    eta_geom_dependent * 2,
+        #    groupCharges,
+        #    pairs = pairs
+        #)
         # NOTE(JOE): ^^^ The hardness parameters, eta, get multiplied by two because they enter the polarization
         # energy as a quadratic penalty. When we solve the polarization equations, we are solving a minimization
         # problem over the charges, dipoles, etc. So, when we take the derivative to find that minimum, the exponent gets pulled
