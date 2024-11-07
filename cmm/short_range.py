@@ -25,15 +25,14 @@ def computeShortRangeDampFactors(dr, bij):
 
 def scaleMultipoles(
     mPoles: torch.Tensor, 
-    monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor, 
-    modCharges: Optional[torch.Tensor] = None
+    monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor
 ):
+    # The monopoles are set directly from the parameter list while the
+    # multipoles are directly scaled versions of the electric multipoles.
     mPolesScaled = torch.zeros_like(mPoles)
-    mPolesScaled[:, 0]   += mPoles[:, 0] * monoScales
+    mPolesScaled[:, 0]   += monoScales
     mPolesScaled[:, 1:4] += mPoles[:, 1:4] * dipoScales.unsqueeze(1)
     mPolesScaled[:, 4:]  += mPoles[:, 4:] * quadScales.unsqueeze(1)
-    if modCharges is not None:
-        mPolesScaled[:, 0] += modCharges
     return mPolesScaled
 
 

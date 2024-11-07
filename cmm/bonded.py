@@ -71,10 +71,10 @@ def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Te
     return k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
 
 def computeFieldDependentMorseParams(
-        coords: torch.Tensor, bond_indices: torch.Tensor, E: torch.Tensor,
+        coords: torch.Tensor, bond_indices: torch.Tensor, E: torch.Tensor, dQ_ct: torch.Tensor,
         k_e: torch.Tensor, D_e: torch.Tensor, r_e: torch.Tensor,
-        dipole_1: torch.Tensor, dipole_2: torch.Tensor#,
-        #ct_slope_1: torch.Tensor, ct_slope_2: torch.Tensor, dQ_ct: torch.Tensor
+        dipole_1: torch.Tensor, dipole_2: torch.Tensor,
+        ct_slope_1: torch.Tensor, ct_slope_2: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Evaluates the field-dependent force constants and equilibrium distances
@@ -85,6 +85,7 @@ def computeFieldDependentMorseParams(
     """
     dR_bonds = coords[bond_indices[1]] - coords[bond_indices[0]]
     dR = torch.norm(dR_bonds, dim=1)
+    dQ_ct_bonds = dQ_ct[bond_indices[1]]
     # We are making an assumption here which will have to be enforced by the topology
     # builder. The field is considered only for the second atom of the bond vector.
     # For water, for instance, this means we consider the field at the H atom.
@@ -93,8 +94,8 @@ def computeFieldDependentMorseParams(
     # requested so that it can set up the bond indices appropriately. -Joe
     E_bonds = E[bond_indices[1]]
     E_proj = torch.func.vmap(torch.dot)(dR_bonds, E_bonds) / dR
-    dr_e = E_proj * dipole_1 / (k_e - E_proj * dipole_2) #+ ct_slope_1 * dQ_ct * dQ_ct
-    k_e_fd = k_e - (3 * k_e * torch.sqrt(0.5 * k_e / D_e) * dr_e + E_proj * dipole_2) #+ ct_slope_2 * dQ_ct * dQ_ct
+    dr_e = E_proj * dipole_1 / (k_e - E_proj * dipole_2) + ct_slope_1 * dQ_ct_bonds * dQ_ct_bonds
+    k_e_fd = k_e - (3 * k_e * torch.sqrt(0.5 * k_e / D_e) * dr_e + E_proj * dipole_2) + ct_slope_2 * dQ_ct_bonds * dQ_ct_bonds
     
     # Ideally this will never happen but this is how I implemented it originally
     # to avoid the possiblity of taking a sqrt of a negative force constant

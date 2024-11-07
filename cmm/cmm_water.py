@@ -40,7 +40,7 @@ class CMMWater(nn.Module):
             "b": torch.tensor([2.13358, 2.33322]),
             # Pauli repulsion
             "b_pauli": torch.tensor([2.1975, 1.96474]),
-            "Kmono_pauli": torch.tensor([6.50923, 0.527804]) / qShell,
+            "Kmono_pauli": torch.tensor([6.50923, 0.527804]),# / qShell,
             "Kdipo_pauli": torch.tensor([-5.61925, -0.515584]),
             "Kquad_pauli": torch.tensor([-1.56567, -0.440164]),
             # Dispersion
@@ -54,15 +54,15 @@ class CMMWater(nn.Module):
             "eta": torch.tensor([6.18699e-6, 0.561535]),
             # Exchange-polarization
             "b_xpol": torch.tensor([2.73582, 2.04028]),
-            "Kmono_xpol": torch.tensor([1.26592, 0.200089]) / qShell,
+            "Kmono_xpol": torch.tensor([1.26592, 0.200089]),# / qShell,
             "Kdipo_xpol": torch.zeros((2,)),
             "Kquad_xpol": torch.zeros((2,)),
             # Charge Transfer
             "b_ct": torch.tensor([1.89485, 2.36763]),
-            "Kmono_ct_acc": torch.tensor([-0.67857, 1.36735]) / qShell,
+            "Kmono_ct_acc": torch.tensor([-0.67857, 1.36735]),# / qShell,
             "Kdipo_ct_acc": torch.tensor([0.0, 0.0]),
             "Kquad_ct_acc": torch.tensor([0.0, 0.0]),
-            "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]) / qShell,
+            "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]),# / qShell,
             "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
             "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
             "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]])
@@ -137,13 +137,17 @@ class CMMWater(nn.Module):
             "k_hardness_angle": torch.tensor([-0.0991956]),
             "dip_deriv_1": torch.Tensor([0.1654220912271531]),
             "dip_deriv_2": torch.Tensor([-0.012458400000000472]),
+            "ct_slope_1": torch.Tensor([65.0]),
+            "ct_slope_2": torch.Tensor([13.7812]),
         }
         self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
 
         # expand bonded parameters
         self.bonded_params = {}
         for key in self.bonded_params_raw:
-            if key in ['k_b', 'b_eq', 'beta', 'k_ba', 'D', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb', 'dip_deriv_1', 'dip_deriv_2']:
+            if key in ['k_b', 'b_eq', 'beta', 'k_ba', 'D',
+                       'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb',
+                       'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters, dtype=torch.long)]
@@ -242,7 +246,6 @@ class CMMWater(nn.Module):
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq = scatter(dq_pairwise, pairs[1])
-
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # Get electric potential, field, and field gradients
@@ -258,9 +261,10 @@ class CMMWater(nn.Module):
         elec_potential_overlap, elec_field_overlap, elec_field_grad_overlap = elec_field_data_overlap
 
         re_fd, beta_fd = computeFieldDependentMorseParams(
-            coords, self.bonds, elec_field,
+            coords, self.bonds, elec_field, dq,
             self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
             self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
+            self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'], 
         )
 
         # morse-bond
@@ -290,9 +294,8 @@ class CMMWater(nn.Module):
         ene_bas = torch.sum(ene_bas_list)
 
         # elec, pol and charge-transfer
-        groupCharges = self.nb_params['groupCharges'] #+ dq_groups
+        groupCharges = self.nb_params['groupCharges'] + dq_groups
 
-        #ene_pol = torch.zeros(1)
         ene_pol, solution_vector = computePolarizationEnergyAndInducedMultipoles(
             coords,
             self.nb_params['groups'],
@@ -309,7 +312,6 @@ class CMMWater(nn.Module):
         induced_q_shell = solution_vector[0:q_end]
         lagrange_multipliers = solution_vector[q_end:lagrange_end]
         induced_dipoles = solution_vector[lagrange_end:].reshape(-1, 3)
-        #print(solution_vector)
         #print(induced_q_shell)
         #print(lagrange_multipliers)
         #print(induced_dipoles)
