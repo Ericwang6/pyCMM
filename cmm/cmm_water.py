@@ -40,7 +40,7 @@ class CMMWater(nn.Module):
             "b": torch.tensor([2.13358, 2.33322]),
             # Pauli repulsion
             "b_pauli": torch.tensor([2.1975, 1.96474]),
-            "Kmono_pauli": torch.tensor([6.50923, 0.527804]),# / qShell,
+            "Kmono_pauli": torch.tensor([6.50923, 0.527804]),
             "Kdipo_pauli": torch.tensor([-5.61925, -0.515584]),
             "Kquad_pauli": torch.tensor([-1.56567, -0.440164]),
             # Dispersion
@@ -54,15 +54,15 @@ class CMMWater(nn.Module):
             "eta": torch.tensor([6.18699e-6, 0.561535]),
             # Exchange-polarization
             "b_xpol": torch.tensor([2.73582, 2.04028]),
-            "Kmono_xpol": torch.tensor([1.26592, 0.200089]),# / qShell,
+            "Kmono_xpol": torch.tensor([1.26592, 0.200089]),
             "Kdipo_xpol": torch.zeros((2,)),
             "Kquad_xpol": torch.zeros((2,)),
             # Charge Transfer
             "b_ct": torch.tensor([1.89485, 2.36763]),
-            "Kmono_ct_acc": torch.tensor([-0.67857, 1.36735]),# / qShell,
+            "Kmono_ct_acc": torch.tensor([-0.67857, 1.36735]),
             "Kdipo_ct_acc": torch.tensor([0.0, 0.0]),
             "Kquad_ct_acc": torch.tensor([0.0, 0.0]),
-            "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]),# / qShell,
+            "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]),
             "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
             "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
             "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]])
@@ -268,39 +268,6 @@ class CMMWater(nn.Module):
         # but leave the undamped part out since we compute the potential already
         # to be used in the polarization calculation. So we add it in after the fact.
 
-        re_fd, beta_fd = computeFieldDependentMorseParams(
-            coords, self.bonds, elec_field, dq,
-            self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
-            self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
-            self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'], 
-        )
-
-        # morse-bond
-        ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
-        ene_bonds = torch.sum(ene_bond_list)
-
-        # bond-bond couplings
-        ene_bbs_list = computeBondBondCoupling(
-            bonds[self.bbs[0]], bonds[self.bbs[1]],
-            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
-            self.bonded_params['k_bb']
-        )
-        ene_bbs = torch.sum(ene_bbs_list)
-
-        # angles
-        ene_angles_list = computeCosAnglePotential(
-            angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
-        )
-        ene_angles = torch.sum(ene_angles_list)
-
-        # bond-angle couplings
-        ene_bas_list = computeBondAngleCoupling(
-            bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
-            angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
-            self.bonded_params['k_ba']
-        )
-        ene_bas = torch.sum(ene_bas_list)
-
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
 
@@ -339,6 +306,42 @@ class CMMWater(nn.Module):
             induced_mPoles,
             self.nb_params['b']
         )
+
+        re_fd, beta_fd = computeFieldDependentMorseParams(
+            coords, self.bonds, elec_field + elec_field_induced, dq,
+            self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
+            self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
+            self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'], 
+        )
+        print(elec_field + elec_field_induced)
+        print(re_fd)
+        print(beta_fd)
+
+        # morse-bond
+        ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
+        ene_bonds = torch.sum(ene_bond_list)
+
+        # bond-bond couplings
+        ene_bbs_list = computeBondBondCoupling(
+            bonds[self.bbs[0]], bonds[self.bbs[1]],
+            self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
+            self.bonded_params['k_bb']
+        )
+        ene_bbs = torch.sum(ene_bbs_list)
+
+        # angles
+        ene_angles_list = computeCosAnglePotential(
+            angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
+        )
+        ene_angles = torch.sum(ene_angles_list)
+
+        # bond-angle couplings
+        ene_bas_list = computeBondAngleCoupling(
+            bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
+            angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
+            self.bonded_params['k_ba']
+        )
+        ene_bas = torch.sum(ene_bas_list)
 
         # Pauli repulsion
         mPoles_pauli = scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
