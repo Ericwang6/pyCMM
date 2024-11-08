@@ -10,7 +10,7 @@ from .pbc import *
 from .multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from .dispersion import computeDispersion
-from .electrostatics import computePermElecAndPolarizationEnergy, getPairsFromGroups, computeElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles
+from .electrostatics import getPairsFromGroups, computePermanentElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles, computeDampedMultipolarInteractionEnergies, computeInducedElectricPotentialAndFields
 
 
 class CMMWater(nn.Module):
@@ -249,16 +249,24 @@ class CMMWater(nn.Module):
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # Get electric potential, field, and field gradients
-        elec_field_data, elec_field_data_overlap, ene_perm_elec = computeElectricPotentialExpansion(
+        elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansion(
             coords,
             pairs,
             mPoles,
             self.nb_params['Z'],
             self.nb_params['b']
         )
-
-        elec_potential, elec_field, elec_field_grad = elec_field_data
-        elec_potential_overlap, elec_field_overlap, elec_field_grad_overlap = elec_field_data_overlap
+        ene_perm_elec = computeDampedMultipolarInteractionEnergies(
+            coords,
+            pairs,
+            mPoles,
+            self.nb_params['Z'],
+            self.nb_params['b']
+        )
+        ene_perm_elec += 0.5 * torch.sum(self.nb_params['Z'] * elec_potential)
+        # ^^^ In the above we compute the electrostatic energy involving damping
+        # but leave the undamped part out since we compute the potential already
+        # to be used in the polarization calculation. So we add it in after the fact.
 
         re_fd, beta_fd = computeFieldDependentMorseParams(
             coords, self.bonds, elec_field, dq,
@@ -307,27 +315,6 @@ class CMMWater(nn.Module):
             groupCharges,
             pairs = pairs
         )
-        q_end = len(self.nb_params['q_shell'])
-        lagrange_end = q_end + len(groupCharges)
-        induced_q_shell = solution_vector[0:q_end]
-        lagrange_multipliers = solution_vector[q_end:lagrange_end]
-        induced_dipoles = solution_vector[lagrange_end:].reshape(-1, 3)
-        #print(induced_q_shell)
-        #print(lagrange_multipliers)
-        #print(induced_dipoles)
-
-        #ene_perm_elec, ene_pol = computePermElecAndPolarizationEnergy(
-        #    coords,
-        #    self.nb_params['groups'],
-        #    mPoles,
-        #    self.nb_params['Z'],
-        #    self.nb_params['b'],
-        #    True,
-        #    polarizabilities,
-        #    eta_geom_dependent * 2,
-        #    groupCharges,
-        #    pairs = pairs
-        #)
         # NOTE(JOE): ^^^ The hardness parameters, eta, get multiplied by two because they enter the polarization
         # energy as a quadratic penalty. When we solve the polarization equations, we are solving a minimization
         # problem over the charges, dipoles, etc. So, when we take the derivative to find that minimum, the exponent gets pulled
@@ -339,7 +326,20 @@ class CMMWater(nn.Module):
         # but quite a large effect on the polarizability derivatives. So, in the future, we should
         # explore more general and robust alternatives since the current variable hardness model is a bit
         # clunky. -Joe, 11/1/24
+        q_end = len(self.nb_params['q_shell'])
+        lagrange_end = q_end + len(groupCharges)
+
+        induced_mPoles = torch.zeros((mPoles.size(0), 4))
+        induced_mPoles[:, 0] += solution_vector[0:q_end].squeeze()
+        induced_mPoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
         
+        elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFields(
+            coords,
+            pairs,
+            induced_mPoles,
+            self.nb_params['b']
+        )
+
         # Pauli repulsion
         mPoles_pauli = scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
         pauli_pairwise = computeShortRangeEnergy(
