@@ -298,8 +298,10 @@ class CMMWater(nn.Module):
 
         induced_mPoles = torch.zeros((mPoles.size(0), 4))
         induced_mPoles[:, 0] += solution_vector[0:q_end].squeeze()
+        lagrange_muls = solution_vector[q_end:lagrange_end].clone().squeeze()
         induced_mPoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
-        
+        print(lagrange_muls)
+
         elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFields(
             coords,
             pairs,
@@ -313,9 +315,20 @@ class CMMWater(nn.Module):
             self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
             self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'], 
         )
-        print(elec_field + elec_field_induced)
-        print(re_fd)
-        print(beta_fd)
+        
+        pol_energy_2 = 0.5 * (
+            torch.sum(induced_mPoles[:, 0] * elec_potential) -
+            torch.sum(torch.linalg.vecdot(induced_mPoles[:, 1:4], elec_field)) -
+            torch.sum(lagrange_muls * torch.sum(induced_mPoles[:, 0][torch.tensor(self.nb_params["groups"], dtype=torch.int64)], dim=1))
+        )
+        #torch.index_reduce(induced_mPoles[:, 0], 0, self.nb_params["groups"][0])
+        #print(ene_pol)
+        #print(pol_energy_2)
+
+        # HERE: Now getting the correct parameters including the induced fields and such
+        # Need to now check on the polarization energy computed using the multipoles
+        # then either 1) implement an iterative scheme or start factoring things into
+        # a parameters object which is built from the topology.
 
         # morse-bond
         ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
