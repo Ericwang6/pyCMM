@@ -176,10 +176,36 @@ def test_bonded_interactions_with_fd_morse():
     model = CMMWater(2, do_polarization=True)
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
     energies = model.computeEnergy(coords, box)
+    # NOTE(JOE): This reference energy is in hartree hence no unit conversion.
     deformation_energy = energies['deformation']
 
     deformation_ref = torch.tensor([5.787663617905589e-5])
     assert torch.allclose(deformation_energy, deformation_ref)
+
+def test_total_energy_and_total_gradients():
+    torch.set_default_dtype(torch.float64)
+
+    coords = get_water_dimer_coords(requires_grad=True)
+    coords_no_grad = get_water_dimer_coords(requires_grad=False)
+    model = CMMWater(2, do_polarization=True)
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    energies = model.computeEnergy(coords, box)
+    total_energy = energies['tot'] * HARTREE2KCAL
+    total_ref = torch.tensor([-4.768231511534177])
+    assert torch.allclose(total_energy, total_ref)
+
+    def get_total_energy(coords: torch.Tensor):
+        model = CMMWater(2, do_polarization=True)
+        box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+        energies = model.computeEnergy(coords, box)
+        total_energy = energies['tot'] * HARTREE2KCAL
+        return total_energy
+
+    grads_fd = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
+    total_energy.backward()
+    grads_ad = coords.grad
+    assert torch.allclose(grads_ad, grads_fd)
+
 
 def test_electrostatic_and_pol_gradients():
     torch.set_default_dtype(torch.float64)

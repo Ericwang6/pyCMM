@@ -330,8 +330,6 @@ class CMMWater(nn.Module):
         #    torch.sum(lagrange_muls * torch.sum(induced_mPoles[:, 0][torch.tensor(self.nb_params["groups"], dtype=torch.int64)], dim=1))
         #)
 
-        print(beta_fd)
-
         # morse-bond
         ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
         ene_bonds = torch.sum(ene_bond_list)
