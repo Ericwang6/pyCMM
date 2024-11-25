@@ -168,7 +168,7 @@ def test_nonbonded_interactions():
     assert torch.allclose(disp, disp_ref)
     assert torch.allclose(xpol, xpol_ref)
 
-def test_bonded_params_with_fd_morse():
+def test_bonded_interactions_with_fd_morse():
     torch.set_default_dtype(torch.float64)
 
     coords = get_water_dimer_coords(requires_grad=False)
@@ -176,10 +176,10 @@ def test_bonded_params_with_fd_morse():
     model = CMMWater(2, do_polarization=True)
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
     energies = model.computeEnergy(coords, box)
-    print(energies)
+    deformation_energy = energies['deformation']
 
-    #ct_direct_ref = torch.tensor([-1.9459432858421248])
-    #assert torch.allclose(ct_direct, ct_direct_ref)
+    deformation_ref = torch.tensor([5.787663617905589e-5])
+    assert torch.allclose(deformation_energy, deformation_ref)
 
 def test_electrostatic_and_pol_gradients():
     torch.set_default_dtype(torch.float64)

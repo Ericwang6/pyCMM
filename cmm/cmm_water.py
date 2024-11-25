@@ -172,8 +172,8 @@ class CMMWater(nn.Module):
         pauli_charge_flux_bond_1, pauli_charge_flux_bond_2 = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_pauli'])
         flux_charges.scatter_add_(0, self.bonds[0], charge_flux_bond_1)
         flux_charges.scatter_add_(0, self.bonds[1], charge_flux_bond_2)
-        flux_charges.scatter_add_(0, self.bonds[0], pauli_charge_flux_bond_1)
-        flux_charges.scatter_add_(0, self.bonds[1], pauli_charge_flux_bond_2)
+        flux_charges_pauli.scatter_add_(0, self.bonds[0], pauli_charge_flux_bond_1)
+        flux_charges_pauli.scatter_add_(0, self.bonds[1], pauli_charge_flux_bond_2)
         self.nb_params['Kmono_pauli'] = self.nb_params['Kmono_pauli'] + flux_charges_pauli
 
         charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
@@ -330,6 +330,8 @@ class CMMWater(nn.Module):
         #    torch.sum(lagrange_muls * torch.sum(induced_mPoles[:, 0][torch.tensor(self.nb_params["groups"], dtype=torch.int64)], dim=1))
         #)
 
+        print(beta_fd)
+
         # morse-bond
         ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)
         ene_bonds = torch.sum(ene_bond_list)
@@ -391,10 +393,11 @@ class CMMWater(nn.Module):
             "xpol": ene_xpol,
             "pauli": ene_pauli,
             "disp": ene_disp,
+            "deformation": ene_bonds + ene_angles + ene_bbs + ene_bas,
             "bond": ene_bonds,
             "angle": ene_angles,
             "bond_bond": ene_bbs,
-            "bond_angle": ene_angles,
+            "bond_angle": ene_bas,
             "tot": ene_tot
         }
         return energies
