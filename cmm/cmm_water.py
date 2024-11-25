@@ -128,6 +128,7 @@ class CMMWater(nn.Module):
             "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
             "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
             "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
+            "j_pauli": torch.tensor([0.0911036]),
             "j_cf": torch.tensor([-0.024794]),
             "j_cf_bb": torch.tensor([-0.0332338]),
             "j_cf_angle": torch.tensor([0.0220891]),
@@ -145,7 +146,7 @@ class CMMWater(nn.Module):
         self.bonded_params = {}
         for key in self.bonded_params_raw:
             if key in ['k_b', 'b_eq', 'beta', 'k_ba', 'D',
-                       'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb',
+                       'j_pauli', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb',
                        'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
@@ -166,9 +167,14 @@ class CMMWater(nn.Module):
         ### bonding-dependent parameters ###
         # charges #
         flux_charges = torch.zeros_like(self.nb_params['q_shell'])
+        flux_charges_pauli = torch.zeros_like(self.nb_params['Kmono_pauli'])
         charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_cf'])
+        pauli_charge_flux_bond_1, pauli_charge_flux_bond_2 = computeChargeFluxBond(bonds, self.bonded_params['b_eq'], self.bonded_params['j_pauli'])
         flux_charges.scatter_add_(0, self.bonds[0], charge_flux_bond_1)
         flux_charges.scatter_add_(0, self.bonds[1], charge_flux_bond_2)
+        flux_charges.scatter_add_(0, self.bonds[0], pauli_charge_flux_bond_1)
+        flux_charges.scatter_add_(0, self.bonds[1], pauli_charge_flux_bond_2)
+        self.nb_params['Kmono_pauli'] = self.nb_params['Kmono_pauli'] + flux_charges_pauli
 
         charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],

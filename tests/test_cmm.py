@@ -30,12 +30,12 @@ def finite_difference(coords: torch.Tensor, f, h: float = 1e-5):
 
 def get_water_dimer_coords(requires_grad=True):
     coords = torch.tensor(np.array([
-        [ 1.5165013870,  -0.0000008497,   0.1168590962],
-        [ 0.5714469342,   0.0000007688,  -0.0477240756],
-        [ 1.9206469769,   0.0000030303,  -0.7531309382],
-        [-1.3965797657,   0.0000005579,  -0.1058991347],
-        [-1.7503737705,  -0.7612400781,   0.3583839434],
-        [-1.7503754020,   0.7612382608,   0.3583875091]
+        [0.0031771858, 1.4710501499, -0.0034222052],
+        [0.0981342864, 0.5090994249, -0.0041139499],
+        [0.8976520298, 1.8147098331, 0.0031728568],
+        [-0.0036002768, -1.3547622039, 0.0027150961],
+        [-0.492886242, -1.6733692175, 0.7647713563],
+        [-0.4948459831, -1.6611969865, -0.763123154],
     ]) / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
     return coords
 
@@ -155,18 +155,31 @@ def test_nonbonded_interactions():
     disp = energies['disp'] * HARTREE2KCAL
     xpol = energies['xpol'] * HARTREE2KCAL
 
-    ct_direct_ref = torch.tensor([-1.9459432858421248])
-    perm_elec_ref = torch.tensor([-8.007405812392223])
-    pol_ct_ref = torch.tensor([-0.48303201918502914])
-    pauli_ref = torch.tensor([7.560565112146769])
-    disp_ref = torch.tensor([-1.7327276064873118])
-    xpol_ref = torch.tensor([-0.2740179677225849])
+    ct_direct_ref = torch.tensor([-2.777994825946152])
+    perm_elec_ref = torch.tensor([-9.705778546689396])
+    pol_ct_ref = torch.tensor([-0.56935496823574])
+    pauli_ref = torch.tensor([10.70659662118688])
+    disp_ref = torch.tensor([-2.054389376337415])
+    xpol_ref = torch.tensor([-0.4036285834810728])
     assert torch.allclose(ct_direct, ct_direct_ref)
     assert torch.allclose(perm_elec, perm_elec_ref)
     assert torch.allclose(pol_ct, pol_ct_ref)
     assert torch.allclose(pauli, pauli_ref)
     assert torch.allclose(disp, disp_ref)
     assert torch.allclose(xpol, xpol_ref)
+
+def test_bonded_params_with_fd_morse():
+    torch.set_default_dtype(torch.float64)
+
+    coords = get_water_dimer_coords(requires_grad=False)
+
+    model = CMMWater(2, do_polarization=True)
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    energies = model.computeEnergy(coords, box)
+    print(energies)
+
+    #ct_direct_ref = torch.tensor([-1.9459432858421248])
+    #assert torch.allclose(ct_direct, ct_direct_ref)
 
 def test_electrostatic_and_pol_gradients():
     torch.set_default_dtype(torch.float64)
