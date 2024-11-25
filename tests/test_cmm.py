@@ -12,6 +12,7 @@ from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, r
 from cmm.short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from cmm.dispersion import computeDispersion
 from cmm.electrostatics import computePermElecAndPolarizationEnergy
+from cmm.cmm_water import CMMWater
 
 def finite_difference(coords: torch.Tensor, f, h: float = 1e-5):
     grads_fd = torch.zeros(coords.shape)
@@ -79,7 +80,7 @@ def water_data(coords: torch.Tensor):
 
     # Pauli repulsion
     b_pauli = torch.tensor([2.1975, 1.96474])
-    Kmono_pauli = torch.tensor([6.50923, 0.527804]) / qShell
+    Kmono_pauli = torch.tensor([6.50923, 0.527804])
     Kdipo_pauli = torch.tensor([-5.61925, -0.515584])
     Kquad_pauli = torch.tensor([-1.56567, -0.440164])
     param_pauli = (b_pauli[paramIndices], Kmono_pauli[paramIndices], Kdipo_pauli[paramIndices], Kquad_pauli[paramIndices])
@@ -101,18 +102,18 @@ def water_data(coords: torch.Tensor):
     
     # Exchange-polarization
     b_xpol = torch.tensor([2.73582, 2.04028])
-    Kmono_xpol = torch.tensor([1.26592, 0.200089]) / qShell
+    Kmono_xpol = torch.tensor([1.26592, 0.200089])
     Kdipo_xpol = torch.zeros((2,))
     Kquad_xpol = torch.zeros((2,))
     param_xpol = (b_xpol[paramIndices], Kmono_xpol[paramIndices], Kdipo_xpol[paramIndices], Kquad_xpol[paramIndices])
 
     # Charge Transfer
     b_ct = torch.tensor([1.89485, 2.36763])
-    Kmono_ct_acc = torch.tensor([-0.67857, 1.36735]) / qShell
+    Kmono_ct_acc = torch.tensor([-0.67857, 1.36735])
     Kdipo_ct_acc = torch.tensor([0.0, 0.0])
     Kquad_ct_acc = torch.tensor([0.0, 0.0])
 
-    Kmono_ct_don = torch.tensor([0.757752, 0.00888982]) / qShell
+    Kmono_ct_don = torch.tensor([0.757752, 0.00888982])
     Kdipo_ct_don = torch.tensor([-0.512036, -0.0511668])
     Kquad_ct_don = torch.tensor([-0.208186, 0.0568152])
 
@@ -142,99 +143,29 @@ def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)
 
     coords = get_water_dimer_coords(requires_grad=False)
-    pairs, param_elec, param_pauli, param_disp, param_pol, param_xpol, param_ct = water_data(coords)
 
-    drVec = coords[pairs[1]] - coords[pairs[0]]
-    # Perm elec and polarization
-    Z, mPoles, b = param_elec
-    alpha, eta, groupCharges = param_pol
-    # charge-transfer
-    b_ct, Kmono_ct_acc, Kdipo_ct_acc, Kquad_ct_acc, Kmono_ct_don, Kdipo_ct_don, Kquad_ct_don, eps_ct = param_ct
-    mPoles_ct_acc = scaleMultipoles(mPoles, Kmono_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
-    mPoles_ct_don = scaleMultipoles(mPoles, Kmono_ct_don, Kdipo_ct_don, Kquad_ct_don)
+    model = CMMWater(2, do_polarization=True)
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    energies = model.computeEnergy(coords, box)
 
-    ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
-        drVec,
-        mPoles_ct_acc[pairs[0]], mPoles_ct_acc[pairs[1]],
-        mPoles_ct_don[pairs[0]], mPoles_ct_don[pairs[1]],
-        b_ct[pairs[0]], b_ct[pairs[1]],
-        eps_ct
-    )
-    ct_direct = torch.sum(ct_direct_pairwise) / 2 * HARTREE2KCAL
-    dq = scatter(dq_pairwise, pairs[1])
-    dq_groups = scatter(dq, torch.tensor([0, 0, 0, 1, 1, 1]))
+    ct_direct = energies['ct_direct'] * HARTREE2KCAL
+    perm_elec = energies['perm_elec'] * HARTREE2KCAL
+    pol_ct = energies['pol'] * HARTREE2KCAL
+    pauli = energies['pauli'] * HARTREE2KCAL
+    disp = energies['disp'] * HARTREE2KCAL
+    xpol = energies['xpol'] * HARTREE2KCAL
 
     ct_direct_ref = torch.tensor([-1.9459432858421248])
-    assert torch.allclose(ct_direct, ct_direct_ref)
-
-    perm_elec, pol = computePermElecAndPolarizationEnergy(
-        coords,
-        [[0, 1, 2], [3, 4, 5]],
-        mPoles,
-        Z,
-        b,
-        True,
-        alpha,
-        eta,
-        groupCharges,
-    )
-
-    _, pol_ct = computePermElecAndPolarizationEnergy(
-        coords,
-        [[0, 1, 2], [3, 4, 5]],
-        mPoles,
-        Z,
-        b,
-        True,
-        alpha,
-        eta,
-        groupCharges + dq_groups,
-    )
-    pol *= HARTREE2KCAL
-    perm_elec *= HARTREE2KCAL
-    pol_ct *= HARTREE2KCAL
-
-    perm_elec_ref = torch.tensor([-8.001893234755963])
-    assert torch.allclose(perm_elec, perm_elec_ref, atol=0.001)
-    pol_ref = torch.tensor([-0.7232598969865177])
-    assert torch.allclose(pol, pol_ref)
-    pol_ct_ref = torch.tensor([-0.4822699112017445])
-    assert torch.allclose(pol_ct, pol_ct_ref, atol=0.001)
-
-    # Pauli repulsion
-    b_pauli, Kmono_pauli, Kdipo_pauli, Kquad_pauli = param_pauli
-    mPoles_pauli = scaleMultipoles(mPoles, Kmono_pauli, Kdipo_pauli, Kquad_pauli)
-    pauli_pairwise = computeShortRangeEnergy(
-        drVec,
-        mPoles_pauli[pairs[0]], mPoles_pauli[pairs[1]],
-        b_pauli[pairs[0]], b_pauli[pairs[1]]
-    )
-    pauli = torch.sum(pauli_pairwise) / 2 * HARTREE2KCAL
+    perm_elec_ref = torch.tensor([-8.007405812392223])
+    pol_ct_ref = torch.tensor([-0.48303201918502914])
     pauli_ref = torch.tensor([7.560565112146769])
-    assert torch.allclose(pauli, pauli_ref)
-
-    # dispersion
-    C6_disp, b_disp = param_disp
-    disp_pairwise = computeDispersion(
-        drVec, 
-        C6_disp[pairs[0]], C6_disp[pairs[1]],
-        b_disp[pairs[0]], b_disp[pairs[1]]
-    )
-    disp = torch.sum(disp_pairwise) / 2 * HARTREE2KCAL
     disp_ref = torch.tensor([-1.7327276064873118])
-    assert torch.allclose(disp, disp_ref)
-
-    # exchange-polarization
-    b_xpol, Kmono_xpol, Kdipo_xpol, Kquad_xpol = param_xpol
-    mPoles_xpol = scaleMultipoles(mPoles, Kmono_xpol, Kdipo_xpol, Kquad_xpol)
-    xpol_pairwise = computeShortRangeEnergy(
-        drVec,
-        mPoles_xpol[pairs[0]], mPoles_xpol[pairs[1]],
-        b_xpol[pairs[0]], b_xpol[pairs[1]],
-        False
-    )
-    xpol = torch.sum(xpol_pairwise) / 2 * HARTREE2KCAL
     xpol_ref = torch.tensor([-0.2740179677225849])
+    assert torch.allclose(ct_direct, ct_direct_ref)
+    assert torch.allclose(perm_elec, perm_elec_ref)
+    assert torch.allclose(pol_ct, pol_ct_ref)
+    assert torch.allclose(pauli, pauli_ref)
+    assert torch.allclose(disp, disp_ref)
     assert torch.allclose(xpol, xpol_ref)
 
 def test_electrostatic_and_pol_gradients():

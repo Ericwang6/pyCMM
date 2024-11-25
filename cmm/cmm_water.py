@@ -12,7 +12,6 @@ from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwi
 from .dispersion import computeDispersion
 from .electrostatics import getPairsFromGroups, computePermanentElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles, computeDampedMultipolarInteractionEnergies, computeInducedElectricPotentialAndFields
 
-
 class CMMWater(nn.Module):
     def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True):
         Z = torch.tensor([3.61565, 0.93619])
