@@ -68,6 +68,10 @@ class CMMWater(nn.Module):
         }
         
         # expand parameters to atoms/pairs
+        # TODO(NL): This needs to only be over neighbors.
+        # Should the neighbor list have some kind of API for adding
+        # parameter arrays or should I create this parameter object and
+        # have it handle all of that?
         paramIndices = torch.tensor([0, 1, 1] * num_waters, dtype=torch.long)
         self.nb_params = {}
         for key in self.nb_params_raw:
@@ -400,7 +404,6 @@ class CMMWater(nn.Module):
         }
         return energies
 
-        
     def computeNeighborList(self, coords: torch.Tensor, box: torch.Tensor, boxInv: torch.Tensor):
         drVecs = applyPBC(coords[self.all_pairs[1]] - coords[self.all_pairs[0]], box, boxInv)
         mask = torch.norm(drVecs, dim=1) < self.rcut

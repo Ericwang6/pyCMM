@@ -86,6 +86,7 @@ def computeFieldDependentMorseParams(
     dR_bonds = coords[bond_indices[1]] - coords[bond_indices[0]]
     dR = torch.norm(dR_bonds, dim=1)
     dQ_ct_bonds = dQ_ct[bond_indices[1]]
+    
     # We are making an assumption here which will have to be enforced by the topology
     # builder. The field is considered only for the second atom of the bond vector.
     # For water, for instance, this means we consider the field at the H atom.
