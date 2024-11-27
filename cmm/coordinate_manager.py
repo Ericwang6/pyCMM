@@ -29,8 +29,6 @@ class CoordinateManager:
         self.box_lengths = torch.diag(box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
 
-        #self.distance_vectors = self._compute_distance_vectors()
-
     def get_intermolecular_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs
