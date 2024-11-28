@@ -12,9 +12,6 @@ from typing import Tuple
 class Topology:
     def __init__(self, bonds: NDArray[np.int64]):
         self.bond_indices = torch.tensor(bonds, dtype=torch.long)
-        self.angles = []
-        self.dihedrals = []
-        self.improper_dihedrals = []
         self._find_angles_dihedrals_and_coupling_indices()
 
     def _find_angles_dihedrals_and_coupling_indices(self):
@@ -35,8 +32,6 @@ class Topology:
         the couplings could be a user input. Probably doesn't make a difference
         if we just always do it but that's an empirical question.
         """
-        #where_all = lambda x: torch.where(self.bond_indices[0] == x)
-        #maybe = torch.vmap(where_all)(torch.arange(self.bond_indices[0].size(0)))
         
         # @SPEED: I don't know how to do this with magic pytorch functions
         # so this is probably really slow.
@@ -57,5 +52,16 @@ class Topology:
             self.bond_indices[0][self.bond_bond_indices[1]],
             self.bond_indices[1][self.bond_bond_indices[1]])
         )
-        
-        # TODO: Get the bond-angle indices.
+
+        # Every angle is coupled to two bonds by definition.
+        # So, to get the bond_angle_indices, we simply take
+        # every angle and we interleave the bond-bond indices
+        # as those describe the pairs of bonds which form an
+        # angle.
+        self.bond_angle_indices = torch.stack((torch.stack((
+                self.bond_bond_indices[0], self.bond_bond_indices[1]
+            ), dim=1).flatten(),
+            torch.stack((
+                torch.arange(self.angle_indices[1].size(0)), torch.arange(self.angle_indices[1].size(0))
+            ), dim=1).flatten())
+        )
