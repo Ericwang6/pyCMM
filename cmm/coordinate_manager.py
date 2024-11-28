@@ -44,5 +44,3 @@ class CoordinateManager:
         distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
         dists = torch.linalg.vector_norm(distance_vecs, dim=1)
         return pairs, dists, distance_vecs
-
-        #return self.neighbor_list._get_distances_and_vectors()
