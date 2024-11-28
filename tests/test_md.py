@@ -11,10 +11,10 @@ from cmm.topology import Topology
 
 def get_water_box_coords(requires_grad=True):
     labels, atom_types, coords, bonds = read_xyz_tinker(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"))
-    permutation = np.argsort(bonds[0])
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
-    coords = coords[[permutation]]
+    coords = coords[permutation]
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
     return coords, atom_types, bonds
 
@@ -33,7 +33,16 @@ def test_md():
     # cm.get_angles(i)
     # etc.
 
-    #num_waters = coords.size(0) // 3
-    #model = CMMWater(num_waters, do_polarization=True)
-    #energies = model.computeEnergy(coords, box)
+    def get_repeated_indices(tensor):
+        unique_values, inverse_indices = torch.unique(tensor, return_inverse=True)
+        counts = torch.bincount(inverse_indices)
+        repeated_indices = (counts > 1).nonzero().squeeze()
+        return repeated_indices
+
+    tensor = torch.tensor([1, 2, 2, 3, 1, 4, 2])
+    repeated_indices = get_repeated_indices(tensor)
+
+    num_waters = coords.size(0) // 3
+    model = CMMWater(num_waters, do_polarization=True)
+    energies = model.computeEnergy(coords, box)
     

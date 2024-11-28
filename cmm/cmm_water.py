@@ -168,6 +168,8 @@ class CMMWater(nn.Module):
         bonds = torch.norm(bondVecs, dim=1)
         angles = computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
 
+        print(self.angles)
+
         ### bonding-dependent parameters ###
         # charges #
         flux_charges = torch.zeros_like(self.nb_params['q_shell'])
