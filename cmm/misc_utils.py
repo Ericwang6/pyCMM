@@ -54,7 +54,7 @@ def read_xyz_tinker(infile: str):
             atom_numbers.append(atom_number)
             atom_labels.append(str(split_line[1]))
             coords.append(np.array([split_line[2], split_line[3], split_line[4]], dtype=np.float64))
-            atom_types.append(split_line[5])
+            atom_types.append(int(split_line[5]))
             if len(split_line) > 6: # The rest of the line is the bonding info
                 bonds = split_line[6:]
                 for bond_end in bonds:
@@ -74,7 +74,7 @@ def read_xyz_tinker(infile: str):
         raise ValueError("Bond connectivity in tinker xyz file is not symmetric. Please ensure input is correct.")
     
     # Subtract 1 from bond arrays because tinker xyz specifies the first atom starting from 1.
-    return atom_labels, atom_types, np.vstack(coords), np.array([np.array(bonds_start_i_less_than_j) - 1, np.array(bonds_end_i_less_than_j) - 1])
+    return atom_labels, np.array(atom_types, dtype=np.int64), np.vstack(coords), np.array([np.array(bonds_start_i_less_than_j) - 1, np.array(bonds_end_i_less_than_j) - 1])
 
 
 

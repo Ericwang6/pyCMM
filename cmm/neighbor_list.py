@@ -112,7 +112,6 @@ class CellList(NeighborList):
         self.num_updates_since_last_build = 0
         self.last_positions = positions.detach().clone()
         
-
         # Compute cell grid dimensions
         if cutoff > min(box_lengths):
             assert False, "You requested a cutoff that is larger than the smallest box direction. We can't handle this currently. Set the cutoff to the smallest box direction or smaller."
@@ -295,7 +294,7 @@ class CellList(NeighborList):
         
         Args:
             atom_idx (int): Index of atom to get neighbors for
-            
+        
         Returns:
             torch.Tensor: Array of neighbor indices (padded with -1)
         """

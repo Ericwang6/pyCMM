@@ -68,10 +68,6 @@ class CMMWater(nn.Module):
         }
         
         # expand parameters to atoms/pairs
-        # TODO(NL): This needs to only be over neighbors.
-        # Should the neighbor list have some kind of API for adding
-        # parameter arrays or should I create this parameter object and
-        # have it handle all of that?
         paramIndices = torch.tensor([0, 1, 1] * num_waters, dtype=torch.long)
         self.nb_params = {}
         for key in self.nb_params_raw:
@@ -167,8 +163,6 @@ class CMMWater(nn.Module):
         bondVecs = applyPBC(coords[self.bonds[1]] - coords[self.bonds[0]], box, boxInv)
         bonds = torch.norm(bondVecs, dim=1)
         angles = computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
-
-        print(self.bas)
 
         ### bonding-dependent parameters ###
         # charges #

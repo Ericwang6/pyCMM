@@ -42,6 +42,10 @@ class CMMWater(nn.Module):
             [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
         ])
 
+        # NOTE(JOE): These should end up being in the force field itself.
+        # The force field has raw parameters and given a topology and
+        # list of atom types and positions can build the atomic and
+        # pairwise parameters.
         self.nb_params_raw = {
             # elec
             "Z": Z,
@@ -114,7 +118,7 @@ class CMMWater(nn.Module):
             "axistypes": torch.tensor(axistypes, dtype=torch.long),
             "groups": [[i, i + 1, i + 2] for i in range(0, num_waters * 3, 3)],
             "groups_scatter": torch.concat([torch.tensor([i, i, i], dtype=torch.long) for i in range(num_waters)]),
-            "groupCharges": torch.zeros(num_waters),  
+            "groupCharges": torch.zeros(num_waters),
         })
 
         self.bonds = []
