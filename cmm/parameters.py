@@ -18,6 +18,12 @@ class Parameterizer:
         # I don't see how to avoid scalar indexing. Maybe we just need to introduce a concept of axis
         # indices. We could just have the axis types be determined by the topology itself.
         # That would help a lot with setting up the axis systems. Is there any reason not to do this?
+        # Could also store the axis indices as an Nx3 set of indices where entries hold the
+        # distance vector index needed to compute the axis system and the axis system is
+        # determined by the type. Could do similar with an Nx4 set of indices to the atoms themselves.
+        # That lets the atom types be determined by the force field.
+        # Could parse the 1-2, 1-3, and 1-4 indices. That is what actually gets passed to the
+        # topology to build stuff. Those indices are what's needed to build this.
         zatoms, xatoms, yatoms = [], [], []
         for i in torch.arange(atom_types.size(0)):
             if i % 3 == 0:
@@ -31,9 +37,12 @@ class Parameterizer:
                 xatoms.append(i - 1)
             yatoms.append(-1)
 
-        self._parameters["zatoms"] = torch.tensor(zatoms, dtype=torch.long),
-        self._parameters["xatoms"] = torch.tensor(xatoms, dtype=torch.long),
-        self._parameters["yatoms"] = torch.tensor(yatoms, dtype=torch.long),
+        self._parameters["zatoms"] = torch.tensor(zatoms, dtype=torch.long)
+        self._parameters["xatoms"] = torch.tensor(xatoms, dtype=torch.long)
+        self._parameters["yatoms"] = torch.tensor(yatoms, dtype=torch.long)
+
+        # HERE: Need to actually use the indices now and compute all the stuff.
+
 
     def register_parameters(self, name: str, params: torch.Tensor):
         self._parameters[name] = params
