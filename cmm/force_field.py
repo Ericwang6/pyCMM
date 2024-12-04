@@ -1,8 +1,9 @@
-import torch
+import torch, math
 from .multipole import computeCartesianQuadrupoles
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
+from .units import *
 
 # NOTE(JOE): The design of this object is still up in the air. I think that we could
 # allow inheritance for the purpose of making it really trivial to set
@@ -43,6 +44,7 @@ class CMM(ForceField):
             [-0.330685,  0.0,       0.0,  0.869923,   0.0],
             [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
         ])
+        
         self._raw_params = {
             # elec
             "Z": Z,
@@ -80,8 +82,27 @@ class CMM(ForceField):
             "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
             "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
             "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]]),
+            "D": torch.tensor([524.265 / HARTREE2KJ]),
+            "k_b": torch.tensor([5098.15 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
+            "r_eq": torch.tensor([0.958929 / BOHR2ANG]),
+            "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
+            "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
+            "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
+            "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
+            "j_pauli": torch.tensor([0.0911036]),
+            "j_cf": torch.tensor([-0.024794]),
+            "j_cf_bb": torch.tensor([-0.0332338]),
+            "j_cf_angle": torch.tensor([0.0220891]),
+            "k_hardness_b": torch.tensor([2.32191]),
+            "k_hardness_bb": torch.tensor([0.958157]),
+            "k_hardness_angle": torch.tensor([-0.0991956]),
+            "dip_deriv_1": torch.Tensor([0.1654220912271531]),
+            "dip_deriv_2": torch.Tensor([-0.012458400000000472]),
+            "ct_slope_1": torch.Tensor([65.0]),
+            "ct_slope_2": torch.Tensor([13.7812]),
             "axistypes": torch.tensor([2, 1], dtype=torch.long)
         }
+        self._raw_params['beta'] = torch.sqrt(self._raw_params['k_b'] / 2 / self._raw_params['D'])
     
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         # TODO: Now do the evaluation of the distances, vectors, and stuff

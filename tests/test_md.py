@@ -28,8 +28,8 @@ def test_md():
     cm = CoordinateManager(coords, box, 12.0)
     topology = Topology(bonds)
     ff = CMM()
-    parameters = Parameterizer(ff._raw_params, atom_types, topology.bond_indices)
-    ff.evaluate(cm, topology, parameters)
+    parameters = Parameterizer(ff._raw_params, atom_types)
+    #ff.evaluate(cm, topology, parameters)
 
     #pairs, dists, distance_vectors = cm.get_intermolecular_distances_vectors_and_pairs()
     #print(dists)

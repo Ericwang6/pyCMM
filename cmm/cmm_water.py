@@ -146,7 +146,7 @@ class CMMWater(nn.Module):
         self.bonded_params = {}
         for key in self.bonded_params_raw:
             if key in ['k_b', 'b_eq', 'beta', 'k_ba', 'D',
-                       'j_pauli', 'j_cf', 'j_cf_bb', 'k_hardness_b', 'k_hardness_bb',
+                       'j_pauli', 'j_cf',  'k_hardness_b',
                        'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
                 self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             else:
@@ -179,7 +179,7 @@ class CMMWater(nn.Module):
         charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],
             self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
-            self.bonded_params['j_cf_bb'][self.bbs[0]], self.bonded_params['j_cf_bb'][self.bbs[1]],
+            self.bonded_params['j_cf_bb'], self.bonded_params['j_cf_bb']
         )
         flux_charges.scatter_add_(0, self.bonds.T[self.bbs[0]].T[0], charge_flux_bb_1)
         flux_charges.scatter_add_(0, self.bonds.T[self.bbs[0]].T[1], charge_flux_bb_2)
@@ -200,7 +200,7 @@ class CMMWater(nn.Module):
         hardness_change_bb_1, hardness_change_bb_2 = computeHardnessChangeBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],
             self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
-            self.bonded_params['k_hardness_bb'][self.bbs[0]], self.bonded_params['k_hardness_bb'][self.bbs[1]]
+            self.bonded_params['k_hardness_bb'], self.bonded_params['k_hardness_bb']
         )
         hardness_change_angle = computeHardnessChangeAngle(angles, self.bonded_params['theta_eq'], self.bonded_params['k_hardness_angle'])
         

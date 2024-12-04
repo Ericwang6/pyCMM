@@ -14,13 +14,13 @@ class Parameterizer:
     vectors not the atomic positions. This is likely a small optimization.
     """
 
-    def __init__(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor) -> None:
+    def __init__(self, raw_parameters: Dict, atom_types: torch.Tensor) -> None:
         self._parameters = {} # Maps a string to a torch.Tensor
-        self._get_axis_frame_indices(raw_parameters, atom_types, bond_indices)
+        self._get_axis_frame_indices(raw_parameters, atom_types)
+        self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
-        # HERE: ACTUALLY FILL OUT THE PARAMETERS DICTIONARY IN ITS ENTIRETY!!!!!
     
-    def _get_axis_frame_indices(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor):
+    def _get_axis_frame_indices(self, raw_parameters: Dict, atom_types: torch.Tensor):
         self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
         # TODO: This is only applicable to water. I am not sure exactly how to handle this in general...
         # I don't see how to avoid scalar indexing. Maybe we just need to introduce a concept of axis
@@ -48,6 +48,37 @@ class Parameterizer:
         self._parameters["zatoms"] = torch.tensor(zatoms, dtype=torch.long)
         self._parameters["xatoms"] = torch.tensor(xatoms, dtype=torch.long)
         self._parameters["yatoms"] = torch.tensor(yatoms, dtype=torch.long)
+
+    def _fill_parameter_dictionary_water(self, raw_parameters: Dict, atom_types: torch.Tensor, num_waters: int):
+        # This is a strictly temporary method while the more generic approach using
+        # bond types and so on is implemented.
+        print(atom_types)
+        for key in raw_parameters:
+            if key == 'eps':
+                self._parameters[key] = raw_parameters[key][torch.meshgrid(atom_types, atom_types, indexing='xy')]
+            elif key in ['k_b', 'r_eq', 'beta', 'k_ba', 'D',
+                       'j_pauli', 'j_cf',  'k_hardness_b',
+                       'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
+                self._parameters[key] = raw_parameters[key][torch.zeros(num_waters * 2, dtype=torch.long)]
+            elif key in ['k_bb', 'theta_eq', 'k_theta', 'j_cf_bb', 'j_cf_angle', 'k_hardness_bb', 'k_hardness_angle']:
+                self._parameters[key] = raw_parameters[key][torch.zeros(num_waters, dtype=torch.long)]
+            else:
+                self._parameters[key] = raw_parameters[key][atom_types]
+
+    def _fill_parameter_dictionary(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor):
+        # TODO: This implementation is only applicable to water right now.
+        # We need to come up with a more general way of dealing with
+        # coupling parameters specifically. I think we need to
+        # introduce a "bond type" concept which specifies which
+        # bond we are looking in terms of a uniquely defined index.
+        # Similarly, we can have an angle type, dihedral type.
+        # We can then find the bond-bond and bond-angle
+        # and bond-dihedral parameters from the combinations of these
+        # types. Exactly how this will work requires some thought.
+        
+        # The parameter arrays should constructed by indexing over the atom types
+        # bond types, and so on. 
+        pass
 
     def register_parameters(self, name: str, params: torch.Tensor):
         self._parameters[name] = params
