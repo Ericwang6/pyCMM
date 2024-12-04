@@ -11,9 +11,17 @@ def normVec(vec):
     return vec / torch.norm(vec, dim=1, keepdim=True)
 
 
-def computeLocal2GlobalRotationMatrix(pos, pos1, pos2, pos3, axisTypes, box=None, boxInv=None):
+def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos2: torch.Tensor, pos3: torch.Tensor, axisTypes: torch.Tensor, box: torch.Tensor=None, boxInv: torch.Tensor=None):
     """
-    Compute local to global rotation matrix
+    Compute local to global rotation matrix.
+    Axis types are specified as follows:
+    0 - Identity
+    1 - Z-Then-X
+    2 - Bisector
+
+    TODO: Need to explicitly deal with the axis types for ions (Identity). Currently, we
+    assume the two possible types are really Z-Then-X and Bisector. Basically, torch select
+    on the axis type.
     """
     # ZThenX
     if (box is not None) and (boxInv is not None):

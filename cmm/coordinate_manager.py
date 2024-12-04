@@ -28,19 +28,15 @@ class CoordinateManager:
         self.box = box
         self.box_lengths = torch.diag(box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
+        self.pairs = self.neighbor_list.get_pairs()
+        distance_vecs = self.coords[self.pairs[1]] - self.coords[self.pairs[0]]
+        self.distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
+        self.dists = torch.linalg.vector_norm(distance_vecs, dim=1)
 
     def get_intermolecular_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs
         needed to compute intermolecular interactions.
         """
-        # TODO: Mask off the intramolecular pairs. Probably all of this should
-        # happen in the constructor. We also need an update function of some kind.
-        # After splitting the pairs into intra and inter, check you get the same
-        # numbers when swapping in these functions for computing the pairs, distances,
-        # and so on.
-        pairs = self.neighbor_list.get_pairs()
-        distance_vecs = self.coords[pairs[1]] - self.coords[pairs[0]]
-        distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
-        dists = torch.linalg.vector_norm(distance_vecs, dim=1)
-        return pairs, dists, distance_vecs
+        # TODO: Mask off the intramolecular pairs before returning!
+        return self.pairs, self.dists, self.distance_vecs

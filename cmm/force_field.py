@@ -1,5 +1,8 @@
 import torch
 from .multipole import computeCartesianQuadrupoles
+from .coordinate_manager import CoordinateManager
+from .parameters import Parameterizer
+from .topology import Topology
 
 # NOTE(JOE): The design of this object is still up in the air. I think that we could
 # allow inheritance for the purpose of making it really trivial to set
@@ -20,8 +23,7 @@ from .multipole import computeCartesianQuadrupoles
 
 class ForceField:
     def __init__(self) -> None:
-        self._params = {} # name of param to torch tensor indexed by atom type
-        self._terms = [] # List of functions to evaluate, in order.
+        self._raw_params = {} # name of param to torch tensor indexed by atom type
 
 class CMM(ForceField):
     def __init__(self) -> None:
@@ -41,7 +43,7 @@ class CMM(ForceField):
             [-0.330685,  0.0,       0.0,  0.869923,   0.0],
             [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
         ])
-        self._params = {
+        self._raw_params = {
             # elec
             "Z": Z,
             "q_shell": qShell,
@@ -80,3 +82,35 @@ class CMM(ForceField):
             "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]]),
             "axistypes": torch.tensor([2, 1], dtype=torch.long)
         }
+    
+    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
+        # TODO: Now do the evaluation of the distances, vectors, and stuff
+        # which should internally update the neighbor list as needed.
+        # Also pull out the topological indices to be used for evaluating the FF.
+        pairs, dists, distance_vecs = cm.get_intermolecular_distances_vectors_and_pairs()
+        
+        # For now, I am just gonna re-compute the distances I need. Should rewrite
+        # so that Topology stores the absolute index into the pair list (i.e. if 
+        # every atom were included, these would be the right indices). When we
+        # build the neighbor list, these indices get shifted by the appropriate amount
+        # so that we correctly index into the bond vectors and distances computed
+        # by the CoordinateManager.
+
+        print(pairs)
+        # Below should be pauli charge flux
+        #evaluate_bond_charge_flux(...)
+
+        q_shell = params.checkout_parameters('q_shell')
+        r_eq = params.checkout_parameters('r_eq')
+        theta_eq = params.checkout_parameters('theta_eq')
+        j_cf = params.checkout_parameters('j_cf')
+        j_cf_bb = params.checkout_parameters('j_cf_bb')
+        j_cf_angle = params.checkout_parameters('j_cf_angle')
+
+        # Electrostatic charge flux #
+        #evaluate_bond_and_angle_charge_flux(
+        #    bond_dists, angles,
+        #    bond_indices, bond_bond_indices, angle_indices,
+        #    q_shell, r_eq, theta_eq,
+        #    j_cf, j_cf_bb, j_cf_angle
+        #)

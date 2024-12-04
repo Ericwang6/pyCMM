@@ -6,11 +6,19 @@ class Parameterizer:
     This class defines an interface for storing and retrieving parameters
     for a force field as well as building the parameter arrays needed
     to evaluate the force field...
+
+    TODO: In the future, this SHOULD NOT require the positions and box in order
+    to be constructed. Specifically, we end up re-computing a small number of
+    distances here which can be avoided. In order to do so, the indices for
+    the evaluation of the axis frames needs to be in terms of the distance
+    vectors not the atomic positions. This is likely a small optimization.
     """
 
     def __init__(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor) -> None:
         self._parameters = {} # Maps a string to a torch.Tensor
         self._get_axis_frame_indices(raw_parameters, atom_types, bond_indices)
+        
+        # HERE: ACTUALLY FILL OUT THE PARAMETERS DICTIONARY IN ITS ENTIRETY!!!!!
     
     def _get_axis_frame_indices(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor):
         self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
@@ -40,9 +48,6 @@ class Parameterizer:
         self._parameters["zatoms"] = torch.tensor(zatoms, dtype=torch.long)
         self._parameters["xatoms"] = torch.tensor(xatoms, dtype=torch.long)
         self._parameters["yatoms"] = torch.tensor(yatoms, dtype=torch.long)
-
-        # HERE: Need to actually use the indices now and compute all the stuff.
-
 
     def register_parameters(self, name: str, params: torch.Tensor):
         self._parameters[name] = params
