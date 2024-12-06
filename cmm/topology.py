@@ -14,8 +14,7 @@ class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
         self.natoms = natoms
         self.bonded_atoms = torch.tensor(bonds, dtype=torch.long)
-        self.find_bond_indices(nl)
-        
+        self.find_bond_and_angle_pair_indices(nl)
         #self._find_angles_dihedrals_and_coupling_indices()
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
@@ -28,13 +27,30 @@ class Topology:
         """
         half_bond_starting_with_i = self.bonded_atoms[1, (self.bonded_atoms[0] == i)]
         half_bond_matches_1 = torch.nonzero(torch.sum((half_bond_starting_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
+        bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i])
+        angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
+        
+        # Below will get the same bond pairs as above but will find them in the 
+        # reverse order. I don't think we need them ever but I'm not sure yet.
         #half_bond_ending_with_i = self.bonded_atoms[0, (self.bonded_atoms[1] == i)]
         #half_bond_matches_2 = torch.nonzero(torch.sum((half_bond_ending_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
-        bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i]) #torch.concat((half_bond_matches_1, half_bond_matches_2)) + torch.sum(n_neighbors[:i])
-        angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
+        #bonded_pairs_backward_i = half_bond_matches_2 + torch.sum(n_neighbors[:i])
+        
         return bonded_pairs_i, angle_pairs_i
 
-    def find_bond_indices(self, nl: NeighborList):
+    def find_bond_and_angle_pair_indices(self, nl: NeighborList):
+        """
+        The bonds array which is stored here is ASSUMED to be sorted such that
+        the first row is strictly increasing. This needs to be enforced by
+        all parsers. Additionally, the bonds passed in will always
+        represent the upper triangle of the adjacency matrix.
+        i.e. bonds[n][i] < bonds[n][j] for all n up to N_bonds.
+
+        TODO: In the future, this is where we should create self.dihedral_indices
+        and the appropriate couplings for that. Whether or not to construct
+        the couplings could be a user input. Probably doesn't make a difference
+        if we just always do it but that's an empirical question.
+        """
         self.bonded_pairs = torch.tensor([], dtype=torch.long)
         self.angle_pairs = torch.tensor([], dtype=torch.long)
         # @SPEED Avoid this for loop. I have to use it because the way the NL
@@ -50,6 +66,27 @@ class Topology:
         # will also be coupled to that angle, we can use self.angle_pairs to compute
         # the angular, bond-bond coupling, and bond-angle coupling potentials.
         self.angle_pairs = self.angle_pairs.t().contiguous()
+        
+        pairs = nl.get_pairs()
+        self._find_all_intramolecular_pairs(pairs)
+
+    def _find_all_intramolecular_pairs(self, pairs: torch.Tensor):
+        # Once we have dihedral indices, we should use that instead.
+        # Basically, this lets us easily get the indices of all pairs
+        # which can be formed from the atoms forming angles/dihedrals.
+        # e.g. we need to also capture the H-H pair in a water which
+        # is not bonded but is also not needed in the intermolecular
+        # calculations.
+        # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
+        atoms_in_angles = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)
+        c = torch.combinations(torch.arange(atoms_in_angles.size(1)), r=2)
+        x = atoms_in_angles[:,None].expand(-1,len(c),-1)
+        idx = c[None].expand(len(x), -1, -1)
+        self.intramolecular_atom_indices = x.gather(dim=2, index=idx).reshape(-1, 2)
+        mask_1 = torch.where((self.intramolecular_atom_indices == pairs.unsqueeze(1)).all(-1).any(-1))[0]
+        mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0])) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
+        self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
+        
 
     def _find_angles_dihedrals_and_coupling_indices(self):
         """
