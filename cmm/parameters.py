@@ -52,12 +52,11 @@ class Parameterizer:
     def _fill_parameter_dictionary_water(self, raw_parameters: Dict, atom_types: torch.Tensor, num_waters: int):
         # This is a strictly temporary method while the more generic approach using
         # bond types and so on is implemented.
-        print(atom_types)
         for key in raw_parameters:
             if key == 'eps':
                 self._parameters[key] = raw_parameters[key][torch.meshgrid(atom_types, atom_types, indexing='xy')]
             elif key in ['k_b', 'r_eq', 'beta', 'k_ba', 'D',
-                       'j_pauli', 'j_cf',  'k_hardness_b',
+                       'j_cf_pauli', 'j_cf',  'k_hardness_b',
                        'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
                 self._parameters[key] = raw_parameters[key][torch.zeros(num_waters * 2, dtype=torch.long)]
             elif key in ['k_bb', 'theta_eq', 'k_theta', 'j_cf_bb', 'j_cf_angle', 'k_hardness_bb', 'k_hardness_angle']:
@@ -66,7 +65,7 @@ class Parameterizer:
                 self._parameters[key] = raw_parameters[key][atom_types]
 
     def _fill_parameter_dictionary(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor):
-        # TODO: This implementation is only applicable to water right now.
+        # TODO: The above implementation is only applicable to water right now.
         # We need to come up with a more general way of dealing with
         # coupling parameters specifically. I think we need to
         # introduce a "bond type" concept which specifies which

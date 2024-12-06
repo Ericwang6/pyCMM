@@ -2,17 +2,54 @@ import torch
 import numpy as np
 from numpy.typing import NDArray
 from typing import Tuple
+from .neighbor_list import NeighborList
 
 # The purpose of the Topology object is to walk the molecular graph,
 # which is provided as user input in the form of connectivity,
 # and construct the index arrays needed for evaluating the potential.
 # Once these index arrays are constructed, they will be used to
-# build the coordinate manager and the parameters object.
+# index the pairs when computing potentials.
 
 class Topology:
-    def __init__(self, bonds: NDArray[np.int64]):
-        self.bond_indices = torch.tensor(bonds, dtype=torch.long)
-        self._find_angles_dihedrals_and_coupling_indices()
+    def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
+        self.natoms = natoms
+        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long)
+        self.find_bond_indices(nl)
+        
+        #self._find_angles_dihedrals_and_coupling_indices()
+
+    def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
+        """
+        Finds all bonds beginning with atom i and writes the resulting index tensor as indices into
+        the pairs list. We also find all unique angles formed by bonds around center i.
+        We need to enforce some kind of sorting on the bonded_atoms which are passed in so that
+        we only have to store the unique bond_indices (i<j). Currently nothing actually
+        enforces that condition I am pretty sure.
+        """
+        half_bond_starting_with_i = self.bonded_atoms[1, (self.bonded_atoms[0] == i)]
+        half_bond_matches_1 = torch.nonzero(torch.sum((half_bond_starting_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
+        #half_bond_ending_with_i = self.bonded_atoms[0, (self.bonded_atoms[1] == i)]
+        #half_bond_matches_2 = torch.nonzero(torch.sum((half_bond_ending_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
+        bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i]) #torch.concat((half_bond_matches_1, half_bond_matches_2)) + torch.sum(n_neighbors[:i])
+        angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
+        return bonded_pairs_i, angle_pairs_i
+
+    def find_bond_indices(self, nl: NeighborList):
+        self.bonded_pairs = torch.tensor([], dtype=torch.long)
+        self.angle_pairs = torch.tensor([], dtype=torch.long)
+        # @SPEED Avoid this for loop. I have to use it because the way the NL
+        # works, we cannot use vmap. Need to figure out how to fix that.
+        for i in torch.arange(self.natoms):
+            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i]), nl.get_neighbors(i), nl.get_n_neighbors()) 
+            self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
+            self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
+        
+        # Below specifies which pairs form an angle. This is the same as coupled pairs of bonds.
+        # Note that each row of below also pulls out the pairs which are coupled to each angle.
+        # Because each pair of bonds automatically forms an angle and each pair in an angle
+        # will also be coupled to that angle, we can use self.angle_pairs to compute
+        # the angular, bond-bond coupling, and bond-angle coupling potentials.
+        self.angle_pairs = self.angle_pairs.t().contiguous()
 
     def _find_angles_dihedrals_and_coupling_indices(self):
         """

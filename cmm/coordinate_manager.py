@@ -1,6 +1,7 @@
 from .neighbor_list import *
 import torch
 from typing import Dict, Tuple
+from .topology import Topology
 
 # One purpose of having a CoordinateMananager as a concept is
 # to make it easy to ensure that if we sort coordinates to
@@ -28,15 +29,17 @@ class CoordinateManager:
         self.box = box
         self.box_lengths = torch.diag(box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
+
+    def get_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Get all distances, distance vectors, and indices of atom pairs.
+        """
+        # @SPEED: It's unclear if I should deal with pairs in this manner or as its
+        # transpose. I suppose it probably doens't matter since I end up using both
+        # but if I could avoid that, then that would be ideal. I guess I could
+        # transpose the coordinate to solve this problem?
         self.pairs = self.neighbor_list.get_pairs()
-        distance_vecs = self.coords[self.pairs[1]] - self.coords[self.pairs[0]]
+        distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
         self.distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
         self.dists = torch.linalg.vector_norm(distance_vecs, dim=1)
-
-    def get_intermolecular_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Get all distances, distance vectors, and indices of atom pairs
-        needed to compute intermolecular interactions.
-        """
-        # TODO: Mask off the intramolecular pairs before returning!
         return self.pairs, self.dists, self.distance_vecs

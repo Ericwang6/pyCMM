@@ -95,7 +95,7 @@ class NSquaredList(NeighborList):
 
 
 class CellList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=2048):
+    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=512):
         """
         Initialize cell list structure.
         
@@ -181,7 +181,7 @@ class CellList(NeighborList):
             dr = dr - torch.round(dr / self.box_lengths) * self.box_lengths
             dist2 = torch.sum(dr * dr, dim=1)
             
-            # Select neighbors within cutoff ignoring atoms on top of this atom (likely the atom itself).
+            # Select neighbors within cutoff ignoring the atom itself.
             mask = (dist2 < self.cutoff * self.cutoff) & (dist2 > 0)
             valid_neighbors = neighbors[mask]
 
@@ -286,7 +286,7 @@ class CellList(NeighborList):
         return
 
     def get_pairs(self) -> torch.Tensor:
-        return self.pairs[:, :self.n_pairs]
+        return self.pairs[:, :self.n_pairs].t().contiguous()
 
     def get_neighbors(self, atom_idx: int):
         """
@@ -299,6 +299,9 @@ class CellList(NeighborList):
             torch.Tensor: Array of neighbor indices (padded with -1)
         """
         return self.neighbor_list[atom_idx, :self.n_neighbors[atom_idx]]
+    
+    def get_n_neighbors(self):
+        return self.n_neighbors
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)

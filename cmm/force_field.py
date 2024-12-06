@@ -3,6 +3,7 @@ from .multipole import computeCartesianQuadrupoles
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
+from .terms import *
 from .units import *
 
 # NOTE(JOE): The design of this object is still up in the air. I think that we could
@@ -89,7 +90,7 @@ class CMM(ForceField):
             "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
             "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
             "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
-            "j_pauli": torch.tensor([0.0911036]),
+            "j_cf_pauli": torch.tensor([0.0911036]),
             "j_cf": torch.tensor([-0.024794]),
             "j_cf_bb": torch.tensor([-0.0332338]),
             "j_cf_angle": torch.tensor([0.0220891]),
@@ -108,8 +109,9 @@ class CMM(ForceField):
         # TODO: Now do the evaluation of the distances, vectors, and stuff
         # which should internally update the neighbor list as needed.
         # Also pull out the topological indices to be used for evaluating the FF.
-        pairs, dists, distance_vecs = cm.get_intermolecular_distances_vectors_and_pairs()
+        pairs, dists, distance_vecs = cm.get_intermolecular_distances_vectors_and_pairs(topology)
         
+
         # For now, I am just gonna re-compute the distances I need. Should rewrite
         # so that Topology stores the absolute index into the pair list (i.e. if 
         # every atom were included, these would be the right indices). When we
@@ -117,16 +119,17 @@ class CMM(ForceField):
         # so that we correctly index into the bond vectors and distances computed
         # by the CoordinateManager.
 
-        print(pairs)
-        # Below should be pauli charge flux
-        #evaluate_bond_charge_flux(...)
+        #q_shell = params.checkout_parameters('q_shell')
+        #q_pauli = params.checkout_parameters('q_pauli')
+        #r_eq = params.checkout_parameters('r_eq')
+        #theta_eq = params.checkout_parameters('theta_eq')
+        #j_cf = params.checkout_parameters('j_cf')
+        #j_cf_bb = params.checkout_parameters('j_cf_bb')
+        #j_cf_angle = params.checkout_parameters('j_cf_angle')
+        #j_cf_pauli = params.checkout_parameters('j_cf_pauli')
 
-        q_shell = params.checkout_parameters('q_shell')
-        r_eq = params.checkout_parameters('r_eq')
-        theta_eq = params.checkout_parameters('theta_eq')
-        j_cf = params.checkout_parameters('j_cf')
-        j_cf_bb = params.checkout_parameters('j_cf_bb')
-        j_cf_angle = params.checkout_parameters('j_cf_angle')
+        # Below should be pauli charge flux
+        #flux_charges_pauli = evaluate_bond_charge_flux(bond_dists, topology.bond_indices, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
         #evaluate_bond_and_angle_charge_flux(

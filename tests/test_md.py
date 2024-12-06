@@ -23,12 +23,15 @@ def get_water_box_coords(requires_grad=True):
 
 def test_md():
     torch.set_default_dtype(torch.float64)
+
     coords, atom_types, bonds = get_water_box_coords(requires_grad=True)
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
     cm = CoordinateManager(coords, box, 12.0)
-    topology = Topology(bonds)
-    ff = CMM()
-    parameters = Parameterizer(ff._raw_params, atom_types)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    print(dists[topology.bonded_pairs])
+    #ff = CMM()
+    #parameters = Parameterizer(ff._raw_params, atom_types)
     #ff.evaluate(cm, topology, parameters)
 
     #pairs, dists, distance_vectors = cm.get_intermolecular_distances_vectors_and_pairs()
