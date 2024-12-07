@@ -78,9 +78,9 @@ class Topology:
         # is not bonded but is also not needed in the intermolecular
         # calculations.
         # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
-        atoms_in_angles = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)
-        c = torch.combinations(torch.arange(atoms_in_angles.size(1)), r=2)
-        x = atoms_in_angles[:,None].expand(-1,len(c),-1)
+        self.angle_atoms = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)
+        c = torch.combinations(torch.arange(self.angle_atoms.size(1)), r=2)
+        x = self.angle_atoms[:,None].expand(-1, c.size(0), -1)
         idx = c[None].expand(len(x), -1, -1)
         self.intramolecular_atom_indices = x.gather(dim=2, index=idx).reshape(-1, 2)
         mask_1 = torch.where((self.intramolecular_atom_indices == pairs.unsqueeze(1)).all(-1).any(-1))[0]
@@ -116,7 +116,6 @@ class Topology:
             if bonds_beginning_at_i.size(0) > 1:
                 self.bond_bond_indices = torch.cat((self.bond_bond_indices, bonds_beginning_at_i.unsqueeze(0)))
         self.bond_bond_indices = self.bond_bond_indices.T
-        #print(self.bond_bond_indices)
 
         # TODO: I am not completely sure if this correct. We will have to test for other molecules.
         # For instance, when there are centers with three or four bonds, this might not work?

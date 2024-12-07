@@ -16,8 +16,7 @@ def get_water_box_coords(requires_grad=True):
     permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
-    coords = coords[permutation]
-    atom_types = torch.tensor(atom_types[permutation], dtype=torch.long) - 1
+    atom_types = torch.tensor(atom_types, dtype=torch.long) - 1
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
     return coords, atom_types, bonds
 
@@ -29,10 +28,11 @@ def test_md():
     cm = CoordinateManager(coords, box, 12.0)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    #print(pairs[topology.angle_pairs])
-    #ff = CMM()
+    ff = CMM()
     #parameters = Parameterizer(ff._raw_params, atom_types)
     #ff.evaluate(cm, topology, parameters)
+    
+    #print(pairs[topology.angle_pairs])
 
     #pairs, dists, distance_vectors = cm.get_intermolecular_distances_vectors_and_pairs()
     #print(dists)

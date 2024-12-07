@@ -114,7 +114,6 @@ class CMMWater(nn.Module):
             self.bonds.append([i, i+1])
             self.bonds.append([i, i+2])
         self.bonds = torch.tensor(self.bonds, dtype=torch.long).T
-
         self.angles = []
         for i in range(0, num_waters * 3, 3):
             self.angles.append([i+1, i, i+2])
@@ -193,6 +192,7 @@ class CMMWater(nn.Module):
         flux_charges.scatter_add_(0, self.angles[1], charge_flux_angle_list_j)
         flux_charges.scatter_add_(0, self.angles[2], charge_flux_angle_list_k)
         self.nb_params['q_shell'] = self.nb_params['q_shell'] + flux_charges
+        print(self.nb_params['q_shell'])
 
         # atomic hardness #
         hardness_product = torch.ones_like(self.nb_params['eta'])

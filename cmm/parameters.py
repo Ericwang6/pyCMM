@@ -19,7 +19,6 @@ class Parameterizer:
         self._get_axis_frame_indices(raw_parameters, atom_types)
         self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
-    
     def _get_axis_frame_indices(self, raw_parameters: Dict, atom_types: torch.Tensor):
         self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
         # TODO: This is only applicable to water. I am not sure exactly how to handle this in general...
@@ -76,7 +75,7 @@ class Parameterizer:
         # types. Exactly how this will work requires some thought.
         
         # The parameter arrays should constructed by indexing over the atom types
-        # bond types, and so on. 
+        # bond types, and so on.
         pass
 
     def register_parameters(self, name: str, params: torch.Tensor):
