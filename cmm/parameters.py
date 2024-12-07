@@ -15,13 +15,14 @@ class Parameterizer:
 
     def __init__(self, atom_type_names: List[str], raw_atomic_params: Dict[str, torch.Tensor]) -> None:
         self._parameters = {} # Maps a string to a torch.Tensor stored on device.
+        self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
 
         # Used for determining atom types. Initial build is on CPU currently.
         self._atom_type_names = atom_type_names
         self._unique_atom_type_names = list(set(atom_type_names))
 
         self._define_atom_and_pair_types()
-        self._build_atomic_parameter_arrays(raw_atomic_params)
+        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params)
         #self._get_axis_frame_indices(raw_parameters, atom_types)
         #self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
@@ -37,12 +38,21 @@ class Parameterizer:
         self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
     
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
-        for key in raw_atomic_params.keys():
-            self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
-            
+            #self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
+        # Get the keys from one of the tyep names. We should really enforce
+        # that every parameter dict has the same parameters in it.
+        for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
+            if param_key != 'axistypes': # This requires special care?? Or could just have global int for this.
+                self._atomic_param_arrays[param_key] = torch.zeros(len(self._unique_atom_type_names), dtype=raw_atomic_params[self._unique_atom_type_names[0]][param_key].dtype)
+        # HERE: Now actually fill in the values. Also, consider defining absolute index for the axistypes.
+        # Just put the mapping in the FF base class and then everyone can just pull from there easily.
+        print(self._atomic_param_arrays)
+
+
     def _build_atomic_parameter_arrays(self):
-        for key in raw_atomic_params.keys():
-            self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
+        pass
+        #for key in raw_atomic_params.keys():
+        #    self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
 
 
     def _get_axis_frame_indices(self, atom_types: torch.Tensor):

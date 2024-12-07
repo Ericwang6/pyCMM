@@ -33,7 +33,7 @@ def test_md():
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
-    parameters = Parameterizer(atom_type_names, ff._raw_atomic_params)
+    parameters = Parameterizer(atom_type_names, ff.atomic_params)
     
     #ff.evaluate(cm, topology, parameters)
     
