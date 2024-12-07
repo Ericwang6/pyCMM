@@ -1,26 +1,52 @@
 import torch
-from typing import Dict
+from typing import Dict, List
 
 class Parameterizer:
     """
     This class defines an interface for storing and retrieving parameters
     for a force field as well as building the parameter arrays needed
-    to evaluate the force field...
-
-    TODO: In the future, this SHOULD NOT require the positions and box in order
-    to be constructed. Specifically, we end up re-computing a small number of
-    distances here which can be avoided. In order to do so, the indices for
-    the evaluation of the axis frames needs to be in terms of the distance
-    vectors not the atomic positions. This is likely a small optimization.
+    to evaluate the force field. The parameterizer will look at the actual
+    atom type names being used in the calculation and convert these into
+    atom types which are used to index the parameter arrays provided by
+    the force field. In this way, the parameterizer builds the appropriate
+    size tensors for the potential evaluation and fills them with the right
+    parameters.
     """
 
-    def __init__(self, raw_parameters: Dict, atom_types: torch.Tensor) -> None:
-        self._parameters = {} # Maps a string to a torch.Tensor
-        self._get_axis_frame_indices(raw_parameters, atom_types)
-        self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
+    def __init__(self, atom_type_names: List[str], raw_atomic_params: Dict[str, torch.Tensor]) -> None:
+        self._parameters = {} # Maps a string to a torch.Tensor stored on device.
+
+        # Used for determining atom types. Initial build is on CPU currently.
+        self._atom_type_names = atom_type_names
+        self._unique_atom_type_names = list(set(atom_type_names))
+
+        self._define_atom_and_pair_types()
+        self._build_atomic_parameter_arrays(raw_atomic_params)
+        #self._get_axis_frame_indices(raw_parameters, atom_types)
+        #self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
-    def _get_axis_frame_indices(self, raw_parameters: Dict, atom_types: torch.Tensor):
-        self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
+    def _define_atom_and_pair_types(self):
+        # NOTE(JOE): Currently there is some stuff happening here with strings
+        # so I am using regular python. Need to figure out how to use strings
+        # with pytorch if it is even possible.
+        self._name_to_atom_type = {}
+        for i in range(len(self._unique_atom_type_names)):
+            self._name_to_atom_type[self._unique_atom_type_names[i]] = i
+        self._pair_type_definitions = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
+        self._pair_type_names = [(self._atom_type_names[combo[0]], self._atom_type_names[combo[1]]) for combo in self._pair_type_definitions]
+        self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
+    
+    def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
+        for key in raw_atomic_params.keys():
+            self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
+            
+    def _build_atomic_parameter_arrays(self):
+        for key in raw_atomic_params.keys():
+            self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
+
+
+    def _get_axis_frame_indices(self, atom_types: torch.Tensor):
+        #self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
         # TODO: This is only applicable to water. I am not sure exactly how to handle this in general...
         # I don't see how to avoid scalar indexing. Maybe we just need to introduce a concept of axis
         # indices. We could just have the axis types be determined by the topology itself.

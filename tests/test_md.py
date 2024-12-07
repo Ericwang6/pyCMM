@@ -24,12 +24,17 @@ def test_md():
     torch.set_default_dtype(torch.float64)
 
     coords, atom_types, bonds = get_water_box_coords(requires_grad=True)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
     cm = CoordinateManager(coords, box, 12.0)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
-    #parameters = Parameterizer(ff._raw_params, atom_types)
+    parameters = Parameterizer(atom_type_names, ff._raw_atomic_params)
+    
     #ff.evaluate(cm, topology, parameters)
     
     #print(pairs[topology.angle_pairs])

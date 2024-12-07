@@ -142,7 +142,7 @@ class CMM(ForceField):
                     these_atomic_params[param_key] = self._raw_atomic_params[param_key][self._types_to_index[type_key]]
                     self._atomic_params[type_key] = these_atomic_params
             
-            # Now symmetrize the parameter dictionaries for convenience when looking up #
+            # Symmetrize the parameter dictionaries for convenience when making parameter arrays #
             for key in list(self.nb_pair_params.keys()):
                 self.nb_pair_params[(key[1], key[0])] = self.nb_pair_params[key]
             for key in list(self.bonded_pair_params.keys()):
