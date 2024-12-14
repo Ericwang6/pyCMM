@@ -30,6 +30,7 @@ class Parameterizer:
         # NOTE(JOE): Currently there is some stuff happening here with strings
         # so I am using regular python. Need to figure out how to use strings
         # with pytorch if it is even possible.
+        # LATER: Will want to use torchtext.vocab to create integer encodings.
         self._name_to_atom_type = {}
         for i in range(len(self._unique_atom_type_names)):
             self._name_to_atom_type[self._unique_atom_type_names[i]] = i
@@ -38,15 +39,31 @@ class Parameterizer:
         self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
     
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
-            #self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
-        # Get the keys from one of the tyep names. We should really enforce
-        # that every parameter dict has the same parameters in it.
+        n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
             if param_key != 'axistypes': # This requires special care?? Or could just have global int for this.
-                self._atomic_param_arrays[param_key] = torch.zeros(len(self._unique_atom_type_names), dtype=raw_atomic_params[self._unique_atom_type_names[0]][param_key].dtype)
-        # HERE: Now actually fill in the values. Also, consider defining absolute index for the axistypes.
-        # Just put the mapping in the FF base class and then everyone can just pull from there easily.
-        print(self._atomic_param_arrays)
+                self._atomic_param_arrays[param_key] = torch.zeros_like(raw_atomic_params[self._unique_atom_type_names[0]][param_key])
+                self._atomic_param_arrays[param_key].unsqueeze_(0)
+                if self._atomic_param_arrays[param_key].ndim == 1: # Floats: e.g. charges
+                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1)
+                elif self._atomic_param_arrays[param_key].ndim == 2: # Vectors: e.g. dipole moment
+                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1)
+                elif self._atomic_param_arrays[param_key].ndim == 3: # Matrices: e.g. polarizability
+                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1, 1)
+        
+        for param_key in self._atomic_param_arrays.keys():
+            for i in torch.arange(len(self._unique_atom_type_names)):
+                if param_key != 'axistypes': # See above. Ignore for now.
+                    self._atomic_param_arrays[param_key] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
+        
+        #for (i, atom_name) in enumerate(self._unique_atom_type_names):
+        #    for param_key in raw_atomic_params[self._unique_atom_type_names[i]]:
+        #        if param_key != 'axistypes': # Handle this case separately.
+        #            print(self._atomic_param_arrays[param_key])
+        #            #self._atomic_param_arrays[param_key][i] = raw_atomic_params[atom_name][param_key] 
+        #        #self._atomic_param_arrays[param_key][i] = raw_atomic_params[atom_name][param_key]
+        #    print(self._atomic_param_arrays)
+
 
 
     def _build_atomic_parameter_arrays(self):
