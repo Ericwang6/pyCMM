@@ -23,6 +23,8 @@ class Parameterizer:
 
         self._define_atom_and_pair_types()
         self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params)
+        self._build_atomic_parameter_arrays(raw_atomic_params)
+        #self._build_pair_parameter_arrays(raw_atomic_params)
         #self._get_axis_frame_indices(raw_parameters, atom_types)
         #self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
@@ -31,13 +33,31 @@ class Parameterizer:
         # so I am using regular python. Need to figure out how to use strings
         # with pytorch if it is even possible.
         # LATER: Will want to use torchtext.vocab to create integer encodings.
+
         self._name_to_atom_type = {}
         for i in range(len(self._unique_atom_type_names)):
             self._name_to_atom_type[self._unique_atom_type_names[i]] = i
-        self._pair_type_definitions = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
-        self._pair_type_names = [(self._atom_type_names[combo[0]], self._atom_type_names[combo[1]]) for combo in self._pair_type_definitions]
+        all_type_combos = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
+        print(self._symmetric_pairing_function(all_type_combos))
+        self._pair_type_names = [(self._atom_type_names[combo[0]], self._atom_type_names[combo[1]]) for combo in all_type_combos]
         self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
     
+    def _symmetric_pairing_function(self, pairs: torch.Tensor) -> torch.Tensor:
+        """
+        Given two postive indices, (i,j), this function generates a unique index k.
+        The particular pairing function chosen here is described in: https://arxiv.org/pdf/2105.10752
+        The important features of this pairing function are that it is symmetric (i.e. the order of
+        indices does not matter. Most pairing functions intentionally don't have this property).
+        Additionally, if we have N atom types, the largest index, k, will be N^2-1 and corresponds
+        to the diagnal entry (N, N). Therefore, we can allocate arrays to hold the pairwise parameters
+        which only need to be N^2 in size. There might be a better solution possible, but the number
+        of atom types used in one simulation is unlikely to be more than around 100 and if we get to
+        that point, the array will be quite sparse, so we can just use a sparse array. For now,
+        we don't do that.
+        """
+        k = torch.floor_divide(torch.square(torch.sum(pairs, dim=1) + 1) - torch.remainder((torch.sum(pairs, dim=1) + 1), 2) + torch.min(pairs, dim=1).values, 4)
+        return k
+
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
         n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
@@ -50,26 +70,12 @@ class Parameterizer:
                     self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1)
                 elif self._atomic_param_arrays[param_key].ndim == 3: # Matrices: e.g. polarizability
                     self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1, 1)
-        
+
+    def _build_atomic_parameter_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
         for param_key in self._atomic_param_arrays.keys():
             for i in torch.arange(len(self._unique_atom_type_names)):
                 if param_key != 'axistypes': # See above. Ignore for now.
                     self._atomic_param_arrays[param_key] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
-        
-        #for (i, atom_name) in enumerate(self._unique_atom_type_names):
-        #    for param_key in raw_atomic_params[self._unique_atom_type_names[i]]:
-        #        if param_key != 'axistypes': # Handle this case separately.
-        #            print(self._atomic_param_arrays[param_key])
-        #            #self._atomic_param_arrays[param_key][i] = raw_atomic_params[atom_name][param_key] 
-        #        #self._atomic_param_arrays[param_key][i] = raw_atomic_params[atom_name][param_key]
-        #    print(self._atomic_param_arrays)
-
-
-
-    def _build_atomic_parameter_arrays(self):
-        pass
-        #for key in raw_atomic_params.keys():
-        #    self._parameters[self._name_to_atom_type[key]] = raw_atomic_params[key]
 
 
     def _get_axis_frame_indices(self, atom_types: torch.Tensor):
