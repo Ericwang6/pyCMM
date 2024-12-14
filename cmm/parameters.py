@@ -38,7 +38,6 @@ class Parameterizer:
         for i in range(len(self._unique_atom_type_names)):
             self._name_to_atom_type[self._unique_atom_type_names[i]] = i
         all_type_combos = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
-        print(self._symmetric_pairing_function(all_type_combos))
         self._pair_type_names = [(self._atom_type_names[combo[0]], self._atom_type_names[combo[1]]) for combo in all_type_combos]
         self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
     
@@ -48,14 +47,12 @@ class Parameterizer:
         The particular pairing function chosen here is described in: https://arxiv.org/pdf/2105.10752
         The important features of this pairing function are that it is symmetric (i.e. the order of
         indices does not matter. Most pairing functions intentionally don't have this property).
-        Additionally, if we have N atom types, the largest index, k, will be N^2-1 and corresponds
-        to the diagnal entry (N, N). Therefore, we can allocate arrays to hold the pairwise parameters
-        which only need to be N^2 in size. There might be a better solution possible, but the number
-        of atom types used in one simulation is unlikely to be more than around 100 and if we get to
-        that point, the array will be quite sparse, so we can just use a sparse array. For now,
-        we don't do that.
+        Additionally, if we have N atom types, the largest index is close to N^2. We can check
+        the actual value and use it to pre-allocate the arrays we index into. In the case that
+        the number of atom types is very large, the arrays will become sparse and we can just
+        revisit this solution at that point. Likely, just using a sparse arrays is sufficient.
         """
-        k = torch.floor_divide(torch.square(torch.sum(pairs, dim=1) + 1) - torch.remainder((torch.sum(pairs, dim=1) + 1), 2) + torch.min(pairs, dim=1).values, 4)
+        k = torch.floor_divide(torch.square(torch.sum(pairs, dim=1) + 1) - torch.remainder((torch.sum(pairs, dim=1) + 1), 2), 4) + torch.min(pairs, dim=1).values
         return k
 
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
