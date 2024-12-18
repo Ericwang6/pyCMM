@@ -27,7 +27,7 @@ def read_tinker_xyz(fname):
 
 
 class CMMWater(nn.Module):
-    def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True, seperate_indirect_ct: bool = True):
+    def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True):
         Z = torch.tensor([3.61565, 0.93619])
         mono = torch.tensor([-0.390896, 0.195448])
         qShell = mono - Z
@@ -42,6 +42,10 @@ class CMMWater(nn.Module):
             [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
         ])
 
+        # NOTE(JOE): These should end up being in the force field itself.
+        # The force field has raw parameters and given a topology and
+        # list of atom types and positions can build the atomic and
+        # pairwise parameters.
         self.nb_params_raw = {
             # elec
             "Z": Z,
@@ -114,7 +118,7 @@ class CMMWater(nn.Module):
             "axistypes": torch.tensor(axistypes, dtype=torch.long),
             "groups": [[i, i + 1, i + 2] for i in range(0, num_waters * 3, 3)],
             "groups_scatter": torch.concat([torch.tensor([i, i, i], dtype=torch.long) for i in range(num_waters)]),
-            "groupCharges": torch.zeros(num_waters),  
+            "groupCharges": torch.zeros(num_waters),
         })
 
         self.bonds = []
@@ -153,7 +157,6 @@ class CMMWater(nn.Module):
 
         self.use_pme = use_pme
         self.do_polarization = do_polarization
-        self.seperate_indirect_ct = seperate_indirect_ct
 
     def computeEnergy(self, coords: torch.Tensor, box: torch.Tensor):
         boxInv = torch.linalg.inv(box)
@@ -225,13 +228,8 @@ class CMMWater(nn.Module):
         dq_groups = scatter(dq, self.nb_params['groups_scatter'])
 
         # elec, pol and charge-transfer
-        if self.seperate_indirect_ct:
-            groupCharges = self.nb_params['groupCharges']
-            groupChargesCT = self.nb_params['groupCharges'] + dq_groups
-        else:
-            groupCharges = self.nb_params['groupCharges'] + dq_groups
-            groupChargesCT = None
-        ene_perm_elec, ene_pol, ene_ct_indirect = cmm.computePermElecAndPolarizationEnergy(
+        groupCharges = self.nb_params['groupCharges'] + dq_groups
+        ene_perm_elec, ene_pol = cmm.computePermElecAndPolarizationEnergy(
             coords,
             self.nb_params['groups'],
             mPoles,
@@ -241,7 +239,6 @@ class CMMWater(nn.Module):
             polarizabilities,
             self.nb_params['eta'],
             groupCharges,
-            groupChargesCT,
             pairs = pairs
         )
         
@@ -272,12 +269,11 @@ class CMMWater(nn.Module):
         )
         ene_xpol = torch.sum(xpol_pairwise) / 2
 
-        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ct_indirect
+        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
         energies = {
             "perm_elec": ene_perm_elec,
             "pol": ene_pol,
             "ct_direct": ene_ct_direct,
-            "ct_indirect": ene_ct_indirect,
             "xpol": ene_xpol,
             "pauli": ene_pauli,
             "disp": ene_disp,
