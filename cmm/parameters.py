@@ -29,21 +29,18 @@ class Parameterizer:
         #self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
         
     def _define_atom_and_pair_types(self):
-        # NOTE(JOE): Currently there is some stuff happening here with strings
-        # so I am using regular python. Need to figure out how to use strings
-        # with pytorch if it is even possible.
-        # LATER: Will want to use torchtext.vocab to create integer encodings.
-
         self._name_to_atom_type = {}
         for i in range(len(self._unique_atom_type_names)):
             self._name_to_atom_type[self._unique_atom_type_names[i]] = i
-        all_type_combos = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
-        self._pair_type_names = [(self._atom_type_names[combo[0]], self._atom_type_names[combo[1]]) for combo in all_type_combos]
         self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
-    
+
+        all_type_combos = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
+        self._unique_pair_types = self._symmetric_pairing_function(all_type_combos)
+        #print(self._unique_pair_types)
+
     def _symmetric_pairing_function(self, pairs: torch.Tensor) -> torch.Tensor:
         """
-        Given two postive indices, (i,j), this function generates a unique index k.
+        Given two positive indices, (i,j), this function generates a unique index k.
         The particular pairing function chosen here is described in: https://arxiv.org/pdf/2105.10752
         The important features of this pairing function are that it is symmetric (i.e. the order of
         indices does not matter. Most pairing functions intentionally don't have this property).
@@ -51,11 +48,23 @@ class Parameterizer:
         the actual value and use it to pre-allocate the arrays we index into. In the case that
         the number of atom types is very large, the arrays will become sparse and we can just
         revisit this solution at that point. Likely, just using a sparse arrays is sufficient.
+
+        NOTE(JOE): It is possible that at some point we will actually want a non-symmetric
+        pairing function since conceivably we could have parameters that differ depending
+        on the order of the parameter. I think if that situation ever arises, we are
+        probably just making a bad decision. Physically, I am not sure how this situation
+        would arise. If it does, though, this problem can be circumvented by just making
+        an additional parameter. This is basically what we do with the CT_acceptor and CT_donor
+        parameters.
         """
         k = torch.floor_divide(torch.square(torch.sum(pairs, dim=1) + 1) - torch.remainder((torch.sum(pairs, dim=1) + 1), 2), 4) + torch.min(pairs, dim=1).values
         return k
 
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
+        # NOTE(JOE): Currently there is some stuff happening here with strings
+        # so I am using regular python. Need to figure out how to use strings
+        # with pytorch if it is even possible.
+        # LATER: Will want to use torchtext.vocab to create integer encodings.
         n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
             if param_key != 'axistypes': # This requires special care?? Or could just have global int for this.
@@ -73,7 +82,6 @@ class Parameterizer:
             for i in torch.arange(len(self._unique_atom_type_names)):
                 if param_key != 'axistypes': # See above. Ignore for now.
                     self._atomic_param_arrays[param_key] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
-
 
     def _get_axis_frame_indices(self, atom_types: torch.Tensor):
         #self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
