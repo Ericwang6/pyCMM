@@ -2,7 +2,7 @@ from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
 
-from .multipole import computeInteractionTensor, computeEletrostaticData
+from .multipole import computeInteractionTensor
 
 
 def computePermElecOneCenterDampFactors(dr, b):
