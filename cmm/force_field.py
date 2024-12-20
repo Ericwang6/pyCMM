@@ -95,18 +95,10 @@ class CMM(ForceField):
             "q_ct_don": torch.tensor([0.757752, 0.00888982]),
             "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
             "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
-            "axistypes": ["bisector", "zthenx"]
+            "axistypes": torch.tensor([2, 1])
         }
 
-        self.nb_pair_params = {
-            ("O_water", "H_water"): {
-                "eps": {
-                    torch.tensor([1.0 / 0.380979])
-                }
-            }
-        }
-
-        self.bonded_pair_params = {
+        self.pair_params = {
             ("O_water", "H_water"): {
                 "D": torch.tensor([524.265 / HARTREE2KJ]),
                 "k_b": torch.tensor([5098.15 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
@@ -118,7 +110,8 @@ class CMM(ForceField):
                 "dip_deriv_2": torch.Tensor([-0.012458400000000472]),
                 "ct_slope_1": torch.Tensor([65.0]),
                 "ct_slope_2": torch.Tensor([13.7812]),
-            }
+                "eps":torch.tensor([1.0 / 0.380979])
+            },
         }
 
         self.angle_params = {
@@ -143,10 +136,8 @@ class CMM(ForceField):
                     self.atomic_params[type_key] = these_atomic_params
             
             # Symmetrize the parameter dictionaries for convenience when making parameter arrays #
-            for key in list(self.nb_pair_params.keys()):
-                self.nb_pair_params[(key[1], key[0])] = self.nb_pair_params[key]
-            for key in list(self.bonded_pair_params.keys()):
-                self.bonded_pair_params[(key[1], key[0])] = self.bonded_pair_params[key]
+            for key in list(self.pair_params.keys()):
+                self.pair_params[(key[1], key[0])] = self.pair_params[key]
             for key in list(self.angle_params.keys()):
                 self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
 
@@ -157,21 +148,15 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
-        # For now, I am just gonna re-compute the distances I need. Should rewrite
-        # so that Topology stores the absolute index into the pair list (i.e. if 
-        # every atom were included, these would be the right indices). When we
-        # build the neighbor list, these indices get shifted by the appropriate amount
-        # so that we correctly index into the bond vectors and distances computed
-        # by the CoordinateManager.
-
-        q_shell = params.checkout_parameters('q_shell')
-        q_pauli = params.checkout_parameters('q_pauli')
-        r_eq = params.checkout_parameters('r_eq')
-        theta_eq = params.checkout_parameters('theta_eq')
-        j_cf = params.checkout_parameters('j_cf')
-        j_cf_bb = params.checkout_parameters('j_cf_bb')
-        j_cf_angle = params.checkout_parameters('j_cf_angle')
-        j_cf_pauli = params.checkout_parameters('j_cf_pauli')
+        q_shell = params.get_atomic_parameters('q_shell')
+        q_pauli = params.get_atomic_parameters('q_pauli')
+        r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
+        j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
+        j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
+        
+        #theta_eq = params.checkout_parameters('theta_eq')
+        #j_cf_angle = params.checkout_parameters('j_cf_angle')
+        #j_cf_bb = params.get_pair_parameters('j_cf_bb', topology.bonded_pairs)
 
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 

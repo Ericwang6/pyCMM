@@ -174,6 +174,7 @@ class CMMWater(nn.Module):
         flux_charges_pauli.scatter_add_(0, self.bonds[0], pauli_charge_flux_bond_1)
         flux_charges_pauli.scatter_add_(0, self.bonds[1], pauli_charge_flux_bond_2)
         self.nb_params['Kmono_pauli'] = self.nb_params['Kmono_pauli'] + flux_charges_pauli
+        print(self.nb_params['Kmono_pauli'])
 
         charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
             bonds[self.bbs[0]], bonds[self.bbs[1]],

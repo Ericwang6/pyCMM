@@ -11,7 +11,6 @@ def evaluate_bond_charge_flux(
     q: torch.Tensor, r_eq: torch.Tensor, j_cf: torch.Tensor
 ):
     charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(dists[bonded_pairs], r_eq, j_cf)
-    
     bonded_pairs = pairs[bonded_pairs].T
     flux_charges = torch.zeros_like(q)
     flux_charges.scatter_add_(0, bonded_pairs[0], charge_flux_bond_1)

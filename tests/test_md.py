@@ -33,17 +33,11 @@ def test_md():
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
-    parameters = Parameterizer(atom_type_names, ff.atomic_params)
+    parameters = Parameterizer(atom_type_names, pairs, ff.atomic_params, ff.pair_params)
     
-    #ff.evaluate(cm, topology, parameters)
-    
-    #print(pairs[topology.angle_pairs])
+    ff.evaluate(cm, topology, parameters)
 
-    #pairs, dists, distance_vectors = cm.get_intermolecular_distances_vectors_and_pairs()
-    #print(dists)
-    #print(distance_vectors)
-
-    #num_waters = coords.size(0) // 3
-    #model = CMMWater(num_waters, do_polarization=True)
-    #energies = model.computeEnergy(coords, box)
+    num_waters = coords.size(0) // 3
+    model = CMMWater(num_waters, do_polarization=True)
+    energies = model.computeEnergy(coords, box)
     #print(energies)

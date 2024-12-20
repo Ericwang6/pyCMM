@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 class Parameterizer:
     """
@@ -13,30 +13,34 @@ class Parameterizer:
     parameters.
     """
 
-    def __init__(self, atom_type_names: List[str], raw_atomic_params: Dict[str, torch.Tensor]) -> None:
-        self._parameters = {} # Maps a string to a torch.Tensor stored on device.
+    def __init__(self, atom_type_names: List[str], pair_indices: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]) -> None:
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
+        self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
 
         # Used for determining atom types. Initial build is on CPU currently.
         self._atom_type_names = atom_type_names
         self._unique_atom_type_names = list(set(atom_type_names))
 
-        self._define_atom_and_pair_types()
-        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params)
+        self._define_atom_and_pair_type_names_and_indices()
+        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_bonded_pair_params)
         self._build_atomic_parameter_arrays(raw_atomic_params)
-        #self._build_pair_parameter_arrays(raw_atomic_params)
-        #self._get_axis_frame_indices(raw_parameters, atom_types)
-        #self._fill_parameter_dictionary_water(raw_parameters, atom_types, int(atom_types.size(0) / 3))
-        
-    def _define_atom_and_pair_types(self):
+        self._build_pair_parameter_arrays(raw_bonded_pair_params)
+
+        self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long) # On device
+        self._pair_types = self._symmetric_pairing_function(self._atom_types[pair_indices])
+        # TODO: Repeat the process for triples of atom types and quadruples with the angle and dihedral atomic indices.
+
+    def _define_atom_and_pair_type_names_and_indices(self):
         self._name_to_atom_type = {}
         for i in range(len(self._unique_atom_type_names)):
             self._name_to_atom_type[self._unique_atom_type_names[i]] = i
-        self.atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long)
 
         all_type_combos = torch.combinations(torch.arange(len(self._unique_atom_type_names)), with_replacement=True)
         self._unique_pair_types = self._symmetric_pairing_function(all_type_combos)
-        #print(self._unique_pair_types)
+        self._unique_pair_type_names = [(self._unique_atom_type_names[all_type_combos[i][0]], self._unique_atom_type_names[all_type_combos[i][1]]) for i in torch.arange(len(all_type_combos))]
+        self._name_to_pair_type = {}
+        for i in range(len(self._unique_pair_type_names)):
+            self._name_to_pair_type[self._unique_pair_type_names[i]] = self._unique_pair_types[i]
 
     def _symmetric_pairing_function(self, pairs: torch.Tensor) -> torch.Tensor:
         """
@@ -60,28 +64,42 @@ class Parameterizer:
         k = torch.floor_divide(torch.square(torch.sum(pairs, dim=1) + 1) - torch.remainder((torch.sum(pairs, dim=1) + 1), 2), 4) + torch.min(pairs, dim=1).values
         return k
 
-    def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
+    def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]):
         # NOTE(JOE): Currently there is some stuff happening here with strings
         # so I am using regular python. Need to figure out how to use strings
         # with pytorch if it is even possible.
         # LATER: Will want to use torchtext.vocab to create integer encodings.
         n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
-            if param_key != 'axistypes': # This requires special care?? Or could just have global int for this.
-                self._atomic_param_arrays[param_key] = torch.zeros_like(raw_atomic_params[self._unique_atom_type_names[0]][param_key])
-                self._atomic_param_arrays[param_key].unsqueeze_(0)
-                if self._atomic_param_arrays[param_key].ndim == 1: # Floats: e.g. charges
-                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1)
-                elif self._atomic_param_arrays[param_key].ndim == 2: # Vectors: e.g. dipole moment
-                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1)
-                elif self._atomic_param_arrays[param_key].ndim == 3: # Matrices: e.g. polarizability
-                    self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1, 1)
+            self._atomic_param_arrays[param_key] = torch.zeros_like(raw_atomic_params[self._unique_atom_type_names[0]][param_key])
+            self._atomic_param_arrays[param_key].unsqueeze_(0)
+            if self._atomic_param_arrays[param_key].ndim == 1: # Floats: e.g. charges
+                self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1)
+            elif self._atomic_param_arrays[param_key].ndim == 2: # Vectors: e.g. dipole moment
+                self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1)
+            elif self._atomic_param_arrays[param_key].ndim == 3: # Matrices: e.g. polarizability
+                self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1, 1, 1)
+
+        for i in range(len(self._unique_pair_type_names)):
+            if self._unique_pair_type_names[i] in raw_bonded_pair_params:
+                for param_key in raw_bonded_pair_params[self._unique_pair_type_names[i]]:
+                    # Just have to pick a size larger than the maximum pair type.
+                    # Eventually we may want to convert this to just be a sparse tensor.
+                    # The actual number for angle types and dihedral types could get
+                    # fairly large, so we should switch to sparse storage format then.
+                    self._pair_param_arrays[param_key] = torch.zeros(n_types * n_types)
+                break
 
     def _build_atomic_parameter_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
         for param_key in self._atomic_param_arrays.keys():
             for i in torch.arange(len(self._unique_atom_type_names)):
-                if param_key != 'axistypes': # See above. Ignore for now.
-                    self._atomic_param_arrays[param_key] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
+                self._atomic_param_arrays[param_key][i] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
+
+    def _build_pair_parameter_arrays(self, raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]):
+        for param_key in self._pair_param_arrays.keys():
+            for i in torch.arange(len(self._unique_pair_type_names)):
+                if self._unique_pair_type_names[i] in raw_bonded_pair_params:
+                    self._pair_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]]] = raw_bonded_pair_params[self._unique_pair_type_names[i]][param_key][0]
 
     def _get_axis_frame_indices(self, atom_types: torch.Tensor):
         #self._parameters["axistypes"] = raw_parameters["axistypes"][atom_types]
@@ -112,38 +130,8 @@ class Parameterizer:
         self._parameters["xatoms"] = torch.tensor(xatoms, dtype=torch.long)
         self._parameters["yatoms"] = torch.tensor(yatoms, dtype=torch.long)
 
-    def _fill_parameter_dictionary_water(self, raw_parameters: Dict, atom_types: torch.Tensor, num_waters: int):
-        # This is a strictly temporary method while the more generic approach using
-        # bond types and so on is implemented.
-        for key in raw_parameters:
-            if key == 'eps':
-                self._parameters[key] = raw_parameters[key][torch.meshgrid(atom_types, atom_types, indexing='xy')]
-            elif key in ['k_b', 'r_eq', 'beta', 'k_ba', 'D',
-                       'j_cf_pauli', 'j_cf',  'k_hardness_b',
-                       'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2']:
-                self._parameters[key] = raw_parameters[key][torch.zeros(num_waters * 2, dtype=torch.long)]
-            elif key in ['k_bb', 'theta_eq', 'k_theta', 'j_cf_bb', 'j_cf_angle', 'k_hardness_bb', 'k_hardness_angle']:
-                self._parameters[key] = raw_parameters[key][torch.zeros(num_waters, dtype=torch.long)]
-            else:
-                self._parameters[key] = raw_parameters[key][atom_types]
-
-    def _fill_parameter_dictionary(self, raw_parameters: Dict, atom_types: torch.Tensor, bond_indices: torch.Tensor):
-        # TODO: The above implementation is only applicable to water right now.
-        # We need to come up with a more general way of dealing with
-        # coupling parameters specifically. I think we need to
-        # introduce a "bond type" concept which specifies which
-        # bond we are looking in terms of a uniquely defined index.
-        # Similarly, we can have an angle type, dihedral type.
-        # We can then find the bond-bond and bond-angle
-        # and bond-dihedral parameters from the combinations of these
-        # types. Exactly how this will work requires some thought.
-        
-        # The parameter arrays should constructed by indexing over the atom types
-        # bond types, and so on.
-        pass
-
-    def register_parameters(self, name: str, params: torch.Tensor):
-        self._parameters[name] = params
-
-    def checkout_parameters(self, name: str):
-        return self._parameters[name]
+    def get_atomic_parameters(self, name: str):
+        return self._atomic_param_arrays[name][self._atom_types].squeeze_()
+    
+    def get_pair_parameters(self, name: str, pairs: torch.Tensor):
+        return self._pair_param_arrays[name][self._pair_types[pairs]]

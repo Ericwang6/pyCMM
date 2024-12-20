@@ -87,7 +87,6 @@ class Topology:
         mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0])) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
         self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
         
-
     def _find_angles_dihedrals_and_coupling_indices(self):
         """
         Finds all angles and creates the appropriate index tensor.
