@@ -13,7 +13,7 @@ class Parameterizer:
     parameters.
     """
 
-    def __init__(self, atom_type_names: List[str], pair_indices: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]) -> None:
+    def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]) -> None:
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
         self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
 
@@ -27,8 +27,10 @@ class Parameterizer:
         self._build_pair_parameter_arrays(raw_bonded_pair_params)
 
         self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long) # On device
-        self._pair_types = self._symmetric_pairing_function(self._atom_types[pair_indices])
-        # TODO: Repeat the process for triples of atom types and quadruples with the angle and dihedral atomic indices.
+        self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
+        
+        angle_type_pairs = torch.vmap(lambda x: self._symmetric_pairing_function(self._atom_types[pairs[x]]))(angle_pairs)
+        self._angle_types = self._symmetric_pairing_function(angle_type_pairs.T)
 
     def _define_atom_and_pair_type_names_and_indices(self):
         self._name_to_atom_type = {}
