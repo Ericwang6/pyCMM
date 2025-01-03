@@ -15,7 +15,6 @@ class Topology:
         self.natoms = natoms
         self.bonded_atoms = torch.tensor(bonds, dtype=torch.long)
         self.find_bond_and_angle_pair_indices(nl)
-        #self._find_angles_dihedrals_and_coupling_indices()
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
         """
@@ -31,7 +30,7 @@ class Topology:
         angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
         
         # Below will get the same bond pairs as above but will find them in the 
-        # reverse order. I don't think we need them ever but I'm not sure yet.
+        # reverse order. I don't think we need them ever but I'm not sure yet so leaving the comment.
         #half_bond_ending_with_i = self.bonded_atoms[0, (self.bonded_atoms[1] == i)]
         #half_bond_matches_2 = torch.nonzero(torch.sum((half_bond_ending_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
         #bonded_pairs_backward_i = half_bond_matches_2 + torch.sum(n_neighbors[:i])
@@ -78,7 +77,12 @@ class Topology:
         # is not bonded but is also not needed in the intermolecular
         # calculations.
         # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
-        self.angle_atoms = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)
+        self.angle_atoms = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)[:, [1, 0, 2]]
+        # ^^^ It is unclear to me if the above re-ordering will always work or just for water. These indices are used
+        # when evaluating angle-dependent parameters. If that seems to be a problem, then this ordering is probably not
+        # guaranteed to be right. The solution is probably some standard sorting of the atoms for how angles are evaluated.
+        # -Joe 1/3/25
+
         c = torch.combinations(torch.arange(self.angle_atoms.size(1)), r=2)
         x = self.angle_atoms[:,None].expand(-1, c.size(0), -1)
         idx = c[None].expand(len(x), -1, -1)
@@ -87,53 +91,3 @@ class Topology:
         mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0])) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
         self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
         
-    def _find_angles_dihedrals_and_coupling_indices(self):
-        """
-        Finds all angles and creates the appropriate index tensor.
-        Additionally finds all bond-bond and bond-angle couplings
-        and creates the appropriate index tensors into self.bond_indices
-        and self.angle_indices.
-
-        The bonds array which is passed in is ASSUMED to be sorted such that
-        the first row is strictly increasing. This needs to be enforced by
-        all parsers. Additionally, the bonds passed in will always
-        represent the upper triangle of the adjacency matrix.
-        i.e. bonds[n][i] < bonds[n][j] for all n up to N_bonds.
-
-        TODO: In the future, this is where we should create self.dihedral_indices
-        and the appropriate couplings for that. Whether or not to construct
-        the couplings could be a user input. Probably doesn't make a difference
-        if we just always do it but that's an empirical question.
-        """
-        
-        # @SPEED: I don't know how to do this with magic pytorch functions
-        # so this is probably really slow.
-        self.bond_bond_indices = torch.empty((0, 2), dtype=torch.long)
-        for i in torch.arange(self.bond_indices[0].size(0)):
-            # Below excludes indices that only appear once
-            bonds_beginning_at_i = torch.where(self.bond_indices[0] == i)[0]
-            if bonds_beginning_at_i.size(0) > 1:
-                self.bond_bond_indices = torch.cat((self.bond_bond_indices, bonds_beginning_at_i.unsqueeze(0)))
-        self.bond_bond_indices = self.bond_bond_indices.T
-
-        # TODO: I am not completely sure if this correct. We will have to test for other molecules.
-        # For instance, when there are centers with three or four bonds, this might not work?
-        # I think it will but I'm not completely sure.
-        self.angle_indices = torch.stack((
-            self.bond_indices[1][self.bond_bond_indices[0]],
-            self.bond_indices[0][self.bond_bond_indices[1]],
-            self.bond_indices[1][self.bond_bond_indices[1]])
-        )
-
-        # Every angle is coupled to two bonds by definition.
-        # So, to get the bond_angle_indices, we simply take
-        # every angle and we interleave the bond-bond indices
-        # as those describe the pairs of bonds which form an
-        # angle.
-        self.bond_angle_indices = torch.stack((torch.stack((
-                self.bond_bond_indices[0], self.bond_bond_indices[1]
-            ), dim=1).flatten(),
-            torch.stack((
-                torch.arange(self.angle_indices[1].size(0)), torch.arange(self.angle_indices[1].size(0))
-            ), dim=1).flatten())
-        )

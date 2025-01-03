@@ -13,9 +13,11 @@ class Parameterizer:
     parameters.
     """
 
-    def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]) -> None:
+    def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]) -> None:
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
         self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
+        self._pair_pair_param_arrays = {} # Map from parameter type to array indexed by two pair types
+        self._pair_angle_param_arrays = {} # Map from parameter type to array indexed by a pair and angle type
         self._angle_param_arrays = {} # Map from parameter type to array indexed by angle type
 
         # Used for determining atom types. Initial build is on CPU currently.
@@ -23,14 +25,19 @@ class Parameterizer:
         self._unique_atom_type_names = list(dict.fromkeys(atom_type_names)) # trick to create ordered set
 
         self._define_type_names_and_indices()
-        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_bonded_pair_params, raw_angle_params)
+        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
         self._build_atomic_parameter_arrays(raw_atomic_params)
-        self._build_pair_parameter_arrays(raw_bonded_pair_params)
+        self._build_pair_parameter_arrays(raw_pair_params)
+        self._build_pair_pair_parameter_arrays(raw_pair_pair_params)
+        self._build_pair_angle_parameter_arrays(raw_pair_angle_params)
         self._build_angle_parameter_arrays(raw_angle_params)
 
         self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long) # On device
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
-        self._angle_types = self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[0]]]), self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[1]]]))))
+        self._angle_types = self._get_angle_types_from_angle_pairs(pairs, angle_pairs)
+
+    def _get_angle_types_from_angle_pairs(self, pairs: torch.Tensor, angle_pairs: torch.Tensor):
+        return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[0]]]), self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[1]]]))))
 
     def _define_type_names_and_indices(self):
         # Atom types #
@@ -86,7 +93,7 @@ class Parameterizer:
         pair_types[other_indices] = torch.square(pairs[other_indices][:, 0]) + pairs[other_indices][:, 0] + pairs[other_indices][:, 1]
         return pair_types
 
-    def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor], raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
+    def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
         # Atom Types #
         n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
@@ -105,16 +112,26 @@ class Parameterizer:
         # only HOH angles are actually needed.
         # There are two options for fixing this, which may be faster/use-less-memory when the number of atom types
         # is large. One is to make the types dense by using a map that takes the computed types and
-        # turns puts them in the range 0:N_pair_types, etc. The other option to turn these dense arrays
+        # turns puts them in the range 0:N_pair_types, etc. The other option is to turn these dense arrays
         # into sparse arrays whose only valid indices are the pair types, angle types, etc.
 
         # Pair Types #
         for i in range(len(self._unique_pair_type_names)):
-            if self._unique_pair_type_names[i] in raw_bonded_pair_params:
-                for param_key in raw_bonded_pair_params[self._unique_pair_type_names[i]]:
+            if self._unique_pair_type_names[i] in raw_pair_params:
+                for param_key in raw_pair_params[self._unique_pair_type_names[i]]:
                     self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types))
                 break
         
+        # Build matrix indexable by two Pair Types #
+        for pair_tuple in raw_pair_pair_params.keys(): # Loop over names
+            for param_key in raw_pair_pair_params[pair_tuple].keys():
+                self._pair_pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types), torch.max(self._unique_pair_types))
+
+        # Build matrix indexable by a Pair Type and Angle Type #
+        for pair_angle_tuple in raw_pair_angle_params.keys(): # Loop over names
+            for param_key in raw_pair_angle_params[pair_angle_tuple].keys():
+                self._pair_angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types), torch.max(self._unique_angle_types))
+
         # Angle Types #
         for i in range(len(self._unique_angle_type_names)):
             if self._unique_angle_type_names[i] in raw_angle_params:
@@ -127,11 +144,25 @@ class Parameterizer:
             for i in torch.arange(len(self._unique_atom_type_names)):
                 self._atomic_param_arrays[param_key][i] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
 
-    def _build_pair_parameter_arrays(self, raw_bonded_pair_params: Dict[Tuple[str, str], torch.Tensor]):
+    def _build_pair_parameter_arrays(self, raw_pair_params: Dict[Tuple[str, str], torch.Tensor]):
         for param_key in self._pair_param_arrays.keys():
             for i in torch.arange(len(self._unique_pair_type_names)):
-                if self._unique_pair_type_names[i] in raw_bonded_pair_params:
-                    self._pair_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]]] = raw_bonded_pair_params[self._unique_pair_type_names[i]][param_key][0]
+                if self._unique_pair_type_names[i] in raw_pair_params:
+                    self._pair_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]]] = raw_pair_params[self._unique_pair_type_names[i]][param_key][0]
+    
+    def _build_pair_pair_parameter_arrays(self, raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor]):
+        for param_key in self._pair_pair_param_arrays.keys():
+            for i in torch.arange(len(self._unique_pair_type_names)):
+                for j in torch.arange(len(self._unique_pair_type_names)):
+                    if (self._unique_pair_type_names[i], self._unique_pair_type_names[j]) in raw_pair_pair_params:
+                        self._pair_pair_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]], self._name_to_pair_type[self._unique_pair_type_names[j]]] = raw_pair_pair_params[(self._unique_pair_type_names[i], self._unique_pair_type_names[j])][param_key][0]
+
+    def _build_pair_angle_parameter_arrays(self, raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor]):
+        for param_key in self._pair_angle_param_arrays.keys():
+            for i in torch.arange(len(self._unique_pair_type_names)):
+                for j in torch.arange(len(self._unique_angle_type_names)):
+                    if (self._unique_pair_type_names[i], self._unique_angle_type_names[j]) in raw_pair_angle_params:
+                        self._pair_angle_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]], self._name_to_angle_type[self._unique_angle_type_names[j]]] = raw_pair_angle_params[(self._unique_pair_type_names[i], self._unique_angle_type_names[j])][param_key][0]
 
     def _build_angle_parameter_arrays(self, raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
         for param_key in self._angle_param_arrays.keys():
@@ -173,13 +204,12 @@ class Parameterizer:
     
     def get_pair_parameters(self, name: str, pairs: torch.Tensor):
         return self._pair_param_arrays[name][self._pair_types[pairs]]
+
+    def get_pair_pair_parameters(self, name: str, pairs_1: torch.Tensor, pairs_2: torch.Tensor):
+        return self._pair_pair_param_arrays[name][self._pair_types[pairs_1], self._pair_types[pairs_2]]
     
-    # NOTE(JOE): The method below does not require the pairs since all the angles
-    # that are in the system which need to be evaluated are inferred and their types
-    # stored when this object is constructed. If we ever needed to accomodate
-    # non-bonded angles, then we need a second method where we compute the angle types
-    # specified by pairs of pairs. Then return the appropriate parameters.
-    # No such things exist in CMM, so we don't implement that, but there are h-bond
-    # potential functions out there which are angular in nature but non-bonded.
-    def get_angle_parameters(self, name: str):
-        return self._angle_param_arrays[name][self._angle_types]
+    def get_pair_angle_parameters(self, name: str, pairs: torch.Tensor, angle_pairs: torch.Tensor):
+        return self._pair_angle_param_arrays[name][self._pair_types[pairs], self._get_angle_types_from_angle_pairs(pairs, angle_pairs)]
+    
+    def get_angle_parameters(self, name: str, pairs: torch.Tensor, angle_pairs: torch.Tensor):
+        return self._angle_param_arrays[name][self._angle_types[self._get_angle_types_from_angle_pairs(pairs, angle_pairs)]]

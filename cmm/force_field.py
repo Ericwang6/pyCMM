@@ -106,11 +106,27 @@ class CMM(ForceField):
                 "j_cf_pauli": torch.tensor([0.0911036]),
                 "j_cf": torch.tensor([-0.024794]),
                 "k_hardness_b": torch.tensor([2.32191]),
-                "dip_deriv_1": torch.Tensor([0.1654220912271531]),
-                "dip_deriv_2": torch.Tensor([-0.012458400000000472]),
-                "ct_slope_1": torch.Tensor([65.0]),
-                "ct_slope_2": torch.Tensor([13.7812]),
-                "eps":torch.tensor([1.0 / 0.380979])
+                "dip_deriv_1": torch.tensor([0.1654220912271531]),
+                "dip_deriv_2": torch.tensor([-0.012458400000000472]),
+                "ct_slope_1": torch.tensor([65.0]),
+                "ct_slope_2": torch.tensor([13.7812]),
+                "eps":torch.tensor([1.0 / 0.380979]),
+                "j_cf_bb": torch.tensor([-0.0332338]),
+                "k_hardness_bb": torch.tensor([0.958157]),
+            },
+        }
+
+        self.pair_pair_params = {
+            (("O_water", "H_water"), ("O_water", "H_water")): {
+                "j_cf_bb": torch.tensor([-0.0332338]),
+                "k_hardness_bb": torch.tensor([0.958157]),
+                "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
+            },
+        }
+
+        self.pair_angle_params = {
+            (("O_water", "H_water"), ("H_water", "O_water", "H_water")): {
+                "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
             },
         }
 
@@ -118,12 +134,8 @@ class CMM(ForceField):
             ("H_water", "O_water", "H_water"): {
                 "theta_eq": torch.tensor([104.4234 * math.pi / 180.0]),
                 "k_theta": torch.tensor([452.183 / HARTREE2KJ]),
-                "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG]),
-                "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG]),
                 "j_cf_angle": torch.tensor([0.0220891]),
-                "j_cf_bb": torch.tensor([-0.0332338]),
                 "k_hardness_angle": torch.tensor([-0.0991956]),
-                "k_hardness_bb": torch.tensor([0.958157]),
             }
         }
 
@@ -154,16 +166,28 @@ class CMM(ForceField):
         j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
         j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
         
-        #theta_eq = params.checkout_parameters('theta_eq')
-        #j_cf_angle = params.checkout_parameters('j_cf_angle')
-        #j_cf_bb = params.get_pair_parameters('j_cf_bb', topology.bonded_pairs)
+        # NOTE(JOE): In a more general implementation, the bond-bond coupling parameters will not be
+        # identical for each bond in an angle. That is, suppose we have an OCN angle. When the CO
+        # distance changes, the CN charge flux need not be the same as the CO charge flux when the
+        # CN distance changes. This is why we need a separate function call, get_pair_pair_parameters.
+        # I think the below is correct since the angle type is non-symmetric in this way. Hard to verify
+        # without additional molecules.
+        r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
+        r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
+        j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+        j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
 
+        theta_eq = params.get_angle_parameters('theta_eq', pairs, topology.angle_pairs)
+        j_cf_angle = params.get_angle_parameters('j_cf_angle', pairs, topology.angle_pairs)
+
+        # Pauli charge flux #
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
-        #evaluate_bond_and_angle_charge_flux(
-        #    pairs, dists, angles,
-        #    topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-        #    q_shell, r_eq, theta_eq,
-        #    j_cf, j_cf_bb, j_cf_angle
-        #)
+        evaluate_bond_and_angle_charge_flux(
+            pairs, dists, angles,
+            topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+            q_shell, r_eq, theta_eq, j_cf, j_cf_angle,
+            r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
+        )
+        #print(q_shell)

@@ -33,12 +33,19 @@ def test_md():
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
-    parameters = Parameterizer(atom_type_names, pairs, topology.angle_pairs, ff.atomic_params, ff.pair_params, ff.angle_params)
-    print(parameters._angle_param_arrays)
-    print(parameters.get_angle_parameters("k_theta"))
-    #ff.evaluate(cm, topology, parameters)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_pairs,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    
+    #A = torch.arange(0, 9).reshape((3, 3))
+    #idx_1 = torch.tensor([0, 1, 2, 1])
+    #idx_2 = torch.tensor([1, 1, 2, 0])
+    #print(A[idx_1, idx_2])
+    
+    ff.evaluate(cm, topology, parameters)
 
-    #num_waters = coords.size(0) // 3
-    #model = CMMWater(num_waters, do_polarization=True)
-    #energies = model.computeEnergy(coords, box)
+    num_waters = coords.size(0) // 3
+    model = CMMWater(num_waters, do_polarization=True)
+    energies = model.computeEnergy(coords, box)
     #print(energies)
