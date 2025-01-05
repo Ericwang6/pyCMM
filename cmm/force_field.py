@@ -1,5 +1,6 @@
 import torch, math
-from .multipole import computeCartesianQuadrupoles
+from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
+from .short_range import scaleMultipoles
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
@@ -111,8 +112,6 @@ class CMM(ForceField):
                 "ct_slope_1": torch.tensor([65.0]),
                 "ct_slope_2": torch.tensor([13.7812]),
                 "eps":torch.tensor([1.0 / 0.380979]),
-                "j_cf_bb": torch.tensor([-0.0332338]),
-                "k_hardness_bb": torch.tensor([0.958157]),
             },
         }
 
@@ -160,25 +159,61 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
+        # Electric Multipoles #
         q_shell = params.get_atomic_parameters('q_shell')
+        dipo = params.get_atomic_parameters('dipo')
+        quad = params.get_atomic_parameters('quad')
+        # Polarizability #
+        alpha = params.get_atomic_parameters('alpha')
+
+        # Pauli Multipoles #
         q_pauli = params.get_atomic_parameters('q_pauli')
+        Kdipo_pauli = params.get_atomic_parameters('Kdipo_pauli')
+        Kquad_pauli = params.get_atomic_parameters('Kquad_pauli')
+
+        # Exchange Polarization #
+        q_xpol = params.get_atomic_parameters('q_xpol')
+        Kdipo_xpol = params.get_atomic_parameters('Kdipo_xpol')
+        Kquad_xpol = params.get_atomic_parameters('Kquad_xpol')
+
+        # Charge Transfer Multipoles #
+        q_ct_acc = params.get_atomic_parameters('q_ct_acc')
+        Kdipo_ct_acc = params.get_atomic_parameters('Kdipo_ct_acc')
+        Kquad_ct_acc = params.get_atomic_parameters('Kquad_ct_acc')
+        q_ct_don = params.get_atomic_parameters('q_ct_don')
+        Kdipo_ct_don = params.get_atomic_parameters('Kdipo_ct_don')
+        Kquad_ct_don = params.get_atomic_parameters('Kquad_ct_don')
+
+        b = params.get_atomic_parameters('b')
+        b_pauli = params.get_atomic_parameters('b_pauli')
+        b_disp = params.get_atomic_parameters('b_disp')
+        b_xpol = params.get_atomic_parameters('b_xpol')
+        b_ct = params.get_atomic_parameters('b_ct')
+        eta = params.get_atomic_parameters('eta')
+
+        # HERE: I think the problem is that below produces a 3 for [1,1], which is fine. The problem is that
+        # the storage space (of zeros) is not large enough so that when we try to pull from the array we index
+        # out of bounds.
+        print(params._symmetric_pairing_function(torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]])))
+        #eps = params.get_pair_parameters('eps', topology.all_intermolecular_pairs) # Need to get intermolecular pairs?
         r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
         j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
         j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
+        k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
         
-        # NOTE(JOE): In a more general implementation, the bond-bond coupling parameters will not be
-        # identical for each bond in an angle. That is, suppose we have an OCN angle. When the CO
-        # distance changes, the CN charge flux need not be the same as the CO charge flux when the
-        # CN distance changes. This is why we need a separate function call, get_pair_pair_parameters.
-        # I think the below is correct since the angle type is non-symmetric in this way. Hard to verify
-        # without additional molecules.
+        # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
+        # Currently, we don't have parameters for a non-symmetric angle but they will come up with
+        # organic molecules.
         r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
         r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
         j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
         j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+        k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+        k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
 
         theta_eq = params.get_angle_parameters('theta_eq', pairs, topology.angle_pairs)
         j_cf_angle = params.get_angle_parameters('j_cf_angle', pairs, topology.angle_pairs)
+        k_hardness_angle = params.get_angle_parameters('k_hardness_angle', pairs, topology.angle_pairs)
 
         # Pauli charge flux #
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
@@ -190,4 +225,33 @@ class CMM(ForceField):
             q_shell, r_eq, theta_eq, j_cf, j_cf_angle,
             r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
         )
-        #print(q_shell)
+        
+        # Hardness change #
+        evaluate_hardness_change(
+            pairs, dists, angles,
+            topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+            eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
+            r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
+        )
+
+        # Rotation Matrices #
+        rotation_matrices = cm.compute_rotation_matrices(params.get_atomic_parameters("axistypes"))
+        
+        multipoles = rotateMultipoles(
+            q_shell, dipo, quad, rotation_matrices
+        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
+        polarizabilities = rotateQuadrupoles(alpha, rotation_matrices)
+
+        # SPEED: Makes copies. Might be unavoidable but could maybe be done more efficiently.
+        multipoles_ct_acc = scaleMultipoles(multipoles, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
+        multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
+        multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
+
+        #ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
+        #    dist_vecs,
+        #    multipoles_ct_acc[pairs[0]], multipoles_ct_acc[pairs[1]],
+        #    multipoles_ct_don[pairs[0]], multipoles_ct_don[pairs[1]],
+        #    b_ct[pairs[0]], b_ct[pairs[1]],
+        #    self.nb_params['eps'][pairs[0], pairs[1]]
+        #)
+

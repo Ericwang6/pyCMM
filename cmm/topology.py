@@ -68,19 +68,27 @@ class Topology:
         
         pairs = nl.get_pairs()
         self._find_all_intramolecular_pairs(pairs)
+        self._find_all_intermolecular_pairs(pairs.size(0))
+
+    def _find_all_intermolecular_pairs(self, n_pairs):
+        """Compute set difference between intramolecular pairs array and torch.arange over n_pairs."""
+        all_pairs = torch.arange(n_pairs)
+        mask = ~torch.isin(all_pairs, self.all_intramolecular_pairs)
+        self.all_intermolecular_pairs = all_pairs[mask]
 
     def _find_all_intramolecular_pairs(self, pairs: torch.Tensor):
         # Once we have dihedral indices, we should use that instead.
         # Basically, this lets us easily get the indices of all pairs
         # which can be formed from the atoms forming angles/dihedrals.
         # e.g. we need to also capture the H-H pair in a water which
-        # is not bonded but is also not needed in the intermolecular
+        # is not bonded but should be ignored in the intermolecular
         # calculations.
         # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
         self.angle_atoms = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)[:, [1, 0, 2]]
         # ^^^ It is unclear to me if the above re-ordering will always work or just for water. These indices are used
         # when evaluating angle-dependent parameters. If that seems to be a problem, then this ordering is probably not
         # guaranteed to be right. The solution is probably some standard sorting of the atoms for how angles are evaluated.
+        # i.e. some canonical ordering of the bond graph.
         # -Joe 1/3/25
 
         c = torch.combinations(torch.arange(self.angle_atoms.size(1)), r=2)
