@@ -119,24 +119,24 @@ class Parameterizer:
         for i in range(len(self._unique_pair_type_names)):
             if self._unique_pair_type_names[i] in raw_pair_params:
                 for param_key in raw_pair_params[self._unique_pair_type_names[i]]:
-                    self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types))
+                    self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1)
                 break
         
         # Build matrix indexable by two Pair Types #
         for pair_tuple in raw_pair_pair_params.keys(): # Loop over names
             for param_key in raw_pair_pair_params[pair_tuple].keys():
-                self._pair_pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types), torch.max(self._unique_pair_types))
+                self._pair_pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_pair_types) + 1)
 
         # Build matrix indexable by a Pair Type and Angle Type #
         for pair_angle_tuple in raw_pair_angle_params.keys(): # Loop over names
             for param_key in raw_pair_angle_params[pair_angle_tuple].keys():
-                self._pair_angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types), torch.max(self._unique_angle_types))
+                self._pair_angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_angle_types) + 1)
 
         # Angle Types #
         for i in range(len(self._unique_angle_type_names)):
             if self._unique_angle_type_names[i] in raw_angle_params:
                 for param_key in raw_angle_params[self._unique_angle_type_names[i]]:
-                    self._angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_angle_types))
+                    self._angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_angle_types) + 1)
                 break
 
     def _build_atomic_parameter_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):

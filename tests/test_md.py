@@ -29,7 +29,7 @@ def test_md():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
-    cm = CoordinateManager(coords, box, 12.0)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
@@ -42,7 +42,7 @@ def test_md():
     #idx_1 = torch.tensor([0, 1, 2, 1])
     #idx_2 = torch.tensor([1, 1, 2, 0])
     #print(A[idx_1, idx_2])
-    
+
     ff.evaluate(cm, topology, parameters)
 
     num_waters = coords.size(0) // 3

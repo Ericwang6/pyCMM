@@ -2,6 +2,7 @@ from .neighbor_list import *
 import torch
 from typing import Dict, Tuple
 from .topology import Topology
+from .pbc import applyPBC
 
 # One purpose of having a CoordinateMananager as a concept is
 # to make it easy to ensure that if we sort coordinates to
@@ -27,6 +28,7 @@ class CoordinateManager:
         # of neighbor list. We just use a cell list for now.
         self.coords = coords
         self.box = box
+        self.box_inv = torch.inverse(box)
         self.box_lengths = torch.diag(box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
         self._get_axis_frame_indices()
@@ -69,9 +71,11 @@ class CoordinateManager:
         # but if I could avoid that, then that would be ideal. I guess I could
         # transpose the coordinate to solve this problem?
         self.pairs = self.neighbor_list.get_pairs()
-        distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
-        self.distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
-        self.dists = torch.linalg.vector_norm(distance_vecs, dim=1)
+        self.distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
+        # SOMEHOW I GET THE RIGHT ANSWER WHEN DOING ABOVE WHICH DOESNT RESPECTS PBCS???????
+        #self.distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
+        #self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
+        self.dists = torch.linalg.vector_norm(self.distance_vecs, dim=1)
         return self.pairs, self.dists, self.distance_vecs
 
     def compute_rotation_matrices(self, axis_types: torch.Tensor):

@@ -77,6 +77,6 @@ def computePairwiseChargeTransfer(
 
     # forward means i -> j, backward means j -> i
     drInvDamp = iTensor[:, 0, 0].flatten()
-    dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp / eps_ij
-    dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp / eps_ij
+    dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp * eps_ij
+    dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp * eps_ij
     return enes, dq_forward - dq_backward

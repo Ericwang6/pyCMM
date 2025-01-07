@@ -64,7 +64,7 @@ class CMMWater(nn.Module):
             "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]),
             "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
             "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
-            "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]])
+            "eps": torch.tensor([[0.0, 1.0 / 0.380979], [1.0 / 0.380979, 0.0]])
         }
         
         # expand parameters to atoms/pairs
@@ -268,6 +268,7 @@ class CMMWater(nn.Module):
             self.nb_params['b']
         )
         ene_perm_elec += 0.5 * torch.sum(self.nb_params['Z'] * elec_potential)
+        #print(elec_potential)
         # ^^^ In the above we compute the electrostatic energy involving damping
         # but leave the undamped part out since we compute the potential already
         # to be used in the polarization calculation. So we add it in after the fact.

@@ -1,6 +1,8 @@
 import torch, math
+from torch_scatter import scatter
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
-from .short_range import scaleMultipoles
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs
+from .short_range import scaleMultipoles, computePairwiseChargeTransfer
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
@@ -68,7 +70,7 @@ class CMM(ForceField):
             "q_shell": mono - Z,
             "dipo": dipo,
             "quad": computeCartesianQuadrupoles(quad_s),
-            "b": torch.tensor([2.13358, 2.33322]),
+            "b_elec": torch.tensor([2.13358, 2.33322]),
             # Pauli repulsion
             "b_pauli": torch.tensor([2.1975, 1.96474]),
             "q_pauli": torch.tensor([6.50923, 0.527804]),
@@ -160,9 +162,12 @@ class CMM(ForceField):
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # Electric Multipoles #
+        Z = params.get_atomic_parameters('Z')
         q_shell = params.get_atomic_parameters('q_shell')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
+        natoms = Z.size(0)
+
         # Polarizability #
         alpha = params.get_atomic_parameters('alpha')
 
@@ -184,18 +189,14 @@ class CMM(ForceField):
         Kdipo_ct_don = params.get_atomic_parameters('Kdipo_ct_don')
         Kquad_ct_don = params.get_atomic_parameters('Kquad_ct_don')
 
-        b = params.get_atomic_parameters('b')
+        b_elec = params.get_atomic_parameters('b_elec')
         b_pauli = params.get_atomic_parameters('b_pauli')
         b_disp = params.get_atomic_parameters('b_disp')
         b_xpol = params.get_atomic_parameters('b_xpol')
         b_ct = params.get_atomic_parameters('b_ct')
         eta = params.get_atomic_parameters('eta')
 
-        # HERE: I think the problem is that below produces a 3 for [1,1], which is fine. The problem is that
-        # the storage space (of zeros) is not large enough so that when we try to pull from the array we index
-        # out of bounds.
-        print(params._symmetric_pairing_function(torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]])))
-        #eps = params.get_pair_parameters('eps', topology.all_intermolecular_pairs) # Need to get intermolecular pairs?
+        eps = params.get_pair_parameters('eps', topology.all_intermolecular_pairs)
         r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
         j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
         j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
@@ -247,11 +248,65 @@ class CMM(ForceField):
         multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
         multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
 
-        #ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
-        #    dist_vecs,
-        #    multipoles_ct_acc[pairs[0]], multipoles_ct_acc[pairs[1]],
-        #    multipoles_ct_don[pairs[0]], multipoles_ct_don[pairs[1]],
-        #    b_ct[pairs[0]], b_ct[pairs[1]],
-        #    self.nb_params['eps'][pairs[0], pairs[1]]
-        #)
+        ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
+            dist_vecs[topology.all_intermolecular_pairs],
+            multipoles_ct_acc[pairs[:, 0][topology.all_intermolecular_pairs]], multipoles_ct_acc[pairs[:, 1][topology.all_intermolecular_pairs]],
+            multipoles_ct_don[pairs[:, 0][topology.all_intermolecular_pairs]], multipoles_ct_don[pairs[:, 1][topology.all_intermolecular_pairs]],
+            b_ct[pairs[:, 0][topology.all_intermolecular_pairs]], b_ct[pairs[:, 1][topology.all_intermolecular_pairs]],
+            eps
+        )
+        ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
+        dq = scatter(dq_pairwise, pairs[:, 1][topology.all_intermolecular_pairs])
+        group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
+        # ^^^ This is just a hack to get things working for water. Ultimately, we will
+        # need a more general approach which will be provided by the topology. This
+        # way of defining groups is somewhat troublesome. It means that we chop up molecules
+        # into non-overlapping groups and some of the atoms then won't polarize charge to their
+        # direct neighbors (not acceptable) OR we define a separate group for each atom which
+        # overlaps with other groups. These would just be all of the 1-2, 1-3, and 1-4 neighbors
+        # for a given atom. This is physically acceptable but increases the number of lagrange multipliers
+        # considerably. Obviously in that case, we need to collapse identical constraints into one
+        # so that we avoid linear dependencies.
+        # In the medium-term I think we would be better off switching to a different charge polarization
+        # model based on pair-parameters. Basically, there should be an electrostatic component to the
+        # charge flux model which moves around charge based on the potential difference between pairs
+        # of atoms. We can actually parameterize the pairwise model to reproduce the variational EEM
+        # model.
+        dq_groups = scatter(dq, group_indices)
+        
+        # Get electric potential, field, and field gradients
+        elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
+            natoms,
+            pairs,
+            topology.all_intermolecular_pairs,
+            dists, dist_vecs,
+            multipoles, Z, b_elec
+        )
 
+        #E_potentials.scatter_add_(0, pairs[1], ePot_i + ePotCore)
+        #E_fields[:, 0].scatter_add_(0, pairs[1], eFieldCore[:, 0] - eField_i[:, 0])
+        #E_fields[:, 1].scatter_add_(0, pairs[1], eFieldCore[:, 1] - eField_i[:, 1])
+        #E_fields[:, 2].scatter_add_(0, pairs[1], eFieldCore[:, 2] - eField_i[:, 2])
+        ## Yes, I am doing it like this. Please help.
+        #E_field_grads[:, 0].scatter_add_(0, pairs[1], eFieldGradCore[:, 0] - eFieldGrad_i[:, 0])
+        #E_field_grads[:, 1].scatter_add_(0, pairs[1], eFieldGradCore[:, 1] - eFieldGrad_i[:, 1])
+        #E_field_grads[:, 2].scatter_add_(0, pairs[1], eFieldGradCore[:, 2] - eFieldGrad_i[:, 2])
+        #E_field_grads[:, 3].scatter_add_(0, pairs[1], eFieldGradCore[:, 4] - eFieldGrad_i[:, 3])
+        #E_field_grads[:, 4].scatter_add_(0, pairs[1], eFieldGradCore[:, 5] - eFieldGrad_i[:, 4])
+        #E_field_grads[:, 5].scatter_add_(0, pairs[1], eFieldGradCore[:, 8] - eFieldGrad_i[:, 5])
+
+        #elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansion(
+        #    coords,
+        #    pairs,
+        #    mPoles,
+        #    self.nb_params['Z'],
+        #    self.nb_params['b']
+        #)
+        #ene_perm_elec = computeDampedMultipolarInteractionEnergies(
+        #    coords,
+        #    pairs,
+        #    mPoles,
+        #    self.nb_params['Z'],
+        #    self.nb_params['b']
+        #)
+        #ene_perm_elec += 0.5 * torch.sum(self.nb_params['Z'] * elec_potential)
