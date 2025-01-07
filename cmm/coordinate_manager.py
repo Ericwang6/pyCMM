@@ -71,10 +71,8 @@ class CoordinateManager:
         # but if I could avoid that, then that would be ideal. I guess I could
         # transpose the coordinate to solve this problem?
         self.pairs = self.neighbor_list.get_pairs()
-        self.distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
-        # SOMEHOW I GET THE RIGHT ANSWER WHEN DOING ABOVE WHICH DOESNT RESPECTS PBCS???????
-        #self.distance_vecs = distance_vecs - torch.round(distance_vecs / self.box_lengths) * self.box_lengths
-        #self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
+        distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
+        self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
         self.dists = torch.linalg.vector_norm(self.distance_vecs, dim=1)
         return self.pairs, self.dists, self.distance_vecs
 

@@ -254,30 +254,30 @@ class CMMWater(nn.Module):
 
         # Get electric potential, field, and field gradients
         elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansion(
-            coords,
+            coords.size(0),
+            drVecs,
             pairs,
             mPoles,
             self.nb_params['Z'],
             self.nb_params['b']
         )
         ene_perm_elec = computeDampedMultipolarInteractionEnergies(
-            coords,
+            drVecs,
             pairs,
             mPoles,
             self.nb_params['Z'],
             self.nb_params['b']
         )
         ene_perm_elec += 0.5 * torch.sum(self.nb_params['Z'] * elec_potential)
-        #print(elec_potential)
         # ^^^ In the above we compute the electrostatic energy involving damping
         # but leave the undamped part out since we compute the potential already
         # to be used in the polarization calculation. So we add it in after the fact.
 
         # elec, pol and charge-transfer
         groupCharges = self.nb_params['groupCharges'] + dq_groups
-
         ene_pol, solution_vector = computePolarizationEnergyAndInducedMultipoles(
-            coords,
+            coords.size(0),
+            drVecs,
             self.nb_params['groups'],
             self.nb_params['b'],
             elec_potential,

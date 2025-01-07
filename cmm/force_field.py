@@ -1,7 +1,7 @@
 import torch, math
 from torch_scatter import scatter
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
-from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePolarizationEnergyAndInducedMultipolesFromPairs
 from .short_range import scaleMultipoles, computePairwiseChargeTransfer
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
@@ -155,9 +155,6 @@ class CMM(ForceField):
                 self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
 
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
-        # TODO: Now do the evaluation of the distances, vectors, and stuff
-        # which should internally update the neighbor list as needed.
-        # Also pull out the topological indices to be used for evaluating the FF.
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
@@ -216,6 +213,10 @@ class CMM(ForceField):
         j_cf_angle = params.get_angle_parameters('j_cf_angle', pairs, topology.angle_pairs)
         k_hardness_angle = params.get_angle_parameters('k_hardness_angle', pairs, topology.angle_pairs)
 
+        # Intermolecular pairs #
+        pairs_inter_i_a = pairs[:, 0][topology.all_intermolecular_pairs]
+        pairs_inter_j_a = pairs[:, 1][topology.all_intermolecular_pairs]
+
         # Pauli charge flux #
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
@@ -250,13 +251,13 @@ class CMM(ForceField):
 
         ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
             dist_vecs[topology.all_intermolecular_pairs],
-            multipoles_ct_acc[pairs[:, 0][topology.all_intermolecular_pairs]], multipoles_ct_acc[pairs[:, 1][topology.all_intermolecular_pairs]],
-            multipoles_ct_don[pairs[:, 0][topology.all_intermolecular_pairs]], multipoles_ct_don[pairs[:, 1][topology.all_intermolecular_pairs]],
-            b_ct[pairs[:, 0][topology.all_intermolecular_pairs]], b_ct[pairs[:, 1][topology.all_intermolecular_pairs]],
+            multipoles_ct_acc[pairs_inter_i_a], multipoles_ct_acc[pairs_inter_j_a],
+            multipoles_ct_don[pairs_inter_i_a], multipoles_ct_don[pairs_inter_j_a],
+            b_ct[pairs_inter_i_a], b_ct[pairs_inter_j_a],
             eps
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
-        dq = scatter(dq_pairwise, pairs[:, 1][topology.all_intermolecular_pairs])
+        dq = scatter(dq_pairwise, pairs_inter_j_a)
         group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
@@ -274,39 +275,43 @@ class CMM(ForceField):
         # model.
         dq_groups = scatter(dq, group_indices)
         
-        # Get electric potential, field, and field gradients
-        elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
+        # Get electrostatic energy, electric potential, field, and field gradients
+        b_i_elec_p = b_elec[pairs_inter_i_a]
+        b_j_elec_p = b_elec[pairs_inter_j_a]
+        b_ij_elec_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
+        ene_elec, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
             natoms,
-            pairs,
-            topology.all_intermolecular_pairs,
-            dists, dist_vecs,
-            multipoles, Z, b_elec
+            pairs_inter_i_a,
+            pairs_inter_j_a,
+            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            b_i_elec_p, b_ij_elec_p,
+            multipoles, Z
         )
 
-        #E_potentials.scatter_add_(0, pairs[1], ePot_i + ePotCore)
-        #E_fields[:, 0].scatter_add_(0, pairs[1], eFieldCore[:, 0] - eField_i[:, 0])
-        #E_fields[:, 1].scatter_add_(0, pairs[1], eFieldCore[:, 1] - eField_i[:, 1])
-        #E_fields[:, 2].scatter_add_(0, pairs[1], eFieldCore[:, 2] - eField_i[:, 2])
-        ## Yes, I am doing it like this. Please help.
-        #E_field_grads[:, 0].scatter_add_(0, pairs[1], eFieldGradCore[:, 0] - eFieldGrad_i[:, 0])
-        #E_field_grads[:, 1].scatter_add_(0, pairs[1], eFieldGradCore[:, 1] - eFieldGrad_i[:, 1])
-        #E_field_grads[:, 2].scatter_add_(0, pairs[1], eFieldGradCore[:, 2] - eFieldGrad_i[:, 2])
-        #E_field_grads[:, 3].scatter_add_(0, pairs[1], eFieldGradCore[:, 4] - eFieldGrad_i[:, 3])
-        #E_field_grads[:, 4].scatter_add_(0, pairs[1], eFieldGradCore[:, 5] - eFieldGrad_i[:, 4])
-        #E_field_grads[:, 5].scatter_add_(0, pairs[1], eFieldGradCore[:, 8] - eFieldGrad_i[:, 5])
+        # TODO: Need the topology to determine the polarization groups. I really hate this
+        # polarization group concept. The polarization group, I suppose, is the mask
+        # which specifies all intramolecular atoms (including that atom itself) for each
+        # atom. The charge constraints are then enforced over those groups.
+        #
+        # The below is again a hack to work for water.
+        groups = torch.stack((torch.arange(0, natoms, 3), torch.arange(1, natoms, 3), torch.arange(2, natoms, 3)), dim=1)
+        ene_pol, solution_vector = computePolarizationEnergyAndInducedMultipolesFromPairs(
+            natoms,
+            pairs_inter_i_a,
+            pairs_inter_j_a,
+            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            groups,
+            b_ij_elec_p,
+            elec_potential,
+            elec_field,
+            polarizabilities,
+            eta * 2,
+            dq_groups # TODO: This should actually add in the "groupCharges" which are zero for water but nonzero for ions.
+        )
+        q_end = natoms
+        lagrange_end = q_end + len(dq_groups)
 
-        #elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansion(
-        #    coords,
-        #    pairs,
-        #    mPoles,
-        #    self.nb_params['Z'],
-        #    self.nb_params['b']
-        #)
-        #ene_perm_elec = computeDampedMultipolarInteractionEnergies(
-        #    coords,
-        #    pairs,
-        #    mPoles,
-        #    self.nb_params['Z'],
-        #    self.nb_params['b']
-        #)
-        #ene_perm_elec += 0.5 * torch.sum(self.nb_params['Z'] * elec_potential)
+        induced_multipoles = torch.zeros((multipoles.size(0), 4))
+        induced_multipoles[:, 0] += solution_vector[0:q_end].squeeze()
+        lagrange_muls = solution_vector[q_end:lagrange_end].clone().squeeze()
+        induced_multipoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
