@@ -404,3 +404,18 @@ class CMM(ForceField):
         ene_xpol = torch.sum(xpol_pairwise) / 2
 
         ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
+        energies = {
+            "perm_elec": ene_perm_elec,
+            "pol": ene_pol,
+            "ct_direct": ene_ct_direct,
+            "xpol": ene_xpol,
+            "pauli": ene_pauli,
+            "disp": ene_disp,
+            "deformation": ene_bonds + ene_angles + ene_bbs + ene_bas,
+            "bond": ene_bonds,
+            "angle": ene_angles,
+            "bond_bond": ene_bbs,
+            "bond_angle": ene_bas,
+            "tot": ene_tot
+        }
+        return energies

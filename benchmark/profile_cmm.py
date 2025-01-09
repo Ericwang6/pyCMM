@@ -1,5 +1,6 @@
-import pytest
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
+
 import numpy as np
 import os
 
@@ -12,7 +13,7 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 
 def get_water_box_coords(requires_grad=True):
-    labels, atom_types, coords, bonds = read_xyz_tinker(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"))
+    labels, atom_types, coords, bonds = read_xyz_tinker(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"))
     permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
@@ -20,7 +21,7 @@ def get_water_box_coords(requires_grad=True):
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
     return coords, atom_types, bonds
 
-def test_md():
+def profile_cmm_evaluation():
     torch.set_default_dtype(torch.float64)
 
     coords, atom_types, bonds = get_water_box_coords(requires_grad=True)
@@ -33,14 +34,16 @@ def test_md():
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
+
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
+    with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+        with record_function("CMM_evaluate_water_box_216"):
+            energies = ff.evaluate(cm, topology, parameters)
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
-    energies = ff.evaluate(cm, topology, parameters)
-
-    num_waters = coords.size(0) // 3
-    model = CMMWater(num_waters, do_polarization=True)
-    energies_ref = model.computeEnergy(coords, box)
-    assert torch.isclose(energies['tot'], energies_ref['tot'])
+if __name__ == "__main__":
+    profile_cmm_evaluation()
+    
