@@ -55,6 +55,23 @@ def computeShortRangeEnergy(
     enes = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return enes
 
+def computeShortRangeEnergyFromPairs(
+    dists_p: torch.Tensor, dist_vecs_p: torch.Tensor,
+    mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
+    b_ij_p: torch.Tensor,
+    positive: bool = True,
+):
+
+    drInv_p = 1 / dists_p
+
+    damps = computeShortRangeDampFactors(dists_p, b_ij_p)
+    if not positive:
+        damps = [-d for d in damps]
+
+    iTensor = computeInteractionTensor(dist_vecs_p, damps, drInv_p, 2)
+    enes = torch.bmm(mPoles_j_p.unsqueeze(1), torch.bmm(iTensor, mPoles_i_p.unsqueeze(2))).flatten()
+    return enes
+
 
 def computePairwiseChargeTransfer(
     drVec: torch.Tensor,

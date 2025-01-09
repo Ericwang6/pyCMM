@@ -13,7 +13,7 @@ class Parameterizer:
     parameters.
     """
 
-    def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]) -> None:
+    def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_atoms: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]) -> None:
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
         self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
         self._pair_pair_param_arrays = {} # Map from parameter type to array indexed by two pair types
@@ -34,10 +34,10 @@ class Parameterizer:
 
         self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long) # On device
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
-        self._angle_types = self._get_angle_types_from_angle_pairs(pairs, angle_pairs)
+        self._angle_types = self._get_angle_types_from_angle_atoms(angle_atoms)
 
-    def _get_angle_types_from_angle_pairs(self, pairs: torch.Tensor, angle_pairs: torch.Tensor):
-        return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[0]]]), self._nonsymmetric_pairing_function(self._atom_types[pairs[angle_pairs[1]]]))))
+    def _get_angle_types_from_angle_atoms(self, angle_atoms: torch.Tensor):
+        return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]), self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]]))))
 
     def _define_type_names_and_indices(self):
         # Atom types #
@@ -173,14 +173,17 @@ class Parameterizer:
     def get_atomic_parameters(self, name: str):
         return self._atomic_param_arrays[name][self._atom_types].squeeze_()
     
-    def get_pair_parameters(self, name: str, pairs: torch.Tensor):
-        return self._pair_param_arrays[name][self._pair_types[pairs]]
+    def get_pair_parameters(self, name: str, pairs_p: torch.Tensor):
+        return self._pair_param_arrays[name][self._pair_types[pairs_p]]
 
-    def get_pair_pair_parameters(self, name: str, pairs_1: torch.Tensor, pairs_2: torch.Tensor):
-        return self._pair_pair_param_arrays[name][self._pair_types[pairs_1], self._pair_types[pairs_2]]
+    def get_angle_parameters(self, name: str, angle_atoms_a: torch.Tensor):
+        return self._angle_param_arrays[name][self._angle_types[self._get_angle_types_from_angle_atoms(angle_atoms_a)]]
+
+    def get_pair_pair_parameters(self, name: str, pairs_1_p: torch.Tensor, pairs_2_p: torch.Tensor):
+        return self._pair_pair_param_arrays[name][self._pair_types[pairs_1_p], self._pair_types[pairs_2_p]]
     
-    def get_pair_angle_parameters(self, name: str, pairs: torch.Tensor, angle_pairs: torch.Tensor):
-        return self._pair_angle_param_arrays[name][self._pair_types[pairs], self._get_angle_types_from_angle_pairs(pairs, angle_pairs)]
-    
-    def get_angle_parameters(self, name: str, pairs: torch.Tensor, angle_pairs: torch.Tensor):
-        return self._angle_param_arrays[name][self._angle_types[self._get_angle_types_from_angle_pairs(pairs, angle_pairs)]]
+    def get_pair_angle_parameters(self, name: str, angle_pairs_p: torch.Tensor, angle_atoms_a: torch.Tensor):
+        # NOTE(JOE): _get_angle_types_from_angle_atoms will return the type of each angle. Since there are two
+        # bonds in each angle (which may in general be different), we have to repeat the angle types twice.
+        # angle_pairs_p comes from the topology object as two columns of pair indices hence the flattening.
+        return self._pair_angle_param_arrays[name][self._pair_types[angle_pairs_p.T.flatten()], self._get_angle_types_from_angle_atoms(angle_atoms_a).repeat_interleave(2)]

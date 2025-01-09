@@ -1,8 +1,9 @@
 import torch, math
 from torch_scatter import scatter
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
-from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePolarizationEnergyAndInducedMultipolesFromPairs
-from .short_range import scaleMultipoles, computePairwiseChargeTransfer
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePolarizationEnergyAndInducedMultipolesFromPairs, computeInducedElectricPotentialAndFieldsFromPairs
+from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs
+from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
@@ -158,6 +159,13 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
+        # All pairs forming an angle #
+        pairs_angles_a = topology.angle_pairs.T.flatten()
+
+        # Intermolecular pairs #
+        pairs_inter_i_a = pairs[:, 0][topology.all_intermolecular_pairs]
+        pairs_inter_j_a = pairs[:, 1][topology.all_intermolecular_pairs]
+
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
         q_shell = params.get_atomic_parameters('q_shell')
@@ -186,6 +194,10 @@ class CMM(ForceField):
         Kdipo_ct_don = params.get_atomic_parameters('Kdipo_ct_don')
         Kquad_ct_don = params.get_atomic_parameters('Kquad_ct_don')
 
+        # Dispersion Multipoles #
+        C6_disp = params.get_atomic_parameters('C6_disp')
+
+        # Atomic widths #
         b_elec = params.get_atomic_parameters('b_elec')
         b_pauli = params.get_atomic_parameters('b_pauli')
         b_disp = params.get_atomic_parameters('b_disp')
@@ -195,6 +207,12 @@ class CMM(ForceField):
 
         eps = params.get_pair_parameters('eps', topology.all_intermolecular_pairs)
         r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
+        k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
+        D_p = params.get_pair_parameters('D', topology.bonded_pairs)
+        dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
+        dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
+        ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
+        ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
         j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
         j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
         k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
@@ -204,18 +222,20 @@ class CMM(ForceField):
         # organic molecules.
         r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
         r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
+        r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
+
+        
+        k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
         j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
         j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
         k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
         k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
 
-        theta_eq = params.get_angle_parameters('theta_eq', pairs, topology.angle_pairs)
-        j_cf_angle = params.get_angle_parameters('j_cf_angle', pairs, topology.angle_pairs)
-        k_hardness_angle = params.get_angle_parameters('k_hardness_angle', pairs, topology.angle_pairs)
-
-        # Intermolecular pairs #
-        pairs_inter_i_a = pairs[:, 0][topology.all_intermolecular_pairs]
-        pairs_inter_j_a = pairs[:, 1][topology.all_intermolecular_pairs]
+        theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
+        k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
+        j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
+        k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
+        k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
         # Pauli charge flux #
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
@@ -248,6 +268,7 @@ class CMM(ForceField):
         multipoles_ct_acc = scaleMultipoles(multipoles, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
         multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
         multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
+        multipoles_xpol = scaleMultipoles(multipoles, q_xpol, Kdipo_xpol, Kquad_xpol)
 
         ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
             dist_vecs[topology.all_intermolecular_pairs],
@@ -257,7 +278,7 @@ class CMM(ForceField):
             eps
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
-        dq = scatter(dq_pairwise, pairs_inter_j_a)
+        dq_a = scatter(dq_pairwise, pairs_inter_j_a)
         group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
@@ -273,13 +294,13 @@ class CMM(ForceField):
         # charge flux model which moves around charge based on the potential difference between pairs
         # of atoms. We can actually parameterize the pairwise model to reproduce the variational EEM
         # model.
-        dq_groups = scatter(dq, group_indices)
+        dq_groups = scatter(dq_a, group_indices)
         
         # Get electrostatic energy, electric potential, field, and field gradients
         b_i_elec_p = b_elec[pairs_inter_i_a]
         b_j_elec_p = b_elec[pairs_inter_j_a]
         b_ij_elec_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
-        ene_elec, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
+        ene_perm_elec, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
             natoms,
             pairs_inter_i_a,
             pairs_inter_j_a,
@@ -315,3 +336,71 @@ class CMM(ForceField):
         induced_multipoles[:, 0] += solution_vector[0:q_end].squeeze()
         lagrange_muls = solution_vector[q_end:lagrange_end].clone().squeeze()
         induced_multipoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
+
+        elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFieldsFromPairs(
+            natoms,
+            pairs_inter_i_a,
+            pairs_inter_j_a,
+            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            b_ij_elec_p,
+            induced_multipoles,
+        )
+
+        re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
+            dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
+            k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
+            ct_slope_1_p, ct_slope_2_p,
+            (elec_field + elec_field_induced)[topology.bonded_atoms[1]], dq_a[topology.bonded_atoms[1]]
+        )
+
+        # morse-bond
+        ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
+        ene_bonds = torch.sum(ene_bond_list)
+
+        # bond-bond couplings
+        ene_bbs_list = computeBondBondCoupling(
+            dists[topology.angle_pairs[0]], dists[topology.angle_pairs[1]],
+            r_eq_bb_1, r_eq_bb_2, k_bb
+        )
+        ene_bbs = torch.sum(ene_bbs_list)
+
+        # angles
+        ene_angles_list = computeCosAnglePotential(
+            angles, theta_eq, k_theta
+        )
+        ene_angles = torch.sum(ene_angles_list)
+
+        ## bond-angle couplings
+        ene_bas_list = computeBondAngleCoupling(
+            dists[pairs_angles_a], r_eq_ba,
+            angles.repeat_interleave(2), theta_eq.repeat_interleave(2),
+            k_ba
+        )
+        ene_bas = torch.sum(ene_bas_list)
+
+        ## Pauli repulsion
+        pauli_pairwise = computeShortRangeEnergyFromPairs(
+            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            multipoles_pauli[pairs_inter_i_a], multipoles_pauli[pairs_inter_j_a],
+            torch.sqrt(b_pauli[pairs_inter_i_a] * b_pauli[pairs_inter_j_a])
+        )
+        ene_pauli = torch.sum(pauli_pairwise) / 2
+
+        # dispersion
+        disp_pairwise = computeDispersionFromPairs(
+            dists[topology.all_intermolecular_pairs],
+            torch.sqrt(C6_disp[pairs_inter_i_a] * C6_disp[pairs_inter_j_a]),
+            torch.sqrt(b_disp[pairs_inter_i_a] * b_disp[pairs_inter_j_a])
+        )
+        ene_disp = torch.sum(disp_pairwise) / 2
+
+        # exchange-polarization
+        xpol_pairwise = computeShortRangeEnergyFromPairs(
+            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            multipoles_xpol[pairs_inter_i_a], multipoles_xpol[pairs_inter_j_a],
+            torch.sqrt(b_xpol[pairs_inter_i_a] * b_xpol[pairs_inter_j_a]),
+            False
+        )
+        ene_xpol = torch.sum(xpol_pairwise) / 2
+
+        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs

@@ -307,17 +307,19 @@ class CMMWater(nn.Module):
         induced_mPoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
 
         elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFields(
-            coords,
+            coords.size(0),
+            drVecs,
             pairs,
             induced_mPoles,
             self.nb_params['b']
         )
 
         re_fd, beta_fd = computeFieldDependentMorseParams(
-            coords, self.bonds, elec_field + elec_field_induced, dq,
+            bonds, bondVecs,
             self.bonded_params['k_b'], self.bonded_params['D'], self.bonded_params['b_eq'],
             self.bonded_params['dip_deriv_1'], self.bonded_params['dip_deriv_2'],
-            self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'], 
+            self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'],
+            (elec_field + elec_field_induced)[self.bonds[1]], dq[self.bonds[1]] 
         )
         
         # This computes the polarization energy using the solution rather than the
@@ -384,6 +386,7 @@ class CMMWater(nn.Module):
         ene_xpol = torch.sum(xpol_pairwise) / 2
 
         ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
+        
         energies = {
             "perm_elec": ene_perm_elec,
             "pol": ene_pol,

@@ -213,7 +213,8 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     return ene_elec, E_potentials, E_fields, E_field_grads
 
 def computeInducedElectricPotentialAndFields(
-    coords: torch.Tensor,
+    natoms: torch.Tensor,
+    drVec: torch.Tensor,
     pairs: torch.Tensor,
     mPoles: torch.Tensor,
     b: torch.Tensor,
@@ -222,7 +223,6 @@ def computeInducedElectricPotentialAndFields(
     # expand mpoles
     mPoles_i = mPoles[pairs[0]]
 
-    drVec = coords[pairs[1]] - coords[pairs[0]]
     dr = torch.norm(drVec, dim=1)
     drInv = 1 / dr
 
@@ -231,8 +231,8 @@ def computeInducedElectricPotentialAndFields(
     b_ij = torch.sqrt(b_i * b_j)
     polDamps_ij = computePolarizationDampFactors(dr, b_ij)
 
-    E_potentials = torch.zeros(coords.size(0)) # N
-    E_fields = torch.zeros_like(coords) # Nx3
+    E_potentials = torch.zeros(natoms) # N
+    E_fields = torch.zeros(natoms, 3) # Nx3
 
     # core-shell interactions
     cs_tensor_ij = computeInteractionTensor(drVec, polDamps_ij, drInv, rank=1)
@@ -246,6 +246,42 @@ def computeInducedElectricPotentialAndFields(
     E_fields[:, 0].scatter_add_(0, pairs[1], -eField_i[:, 0])
     E_fields[:, 1].scatter_add_(0, pairs[1], -eField_i[:, 1])
     E_fields[:, 2].scatter_add_(0, pairs[1], -eField_i[:, 2])
+
+    return E_potentials, E_fields
+
+def computeInducedElectricPotentialAndFieldsFromPairs(
+    natoms: torch.Tensor,
+    pairs_i_a: torch.Tensor,
+    pairs_j_a: torch.Tensor,
+    dists_p: torch.Tensor,
+    dist_vecs_p: torch.Tensor,
+    b_ij_p: torch.Tensor,
+    mPoles_a: torch.Tensor
+):
+    
+    # expand mpoles
+    mPoles_i_p = mPoles_a[pairs_i_a]
+
+    drInv = 1 / dists_p
+
+    # damping factors
+    polDamps_ij = computePolarizationDampFactors(dists_p, b_ij_p)
+
+    E_potentials = torch.zeros(natoms) # N
+    E_fields = torch.zeros(natoms, 3) # Nx3
+
+    # induced shell-shell interactions
+    ss_tensor_ij = computeInteractionTensor(dist_vecs_p, polDamps_ij, drInv, rank=1)
+
+    eData_i = torch.bmm(ss_tensor_ij, mPoles_i_p.unsqueeze(2))
+    ePot_i = eData_i[:, 0].flatten()
+    eField_i = eData_i[:, 1:4].reshape(-1, 3)
+
+    # How do I do this in a way that doesn't copy?
+    E_potentials.scatter_add_(0, pairs_j_a, ePot_i)
+    E_fields[:, 0].scatter_add_(0, pairs_j_a, -eField_i[:, 0])
+    E_fields[:, 1].scatter_add_(0, pairs_j_a, -eField_i[:, 1])
+    E_fields[:, 2].scatter_add_(0, pairs_j_a, -eField_i[:, 2])
 
     return E_potentials, E_fields
 

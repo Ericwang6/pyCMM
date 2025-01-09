@@ -34,7 +34,7 @@ def test_md():
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
     parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_pairs,
+        atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
     
