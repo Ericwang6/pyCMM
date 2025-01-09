@@ -2,7 +2,9 @@ import torch
 from torch.profiler import profile, record_function, ProfilerActivity
 
 import numpy as np
-import os
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import cmm
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_xyz_tinker
@@ -42,7 +44,7 @@ def profile_cmm_evaluation():
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
         with record_function("CMM_evaluate_water_box_216"):
             energies = ff.evaluate(cm, topology, parameters)
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
 
 if __name__ == "__main__":
     profile_cmm_evaluation()

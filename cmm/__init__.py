@@ -6,3 +6,4 @@ from .dispersion import *
 from .short_range import *
 from .multipole import *
 from .neighbor_list import *
+from .force_field import *
