@@ -25,15 +25,14 @@ def computeShortRangeDampFactors(dr, bij):
 
 def scaleMultipoles(
     mPoles: torch.Tensor, 
-    monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor, 
-    modCharges: Optional[torch.Tensor] = None
+    monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor
 ):
+    # The monopoles are set directly from the parameter list while the
+    # multipoles are directly scaled versions of the electric multipoles.
     mPolesScaled = torch.zeros_like(mPoles)
-    mPolesScaled[:, 0]   += mPoles[:, 0] * monoScales
+    mPolesScaled[:, 0]   += monoScales
     mPolesScaled[:, 1:4] += mPoles[:, 1:4] * dipoScales.unsqueeze(1)
     mPolesScaled[:, 4:]  += mPoles[:, 4:] * quadScales.unsqueeze(1)
-    if modCharges is not None:
-        mPolesScaled[:, 0] += modCharges
     return mPolesScaled
 
 
@@ -54,6 +53,23 @@ def computeShortRangeEnergy(
 
     iTensor = computeInteractionTensor(drVec, damps, drInv, 2)
     enes = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
+    return enes
+
+def computeShortRangeEnergyFromPairs(
+    dists_p: torch.Tensor, dist_vecs_p: torch.Tensor,
+    mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
+    b_ij_p: torch.Tensor,
+    positive: bool = True,
+):
+
+    drInv_p = 1 / dists_p
+
+    damps = computeShortRangeDampFactors(dists_p, b_ij_p)
+    if not positive:
+        damps = [-d for d in damps]
+
+    iTensor = computeInteractionTensor(dist_vecs_p, damps, drInv_p, 2)
+    enes = torch.bmm(mPoles_j_p.unsqueeze(1), torch.bmm(iTensor, mPoles_i_p.unsqueeze(2))).flatten()
     return enes
 
 
@@ -78,6 +94,6 @@ def computePairwiseChargeTransfer(
 
     # forward means i -> j, backward means j -> i
     drInvDamp = iTensor[:, 0, 0].flatten()
-    dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp / eps_ij
-    dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp / eps_ij
+    dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp * eps_ij
+    dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp * eps_ij
     return enes, dq_forward - dq_backward
