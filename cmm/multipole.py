@@ -1,10 +1,20 @@
 import math
 from typing import List, Optional
 import torch
-
+from enum import IntEnum
 from .pbc import applyPBC
 
 HALF_SQRT3 = math.sqrt(3) / 2
+
+
+class AxisTypes(IntEnum):
+    ZThenX            = 0
+    Bisector          = 1
+    ZBisect           = 2
+    ThreeFold         = 3
+    ZOnly             = 4
+    NoAxisType        = 5
+    LastAxisTypeIndex = 6
 
 
 def normVec(vec):
@@ -30,6 +40,75 @@ def computeLocal2GlobalRotationMatrix(pos, pos1, pos2, pos3, axisTypes, box=None
     xvec = normVec(xvec)
     yvec = torch.linalg.cross(zvec, xvec)
     rotMatrix = torch.hstack((xvec, yvec, zvec)).reshape(-1, 3, 3)
+    return rotMatrix
+
+
+def computeLocal2GlobalRotationMatrixBatch(positions, zAtoms, xAtoms, yAtoms, axisTypes, box=None, boxInv=None):
+    """
+    Compute local to global rotation matrix for a set of atoms
+
+    Parameters
+    ----------
+    positions: torch.Tensor
+        Atom positions, shape (N, 3)
+    zAtoms: torch.Tensor[int]
+        Atomic indices specifying Z-axis, shape (N,)
+    xAtoms: torch.Tensor[int]
+        Atomic indices specifying X-axis, shape (N,)
+    yAtoms: torch.Tensor[int]
+        Atomic indices specifying Y-axis, shape (N,)
+    axisTypes: torch.Tensor[int]
+        Integers specifying local axis types, shape (N,)
+    box: torch.Tensor
+        Peroidic box, shape (3, 3), optional
+    """
+
+    zVec = applyPBC(positions[zAtoms] - positions, box, boxInv)
+    zVec = normVec(zVec)
+    xVec = torch.zeros_like(zVec)
+    yVec = torch.zeros_like(zVec)
+
+    # Z-Only
+    filterZOnly = (axisTypes == AxisTypes.ZOnly.value)
+    xVecNotZOnly = applyPBC(positions[xAtoms][~filterZOnly] - positions[~filterZOnly], box, boxInv)
+    xVec[~filterZOnly] += normVec(xVecNotZOnly)
+    xVec[filterZOnly, 0] += 1 - zVec[filterZOnly, 0]
+    xVec[filterZOnly, 1] += zVec[filterZOnly, 0]
+
+    # Bisector
+    filterBisector = (axisTypes == AxisTypes.Bisector.value)
+    if torch.any(filterBisector):
+        zVec[filterBisector] += xVec[filterBisector]
+        zVec = normVec(zVec)
+    
+    # Z-Bisect
+    filterZBisect = (axisTypes == AxisTypes.ZBisect.value)
+    if torch.any(filterZBisect):
+        yVecZBisect = applyPBC(positions[yAtoms][filterZBisect] - positions[filterZBisect], box, boxInv)
+        yVecZBisect = normVec(yVecZBisect)
+        xVecZBisect = normVec(xVec[filterZBisect] + yVecZBisect)
+        xVec[filterZBisect] = xVecZBisect
+    
+    # Threefold
+    filterThreeFold = (axisTypes == AxisTypes.ThreeFold.value)
+    if torch.any(filterThreeFold):
+        yVecThreeFold = applyPBC(positions[yAtoms][filterThreeFold] - positions[filterThreeFold], box, boxInv)
+        yVecThreeFold = normVec(yVecThreeFold)
+        xVecThreeFold = xVec[filterThreeFold]
+        zVecThreeFold = zVec[filterThreeFold]
+        zVec[filterThreeFold] = normVec(zVecThreeFold + xVecThreeFold + yVecThreeFold)
+
+    xVec = normVec(xVec - zVec * torch.sum(zVec * xVec, dim=1, keepdim=True))
+    yVec = torch.linalg.cross(zVec, xVec)
+
+    # No axis
+    filterNoAxis = (axisTypes == AxisTypes.NoAxisType.value)
+    if torch.any(filterNoAxis):
+        zVec[filterNoAxis] = torch.tensor([0.0, 0.0, 1.0])
+        xVec[filterNoAxis] = torch.tensor([1.0, 0.0, 0.0])
+        yVec[filterNoAxis] = torch.tensor([0.0, 1.0, 0.0])
+
+    rotMatrix = torch.hstack((xVec, yVec, zVec)).reshape(-1, 3, 3)
     return rotMatrix
 
 
