@@ -36,14 +36,19 @@ def profile_cmm_evaluation():
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
+    ff_opt = torch.compile(ff)
 
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        ff_opt.atomic_params, ff_opt.pair_params, ff_opt.pair_pair_params, ff_opt.pair_angle_params, ff_opt.angle_params
     )
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
-        with record_function("CMM_evaluate_water_box_216"):
-            energies = ff.evaluate(cm, topology, parameters)
+        with record_function("CMM_evaluate_water_box_216_1"):
+            energies = ff_opt.evaluate(cm, topology, parameters)
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
+    with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+        with record_function("CMM_evaluate_water_box_216_2"):
+            energies = ff_opt.evaluate(cm, topology, parameters)
     print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
 
 if __name__ == "__main__":

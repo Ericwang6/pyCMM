@@ -27,8 +27,9 @@ from .units import *
 # That's all we have for now. The axis type should really be specified by the
 # force field by using a mapping from the atom type to the axis type. Don't have that yet.
 
-class ForceField:
+class ForceField(torch.nn.Module):
     def __init__(self) -> None:
+        super().__init__()
         self._atomic_params = {}
         self._pair_params = {}
 
@@ -279,7 +280,8 @@ class CMM(ForceField):
             eps
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
-        dq_a = scatter(dq_pairwise, pairs_inter_j_a)
+        dq_a = torch.zeros(natoms)
+        dq_a.scatter_add_(0, pairs_inter_j_a, dq_pairwise)
         group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
@@ -295,7 +297,8 @@ class CMM(ForceField):
         # charge flux model which moves around charge based on the potential difference between pairs
         # of atoms. We can actually parameterize the pairwise model to reproduce the variational EEM
         # model.
-        dq_groups = scatter(dq_a, group_indices)
+        dq_groups = torch.zeros(natoms // 3)
+        dq_groups.scatter_add_(0, group_indices, dq_a)
         
         # Get electrostatic energy, electric potential, field, and field gradients
         b_i_elec_p = b_elec[pairs_inter_i_a]
