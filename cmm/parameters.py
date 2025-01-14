@@ -177,7 +177,7 @@ class Parameterizer:
         return self._pair_param_arrays[name][self._pair_types[pairs_p]]
 
     def get_angle_parameters(self, name: str, angle_atoms_a: torch.Tensor):
-        return self._angle_param_arrays[name][self._angle_types[self._get_angle_types_from_angle_atoms(angle_atoms_a)]]
+        return self._angle_param_arrays[name][self._get_angle_types_from_angle_atoms(angle_atoms_a)]
 
     def get_pair_pair_parameters(self, name: str, pairs_1_p: torch.Tensor, pairs_2_p: torch.Tensor):
         return self._pair_pair_param_arrays[name][self._pair_types[pairs_1_p], self._pair_types[pairs_2_p]]
