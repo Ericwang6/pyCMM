@@ -375,8 +375,36 @@ def computePolarizationEnergyAndInducedMultipoles(
     # solution vector
     vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
     pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).squeeze()
-    
     return pol, vecSolution
+
+def computeProductWithPolarizationMatrix(
+    n_charges: torch.NumberType,
+    n_groups: torch.NumberType,
+    pairs_i_a: torch.Tensor,
+    pairs_j_a: torch.Tensor,
+    dists_p: torch.Tensor,
+    dist_vecs_p: torch.Tensor,
+    b_ij_p: torch.Tensor,
+    eta: torch.Tensor,
+    alpha_inv: torch.Tensor,
+    vec_in: torch.Tensor,
+    group_scatter: torch.Tensor,
+    groups: torch.Tensor
+):
+    induced_charges = vec_in[:n_charges].squeeze()
+    induced_dipoles = vec_in[(n_charges+n_groups):].reshape(-1, 3)
+    induced_multipoles_a = torch.zeros((n_charges, 4))
+    induced_multipoles_a[:, 0] += vec_in[:n_charges].squeeze().detach()
+    induced_multipoles_a[:, 1:4] += vec_in[(n_charges+n_groups):].reshape(-1, 3).detach()
+    lagrange_muls = vec_in[n_charges:(n_charges+n_groups)].squeeze()
+
+    induced_electric_potential, induced_electric_field = computeInducedElectricPotentialAndFieldsFromPairs(
+        n_charges, pairs_i_a, pairs_j_a,
+        dists_p, dist_vecs_p, b_ij_p, induced_multipoles_a
+    )
+    
+    res = torch.concat((eta * induced_charges + lagrange_muls[group_scatter] + induced_electric_potential, torch.sum(induced_charges[groups], dim=1), torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten()))
+    return res
 
 def computePolarizationEnergyAndInducedMultipolesFromPairs(
     nsites: torch.NumberType,
@@ -427,7 +455,6 @@ def computePolarizationEnergyAndInducedMultipolesFromPairs(
     # solution vector
     vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
     pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).squeeze()
-    
     return pol, vecSolution
 
 def computePermElecAndPolarizationEnergy(

@@ -10,7 +10,7 @@ from .pbc import *
 from .multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from .short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from .dispersion import computeDispersion
-from .electrostatics import getPairsFromGroups, computePermanentElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles, computeDampedMultipolarInteractionEnergies, computeInducedElectricPotentialAndFields
+from .electrostatics import getPairsFromGroups, computePermanentElectricPotentialExpansion, computePolarizationEnergyAndInducedMultipoles, computeDampedMultipolarInteractionEnergies, computeInducedElectricPotentialAndFields, computeProductWithPolarizationMatrix
 
 class CMMWater(nn.Module):
     def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True):
@@ -302,9 +302,9 @@ class CMMWater(nn.Module):
         lagrange_end = q_end + len(groupCharges)
 
         induced_mPoles = torch.zeros((mPoles.size(0), 4))
-        induced_mPoles[:, 0] += solution_vector[0:q_end].squeeze()
-        lagrange_muls = solution_vector[q_end:lagrange_end].clone().squeeze()
-        induced_mPoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3)
+        induced_mPoles[:, 0] += solution_vector[0:q_end].squeeze().detach()
+        lagrange_muls = solution_vector[q_end:lagrange_end].clone().squeeze().detach()
+        induced_mPoles[:, 1:4] += solution_vector[lagrange_end:].reshape(-1, 3).detach()
 
         elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFields(
             coords.size(0),
@@ -321,16 +321,6 @@ class CMMWater(nn.Module):
             self.bonded_params['ct_slope_1'], self.bonded_params['ct_slope_2'],
             (elec_field + elec_field_induced)[self.bonds[1]], dq[self.bonds[1]] 
         )
-        
-        # This computes the polarization energy using the solution rather than the
-        # explicitly constructed polarization matrix. Leaving this here but commented
-        # out so that I don't forget how to calculate it while implementing an iterative
-        # polarization scheme.
-        #pol_energy_2 = 0.5 * (
-        #    torch.sum(induced_mPoles[:, 0] * elec_potential) -
-        #    torch.sum(torch.linalg.vecdot(induced_mPoles[:, 1:4], elec_field)) -
-        #    torch.sum(lagrange_muls * torch.sum(induced_mPoles[:, 0][torch.tensor(self.nb_params["groups"], dtype=torch.int64)], dim=1))
-        #)
 
         # morse-bond
         ene_bond_list = computeMorseBondPotential(bonds, re_fd, self.bonded_params['D'], beta_fd)

@@ -7,11 +7,18 @@ import torch
 from torch_scatter import scatter
 import numpy as np
 
+import os
+
 from cmm.units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG
 from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from cmm.short_range import computeShortRangeEnergy, scaleMultipoles, computePairwiseChargeTransfer
 from cmm.dispersion import computeDispersion
 from cmm.electrostatics import computePermElecAndPolarizationEnergy
+from cmm.misc_utils import read_from_tinker_xyz
+from cmm.coordinate_manager import CoordinateManager
+from cmm.topology import Topology
+from cmm.parameters import Parameterizer
+from cmm.force_field import CMM
 from cmm.cmm_water import CMMWater
 
 def finite_difference(coords: torch.Tensor, f, h: float = 1e-5):
@@ -139,23 +146,62 @@ def water_data(coords: torch.Tensor):
         param_ct,
     )
 
+def test_fast_evaluate():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    
+    model = CMMWater(2, do_polarization=True)
+    energies_ref = model.computeEnergy(coords, box)
+    assert torch.isclose(energies_ff['tot'], energies_ref['tot'])
+
 def test_total_energy_and_total_gradients():
     torch.set_default_dtype(torch.float64)
 
-    coords = get_water_dimer_coords(requires_grad=True)
-    coords_no_grad = get_water_dimer_coords(requires_grad=False)
-    model = CMMWater(2, do_polarization=True)
+    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
-    energies = model.computeEnergy(coords, box)
-    total_energy = energies['tot'] * HARTREE2KCAL
-    total_ref = torch.tensor([-4.768231511534177])
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    total_energy = energies_ff['tot']
+    total_ref = torch.tensor([-4.768231511534177 / HARTREE2KCAL])
     assert torch.allclose(total_energy, total_ref)
 
     def get_total_energy(coords: torch.Tensor):
-        model = CMMWater(2, do_polarization=True)
-        box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
-        energies = model.computeEnergy(coords, box)
-        total_energy = energies['tot'] * HARTREE2KCAL
+        cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        pairs, _, _ = cm.get_distances_vectors_and_pairs()
+        ff = CMM()
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
+        energies_ff = ff.evaluate(cm, topology, parameters)
+        total_energy = energies_ff['tot']
         return total_energy
 
     grads_fd = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
