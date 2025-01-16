@@ -54,12 +54,12 @@ def evaluate_bond_and_angle_charge_flux(
     q.add_(flux_charges)
 
 def evaluate_hardness_change(
-        pairs: torch.Tensor, dists: torch.Tensor, angles: torch.Tensor,
-        bonded_pairs: torch.Tensor, angle_pairs: torch.Tensor, angle_atoms: torch.Tensor,
-        eta: torch.Tensor, r_eq: torch.Tensor, theta_eq: torch.Tensor,
-        k_hardness_b: torch.Tensor,  k_hardness_angle: torch.Tensor,
-        r_eq_bb_1: torch.Tensor, r_eq_bb_2: torch.Tensor,
-        k_hardness_bb_1: torch.Tensor, k_hardness_bb_2: torch.Tensor):
+    pairs: torch.Tensor, dists: torch.Tensor, angles: torch.Tensor,
+    bonded_pairs: torch.Tensor, angle_pairs: torch.Tensor, angle_atoms: torch.Tensor,
+    eta: torch.Tensor, r_eq: torch.Tensor, theta_eq: torch.Tensor,
+    k_hardness_b: torch.Tensor,  k_hardness_angle: torch.Tensor,
+    r_eq_bb_1: torch.Tensor, r_eq_bb_2: torch.Tensor,
+    k_hardness_bb_1: torch.Tensor, k_hardness_bb_2: torch.Tensor):
     
     hardness_product = torch.ones_like(eta)
     hardness_change_b = computeHardnessChangeBond(dists[bonded_pairs], r_eq, k_hardness_b)

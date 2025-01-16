@@ -207,7 +207,7 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     E_field_grads[:, 3].scatter_add_(0, pairs_j_a, eFieldGradCore[:, 4] - eFieldGrad_i[:, 3])
     E_field_grads[:, 4].scatter_add_(0, pairs_j_a, eFieldGradCore[:, 5] - eFieldGrad_i[:, 4])
     E_field_grads[:, 5].scatter_add_(0, pairs_j_a, eFieldGradCore[:, 8] - eFieldGrad_i[:, 5])
-    
+
     elecPairwiseEnergies = scPairwiseEnergies + ssPairwiseEnergies
     ene_elec = 0.5 * (torch.sum(Z_a * E_potentials) + torch.sum(elecPairwiseEnergies))
     return ene_elec, E_potentials, E_fields, E_field_grads
@@ -268,7 +268,9 @@ def computeInducedElectricPotentialAndFieldsFromPairs(
     polDamps_ij = computePolarizationDampFactors(dists_p, b_ij_p)
 
     E_potentials = torch.zeros(natoms) # N
-    E_fields = torch.zeros(natoms, 3) # Nx3
+    E_fields_x = torch.zeros(natoms) # N
+    E_fields_y = torch.zeros(natoms) # N
+    E_fields_z = torch.zeros(natoms) # N
 
     # induced shell-shell interactions
     ss_tensor_ij = computeInteractionTensor(dist_vecs_p, polDamps_ij, drInv, rank=1)
@@ -277,13 +279,12 @@ def computeInducedElectricPotentialAndFieldsFromPairs(
     ePot_i = eData_i[:, 0].flatten()
     eField_i = eData_i[:, 1:4].reshape(-1, 3)
 
-    # How do I do this in a way that doesn't copy?
-    E_potentials.scatter_add_(0, pairs_j_a, ePot_i)
-    E_fields[:, 0].scatter_add_(0, pairs_j_a, -eField_i[:, 0])
-    E_fields[:, 1].scatter_add_(0, pairs_j_a, -eField_i[:, 1])
-    E_fields[:, 2].scatter_add_(0, pairs_j_a, -eField_i[:, 2])
+    E_potentials = E_potentials.scatter_add(0, pairs_j_a, ePot_i)
+    E_fields_x = E_fields_x.scatter_add(0, pairs_j_a, -eField_i[:, 0])
+    E_fields_y = E_fields_y.scatter_add(0, pairs_j_a, -eField_i[:, 1])
+    E_fields_z = E_fields_z.scatter_add(0, pairs_j_a, -eField_i[:, 2])
 
-    return E_potentials, E_fields
+    return E_potentials, torch.stack((E_fields_x, E_fields_y, E_fields_z), dim=1)
 
 def computeDampedMultipolarInteractionEnergies(
     drVec: torch.Tensor,

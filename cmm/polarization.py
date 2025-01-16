@@ -35,7 +35,7 @@ def solvePolarizationByCG(
     # Basically just need to decide when/how we are going to do this. These options start
     # to interact with user setting though so will want to discuss with Eric.
     
-    TM0 = computeProductWithPolarizationMatrix(
+    TM0, _, _ = computeProductWithPolarizationMatrix(
         guess_vector, n_charges,
         pairs_i_a, pairs_j_a,
         dists_p, dist_vecs_p,
@@ -45,7 +45,7 @@ def solvePolarizationByCG(
     residual = b_vector - TM0
     P = residual.detach().clone()
     for _ in range(max_iter):
-        TP = computeProductWithPolarizationMatrix(
+        TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
             pairs_i_a, pairs_j_a,
             dists_p, dist_vecs_p,
@@ -82,7 +82,7 @@ def computeProductWithPolarizationMatrix(
     eta: torch.Tensor,
     alpha_inv: torch.Tensor,
     group_scatter: torch.Tensor,
-    groups: torch.Tensor
+    groups: torch.Tensor,
 ):
     induced_multipoles_a = torch.zeros((n_charges, 4))
     induced_charges = vec_in[:n_charges]
@@ -98,4 +98,4 @@ def computeProductWithPolarizationMatrix(
     )
     
     res = torch.concat((eta * induced_charges + lagrange_muls[group_scatter] + induced_electric_potential, torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(), torch.sum(induced_charges[groups], dim=1)))
-    return res
+    return res, induced_electric_potential, induced_electric_field

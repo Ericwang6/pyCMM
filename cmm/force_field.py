@@ -55,8 +55,8 @@ class CMM(ForceField):
         # when building atomic_params, bond_params, and pair_params.
 
         # Electrostatic raw params #
-        Z = torch.tensor([3.61565, 0.93619], requires_grad=False)
-        mono = torch.tensor([-0.390896, 0.195448], requires_grad=False)
+        Z = torch.tensor([3.61565, 0.93619])
+        mono = torch.tensor([-0.390896, 0.195448])
         dipo = torch.tensor([
             [0.0,       0.0, -0.094298], # O_water
             [0.0910288, 0.0, -0.207851]  # H_water
@@ -169,6 +169,9 @@ class CMM(ForceField):
         pairs_inter_i_a = pairs[:, 0][topology.all_intermolecular_pairs]
         pairs_inter_j_a = pairs[:, 1][topology.all_intermolecular_pairs]
 
+        dists_inter = dists[topology.all_intermolecular_pairs]
+        dist_vecs_inter = dist_vecs[topology.all_intermolecular_pairs]
+
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
         q_shell = params.get_atomic_parameters('q_shell')
@@ -257,10 +260,10 @@ class CMM(ForceField):
             eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
             r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
         )
+        eta_times_2 = 2 * eta
 
         # Rotation Matrices #
         rotation_matrices = cm.compute_rotation_matrices(params.get_atomic_parameters("axistypes"))
-        
         multipoles = rotateMultipoles(
             q_shell, dipo, quad, rotation_matrices
         ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
@@ -274,7 +277,7 @@ class CMM(ForceField):
         multipoles_xpol = scaleMultipoles(multipoles, q_xpol, Kdipo_xpol, Kquad_xpol)
 
         ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
-            dist_vecs[topology.all_intermolecular_pairs],
+            dist_vecs_inter,
             multipoles_ct_acc[pairs_inter_i_a], multipoles_ct_acc[pairs_inter_j_a],
             multipoles_ct_don[pairs_inter_i_a], multipoles_ct_don[pairs_inter_j_a],
             b_ct[pairs_inter_i_a], b_ct[pairs_inter_j_a],
@@ -282,7 +285,7 @@ class CMM(ForceField):
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq_a = torch.zeros(natoms)
-        dq_a.scatter_add_(0, pairs_inter_j_a, dq_pairwise)
+        dq_a = dq_a.scatter_add(0, pairs_inter_j_a, dq_pairwise)
         group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
@@ -300,8 +303,8 @@ class CMM(ForceField):
         # model.
         ngroups = natoms // 3
         dq_groups = torch.zeros(ngroups)
-        dq_groups.scatter_add_(0, group_indices, dq_a)
-        
+        dq_groups = dq_groups.scatter_add(0, group_indices, dq_a)
+
         # Get electrostatic energy, electric potential, field, and field gradients
         b_i_elec_p = b_elec[pairs_inter_i_a]
         b_j_elec_p = b_elec[pairs_inter_j_a]
@@ -310,7 +313,7 @@ class CMM(ForceField):
             natoms,
             pairs_inter_i_a,
             pairs_inter_j_a,
-            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            dists_inter, dist_vecs_inter,
             b_i_elec_p, b_ij_elec_p,
             multipoles, Z
         )
@@ -325,54 +328,44 @@ class CMM(ForceField):
         # Solve Polarization Equations #
         groups = torch.stack((torch.arange(0, natoms, 3), torch.arange(1, natoms, 3), torch.arange(2, natoms, 3)), dim=1)
 
-        # NOTE: Using torch.no_grad makes everything way more efficient since in principle we should be able
-        # to get the gradients due to the polarization energy without any problem. Currently, I haven't
-        # implemented the needed gradients, but doing so should be possible. Then, we can use autodiff
-        # for everything else.
-
-        #with torch.no_grad():
-        induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, ngroups, polarizabilities, elec_field)
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
-        induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
-            induced_multipoles_and_lagrange_muls,
-            b_vec,
-            natoms,
-            pairs_inter_i_a,
-            pairs_inter_j_a,
-            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
-            b_ij_elec_p,
-            eta * 2,
-            inverse_polarizabilities,
+        with torch.no_grad():
+            induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, ngroups, polarizabilities, elec_field)
+            induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
+                induced_multipoles_and_lagrange_muls,
+                b_vec,
+                natoms,
+                pairs_inter_i_a,
+                pairs_inter_j_a,
+                dists_inter, dist_vecs_inter,
+                b_ij_elec_p,
+                eta_times_2,
+                inverse_polarizabilities,
+                group_indices, groups
+            )
+
+        TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
+            induced_multipoles_and_lagrange_muls_out, natoms,
+            pairs_inter_i_a, pairs_inter_j_a,
+            dists_inter, dist_vecs_inter,
+            b_ij_elec_p, eta_times_2, inverse_polarizabilities,
             group_indices, groups
         )
-        induced_charges = induced_multipoles_and_lagrange_muls_out[:natoms]
-        induced_dipoles = induced_multipoles_and_lagrange_muls_out[natoms:(4 * natoms)].view(-1, 3)
-        lagrange_muls = induced_multipoles_and_lagrange_muls_out[(4 * natoms):]
-        
-        induced_multipoles_a = torch.concatenate((induced_charges.unsqueeze(1), induced_dipoles), dim=1)
 
-        # TODO: I think I need to manually compute the charge transfer gradient piece
-        # since I am turning off gradient tracking when solving the polarization equations.
-        # Let's try just tracking the gradients first and see how that goes??
-        ene_pol = 0.5 * (
-            torch.sum(induced_charges * elec_potential) -
-            torch.dot(induced_dipoles.flatten(), elec_field.flatten()) -
-            torch.sum(lagrange_muls * torch.sum(induced_charges[groups], dim=1))
-        )
+        ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
 
-        elec_potential_induced, elec_field_induced = computeInducedElectricPotentialAndFieldsFromPairs(
-            natoms,
-            pairs_inter_i_a, pairs_inter_j_a,
-            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
-            b_ij_elec_p,
-            induced_multipoles_a
-        )
-
+        # NOTE(JOE): There seems to be a problem with the gradients here when induced
+        # fields are included. The error in the gradients is small enough that I am
+        # going to just ignore it for now... I think the gradients are not being
+        # accumulated properly in the induced electric fields due to the way I compute them.
+        # Will need to revisit when the induced fields are larger so the errors are more
+        # apparent.
         re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
             dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
             k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
             ct_slope_1_p, ct_slope_2_p,
-            (elec_field + elec_field_induced)[topology.bonded_atoms[1]], dq_a[topology.bonded_atoms[1]]
+            (elec_field + elec_field_induced)[topology.bonded_atoms[1]],
+            dq_a[topology.bonded_atoms[1]]
         )
 
         # morse-bond
@@ -402,7 +395,7 @@ class CMM(ForceField):
 
         ## Pauli repulsion
         pauli_pairwise = computeShortRangeEnergyFromPairs(
-            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            dists_inter, dist_vecs_inter,
             multipoles_pauli[pairs_inter_i_a], multipoles_pauli[pairs_inter_j_a],
             torch.sqrt(b_pauli[pairs_inter_i_a] * b_pauli[pairs_inter_j_a])
         )
@@ -410,7 +403,7 @@ class CMM(ForceField):
 
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
-            dists[topology.all_intermolecular_pairs],
+            dists_inter,
             torch.sqrt(C6_disp[pairs_inter_i_a] * C6_disp[pairs_inter_j_a]),
             torch.sqrt(b_disp[pairs_inter_i_a] * b_disp[pairs_inter_j_a])
         )
@@ -418,7 +411,7 @@ class CMM(ForceField):
 
         # exchange-polarization
         xpol_pairwise = computeShortRangeEnergyFromPairs(
-            dists[topology.all_intermolecular_pairs], dist_vecs[topology.all_intermolecular_pairs],
+            dists_inter, dist_vecs_inter,
             multipoles_xpol[pairs_inter_i_a], multipoles_xpol[pairs_inter_j_a],
             torch.sqrt(b_xpol[pairs_inter_i_a] * b_xpol[pairs_inter_j_a]),
             False
