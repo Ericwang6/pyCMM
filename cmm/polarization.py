@@ -64,7 +64,7 @@ def solvePolarizationByCG(
         beta = 1.0 / torch.dot(residual, residual)
         #residual -= gamma * TP
         residual = residual - gamma * TP
-        if torch.max(residual) < residual_threshold:
+        if torch.norm(residual) < residual_threshold:
             break
         #beta *= torch.dot(residual, residual)
         beta = beta * torch.dot(residual, residual)
