@@ -9,7 +9,7 @@ def direct_field_induced_dipole_guess(
     polarizabilities: torch.Tensor,
     elec_field: torch.Tensor
 ):
-    guess_vector = torch.zeros(n_charges + 3 * n_dipoles + n_groups)
+    guess_vector = torch.zeros(n_charges + 3 * n_dipoles + n_groups, device=elec_field.device)
     guess_vector[n_charges:(n_charges + 3 * n_dipoles)] = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
     return guess_vector
 
@@ -84,7 +84,7 @@ def computeProductWithPolarizationMatrix(
     group_scatter: torch.Tensor,
     groups: torch.Tensor,
 ):
-    induced_multipoles_a = torch.zeros((n_charges, 4))
+    induced_multipoles_a = torch.zeros((n_charges, 4), device=vec_in.device)
     induced_charges = vec_in[:n_charges]
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
     lagrange_muls = vec_in[(4 * n_charges):]

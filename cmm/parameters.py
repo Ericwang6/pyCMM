@@ -14,6 +14,7 @@ class Parameterizer:
     """
 
     def __init__(self, atom_type_names: List[str], pairs: torch.Tensor, angle_atoms: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]) -> None:
+        self.device = pairs.device
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
         self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
         self._pair_pair_param_arrays = {} # Map from parameter type to array indexed by two pair types
@@ -32,7 +33,7 @@ class Parameterizer:
         self._build_pair_angle_parameter_arrays(raw_pair_angle_params)
         self._build_angle_parameter_arrays(raw_angle_params)
 
-        self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long) # On device
+        self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long, device=self.device)
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
         self._angle_types = self._get_angle_types_from_angle_atoms(angle_atoms)
 
@@ -57,7 +58,7 @@ class Parameterizer:
         self._name_to_angle_type = {}
         self._unique_angle_type_names = [[(self._unique_atom_type_names[all_type_combos[i][0]], self._unique_atom_type_names[j], self._unique_atom_type_names[all_type_combos[i][1]]) for i in torch.arange(len(all_type_combos))] for j in torch.arange(len(self._unique_atom_type_names))]
         self._unique_angle_type_names = [item for sublist in self._unique_angle_type_names for item in sublist]
-        self._atom_types_in_angle = torch.tensor([(self._name_to_atom_type[self._unique_angle_type_names[i][0]], self._name_to_atom_type[self._unique_angle_type_names[i][1]], self._name_to_atom_type[self._unique_angle_type_names[i][2]]) for i in torch.arange(len(self._unique_angle_type_names))])
+        self._atom_types_in_angle = torch.tensor([(self._name_to_atom_type[self._unique_angle_type_names[i][0]], self._name_to_atom_type[self._unique_angle_type_names[i][1]], self._name_to_atom_type[self._unique_angle_type_names[i][2]]) for i in torch.arange(len(self._unique_angle_type_names))], device=self.device)
         angle_pair_1 = self._atom_types_in_angle[:, [1, 0]]
         angle_pair_2 = self._atom_types_in_angle[:, [1, 2]]
         angle_pair_types_1 = self._nonsymmetric_pairing_function(angle_pair_1)
@@ -86,9 +87,9 @@ class Parameterizer:
         The index is different for (j,i) and (i,j). Used for generating the angle and dihedral types.
         This is the "ElegantPair" function defined at: https://en.wikipedia.org/wiki/Pairing_function#Other_pairing_functions
         """
-        pair_types = torch.zeros(pairs.size(0), dtype=torch.long)
-        i_less_than_j_indices = torch.where(pairs[:, 0] < pairs[:, 1])
-        other_indices = torch.where(pairs[:, 0] >= pairs[:, 1])
+        pair_types = torch.zeros(pairs.size(0), dtype=torch.long, device=self.device)
+        i_less_than_j_indices = torch.where(pairs[:, 0] < pairs[:, 1])[0].to(self.device)
+        other_indices = torch.where(pairs[:, 0] >= pairs[:, 1])[0].to(self.device)
         pair_types[i_less_than_j_indices] = torch.square(pairs[i_less_than_j_indices][:, 1]) + pairs[i_less_than_j_indices][:, 0]
         pair_types[other_indices] = torch.square(pairs[other_indices][:, 0]) + pairs[other_indices][:, 0] + pairs[other_indices][:, 1]
         return pair_types
@@ -97,7 +98,7 @@ class Parameterizer:
         # Atom Types #
         n_types = len(self._unique_atom_type_names)
         for param_key in raw_atomic_params[self._unique_atom_type_names[0]]:
-            self._atomic_param_arrays[param_key] = torch.zeros_like(raw_atomic_params[self._unique_atom_type_names[0]][param_key])
+            self._atomic_param_arrays[param_key] = torch.zeros_like(raw_atomic_params[self._unique_atom_type_names[0]][param_key], device=self.device)
             self._atomic_param_arrays[param_key].unsqueeze_(0)
             if self._atomic_param_arrays[param_key].ndim == 1: # Floats: e.g. charges
                 self._atomic_param_arrays[param_key] = self._atomic_param_arrays[param_key].repeat(n_types, 1)
@@ -119,24 +120,24 @@ class Parameterizer:
         for i in range(len(self._unique_pair_type_names)):
             if self._unique_pair_type_names[i] in raw_pair_params:
                 for param_key in raw_pair_params[self._unique_pair_type_names[i]]:
-                    self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1)
+                    self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, device=self.device)
                 break
         
         # Build matrix indexable by two Pair Types #
         for pair_tuple in raw_pair_pair_params.keys(): # Loop over names
             for param_key in raw_pair_pair_params[pair_tuple].keys():
-                self._pair_pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_pair_types) + 1)
+                self._pair_pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_pair_types) + 1, device=self.device)
 
         # Build matrix indexable by a Pair Type and Angle Type #
         for pair_angle_tuple in raw_pair_angle_params.keys(): # Loop over names
             for param_key in raw_pair_angle_params[pair_angle_tuple].keys():
-                self._pair_angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_angle_types) + 1)
+                self._pair_angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, torch.max(self._unique_angle_types) + 1, device=self.device)
 
         # Angle Types #
         for i in range(len(self._unique_angle_type_names)):
             if self._unique_angle_type_names[i] in raw_angle_params:
                 for param_key in raw_angle_params[self._unique_angle_type_names[i]]:
-                    self._angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_angle_types) + 1)
+                    self._angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_angle_types) + 1, device=self.device)
                 break
 
     def _build_atomic_parameter_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):

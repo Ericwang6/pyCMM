@@ -164,7 +164,7 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     ePotCore = Z_i_p * drInv
     eFieldCore = dist_vecs_p * (Z_i_p * drInv3).unsqueeze(-1)
     eFieldGradCore_1 = torch.vmap(torch.mul)(torch.vmap(torch.outer)(dist_vecs_p, dist_vecs_p), (3 * Z_i_p * drInv5))
-    I = torch.eye(3)
+    I = torch.eye(3, device=Z_a.device)
     I = I.reshape((1, 3, 3))
     I = I.repeat((Z_i_p.size(0), 1, 1))
     eFieldGradCore_2 = torch.vmap(torch.mul)(I, (Z_i_p * drInv3))
@@ -191,9 +191,9 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     ssPairwiseEnergies = torch.bmm(mPoles_j_p.unsqueeze(1), ss_edata).flatten()
 
     # Accumulate fields #
-    E_potentials = torch.zeros(natoms) # N
-    E_fields = torch.zeros(natoms, 3) # Nx3
-    E_field_grads = torch.zeros(natoms, 6) # Nx6 because only store upper triangle
+    E_potentials = torch.zeros(natoms, device=Z_a.device) # N
+    E_fields = torch.zeros(natoms, 3, device=Z_a.device) # Nx3
+    E_field_grads = torch.zeros(natoms, 6, device=Z_a.device) # Nx6 because only store upper triangle
 
     # How do I do this in a way that doesn't copy?
     E_potentials.scatter_add_(0, pairs_j_a, ePot_i + ePotCore)
@@ -267,10 +267,10 @@ def computeInducedElectricPotentialAndFieldsFromPairs(
     # damping factors
     polDamps_ij = computePolarizationDampFactors(dists_p, b_ij_p)
 
-    E_potentials = torch.zeros(natoms) # N
-    E_fields_x = torch.zeros(natoms) # N
-    E_fields_y = torch.zeros(natoms) # N
-    E_fields_z = torch.zeros(natoms) # N
+    E_potentials = torch.zeros(natoms, device=natoms.device) # N
+    E_fields_x = torch.zeros(natoms, device=natoms.device) # N
+    E_fields_y = torch.zeros(natoms, device=natoms.device) # N
+    E_fields_z = torch.zeros(natoms, device=natoms.device) # N
 
     # induced shell-shell interactions
     ss_tensor_ij = computeInteractionTensor(dist_vecs_p, polDamps_ij, drInv, rank=1)

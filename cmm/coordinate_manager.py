@@ -11,7 +11,7 @@ from .pbc import applyPBC
 # do with coordinates in sync.
 # 
 # Additionally, the coordinate manager hands off the distance vectors,
-# angles, and so on in such a way that pair potentials don't have to
+# pairs, and so on in such a way that pair potentials don't have to
 # do anything but apply the potential to all the distances.
 # The potentials will not even see the neighbor list. They are just
 # functions that take in bond lengths, vectors, angles, or whatever, 

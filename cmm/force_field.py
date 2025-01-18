@@ -177,7 +177,7 @@ class CMM(ForceField):
         q_shell = params.get_atomic_parameters('q_shell')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
-        natoms = Z.size(0)
+        natoms = torch.tensor(Z.size(0), device=pairs.device)
 
         # Polarizability #
         alpha = params.get_atomic_parameters('alpha')
@@ -264,9 +264,10 @@ class CMM(ForceField):
 
         # Rotation Matrices #
         rotation_matrices = cm.compute_rotation_matrices(params.get_atomic_parameters("axistypes"))
+        
         multipoles = rotateMultipoles(
             q_shell, dipo, quad, rotation_matrices
-        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
+        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
         polarizabilities = rotateQuadrupoles(alpha, rotation_matrices)
         inverse_polarizabilities = torch.linalg.inv(polarizabilities)
 
@@ -284,9 +285,9 @@ class CMM(ForceField):
             eps
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
-        dq_a = torch.zeros(natoms)
+        dq_a = torch.zeros(natoms, device=pairs.device)
         dq_a = dq_a.scatter_add(0, pairs_inter_j_a, dq_pairwise)
-        group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3), 3)
+        group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3, device=pairs.device), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
         # way of defining groups is somewhat troublesome. It means that we chop up molecules
@@ -302,7 +303,7 @@ class CMM(ForceField):
         # of atoms. We can actually parameterize the pairwise model to reproduce the variational EEM
         # model.
         ngroups = natoms // 3
-        dq_groups = torch.zeros(ngroups)
+        dq_groups = torch.zeros(ngroups, device=pairs.device)
         dq_groups = dq_groups.scatter_add(0, group_indices, dq_a)
 
         # Get electrostatic energy, electric potential, field, and field gradients
@@ -326,7 +327,10 @@ class CMM(ForceField):
         # The below is again a hack to work for water.
 
         # Solve Polarization Equations #
-        groups = torch.stack((torch.arange(0, natoms, 3), torch.arange(1, natoms, 3), torch.arange(2, natoms, 3)), dim=1)
+        groups = torch.stack((
+            torch.arange(0, natoms, 3, device=pairs.device),
+            torch.arange(1, natoms, 3, device=pairs.device),
+            torch.arange(2, natoms, 3, device=pairs.device)), dim=1)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
         with torch.no_grad():

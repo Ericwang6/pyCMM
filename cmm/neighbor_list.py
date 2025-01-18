@@ -48,8 +48,8 @@ class NSquaredList(NeighborList):
         self.cutoff = cutoff
         self.box_lengths = box_lengths
         self.natoms = positions.shape[0]
-        self.neighbor_list = torch.full((self.natoms, self.natoms), -1, dtype=torch.long, device=positions.device)
-        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=positions.device)
+        self.neighbor_list = torch.full((self.natoms, self.natoms), -1, dtype=torch.long, device=self.device)
+        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
 
         self._build(positions)
 
@@ -105,6 +105,7 @@ class CellList(NeighborList):
             cutoff (float): Interaction cutoff distance
             max_neighbors (int): Maximum number of neighbors per atom
         """
+        self.device = positions.device
         self.minimum_vector, _ = torch.min(positions, dim=0)
         self.cutoff = cutoff
         self.box_lengths = box_lengths
@@ -124,19 +125,19 @@ class CellList(NeighborList):
         self.n_atoms = positions.shape[0]
         
         # Initialize neighbor list storage
-        self.n_pairs = torch.zeros(1, dtype=torch.long)
+        self.n_pairs = torch.zeros(1, dtype=torch.long, device=self.device)
         self.neighbor_list = torch.full((self.n_atoms, max_neighbors), -1, 
-                                      dtype=torch.long, device=positions.device)
+                                      dtype=torch.long, device=self.device)
         
         # @SPEED: I think this might be faster if it were Nx2 rather than 2xN?
         self.pairs = torch.full((2, self.n_atoms * max_neighbors), -1,
-                                dtype=torch.long, device=positions.device)
+                                dtype=torch.long, device=self.device)
         self.n_neighbors = torch.zeros(self.n_atoms, dtype=torch.long, 
-                                     device=positions.device)
+                                     device=self.device)
         self.distance_vectors = torch.zeros((self.n_atoms, max_neighbors, 3),
-                                            dtype=positions.dtype, device=positions.device)
+                                            dtype=positions.dtype, device=self.device)
         self.distances = torch.zeros((self.n_atoms, max_neighbors),
-                                     dtype=positions.dtype, device=positions.device)
+                                     dtype=positions.dtype, device=self.device)
         
         # Build cell structure
         self._build(positions)
@@ -226,7 +227,7 @@ class CellList(NeighborList):
                     nx = (cell_x + dx) % self.n_cells[0]
                     ny = (cell_y + dy) % self.n_cells[1]
                     nz = (cell_z + dz) % self.n_cells[2]
-                    test_cell = torch.Tensor([nx, ny, nz]).expand(self.cell_indices.size(0), 3)
+                    test_cell = torch.tensor([nx, ny, nz], device=self.device).expand(self.cell_indices.size(0), 3)
 
                     neighbor_indices = torch.nonzero(torch.all(torch.eq(test_cell, self.cell_indices), 1)).flatten()
                     if neighbor_indices.numel() != 0:

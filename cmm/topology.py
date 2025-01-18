@@ -13,7 +13,7 @@ from .neighbor_list import NeighborList
 class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
         self.natoms = natoms
-        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long)
+        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device)
         self.find_bond_and_angle_pair_indices(nl)
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
@@ -50,12 +50,12 @@ class Topology:
         the couplings could be a user input. Probably doesn't make a difference
         if we just always do it but that's an empirical question.
         """
-        self.bonded_pairs = torch.tensor([], dtype=torch.long)
-        self.angle_pairs = torch.tensor([], dtype=torch.long)
+        self.bonded_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
+        self.angle_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
         # @SPEED Avoid this for loop. I have to use it because the way the NL
         # works, we cannot use vmap. Need to figure out how to fix that.
         for i in torch.arange(self.natoms):
-            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i]), nl.get_neighbors(i), nl.get_n_neighbors()) 
+            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), nl.get_n_neighbors()) 
             self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
             self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
         
@@ -72,7 +72,7 @@ class Topology:
 
     def _find_all_intermolecular_pairs(self, n_pairs):
         """Compute set difference between intramolecular pairs array and torch.arange over n_pairs."""
-        all_pairs = torch.arange(n_pairs)
+        all_pairs = torch.arange(n_pairs, device=self.bonded_pairs.device)
         mask = ~torch.isin(all_pairs, self.all_intramolecular_pairs)
         self.all_intermolecular_pairs = all_pairs[mask]
 
@@ -91,11 +91,11 @@ class Topology:
         # i.e. some canonical ordering of the bond graph.
         # -Joe 1/3/25
 
-        c = torch.combinations(torch.arange(self.angle_atoms.size(1)), r=2)
-        x = self.angle_atoms[:,None].expand(-1, c.size(0), -1)
+        c = torch.combinations(torch.arange(self.angle_atoms.size(1), device=pairs.device), r=2)
+        x = self.angle_atoms[:,None].expand(-1, c.size(0), -1).to(device=pairs.device)
         idx = c[None].expand(len(x), -1, -1)
         self.intramolecular_atom_indices = x.gather(dim=2, index=idx).reshape(-1, 2)
         mask_1 = torch.where((self.intramolecular_atom_indices == pairs.unsqueeze(1)).all(-1).any(-1))[0]
-        mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0])) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
+        mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0], device=pairs.device)) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
         self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
         
