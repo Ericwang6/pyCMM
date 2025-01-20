@@ -47,7 +47,7 @@ def profile_cmm_evaluation():
         with record_function("CMM_evaluate_water_box_216"):
             energies = ff.evaluate(cm, topology, parameters)
             energies['tot'].backward()
-    print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=20))
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
 if __name__ == "__main__":
     profile_cmm_evaluation()
