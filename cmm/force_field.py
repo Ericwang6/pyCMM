@@ -333,6 +333,7 @@ class CMM(ForceField):
             torch.arange(2, natoms, 3, device=pairs.device)), dim=1)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
+        # DO I need to pull the 
         with torch.no_grad():
             induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, ngroups, polarizabilities, elec_field)
             induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
@@ -347,7 +348,10 @@ class CMM(ForceField):
                 inverse_polarizabilities,
                 group_indices, groups
             )
-
+        
+        #induced_multipoles_and_lagrange_muls_out.requires_grad_()
+        # Somehow the partial derivatives from TM, elec_potential_induced, and elec_field_induced
+        # are wrong when I use torch.no_grad()
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
             induced_multipoles_and_lagrange_muls_out, natoms,
             pairs_inter_i_a, pairs_inter_j_a,
@@ -355,9 +359,11 @@ class CMM(ForceField):
             b_ij_elec_p, eta_times_2, inverse_polarizabilities,
             group_indices, groups
         )
-
         ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
-
+        # NOTE(JOE): Regarding the below comment. When I test only the polarization gradients,
+        # I get exact agreement whether or not I solve for the energy inside a torch.no_grad() block.
+        # So, the error comes from the derivatives of the induced_field somehow. 
+        
         # NOTE(JOE): There seems to be a problem with the gradients here when induced
         # fields are included. The error in the gradients is small enough that I am
         # going to just ignore it for now... I think the gradients are not being
@@ -375,7 +381,7 @@ class CMM(ForceField):
         # morse-bond
         ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
         ene_bonds = torch.sum(ene_bond_list)
-
+        
         # bond-bond couplings
         ene_bbs_list = computeBondBondCoupling(
             dists[topology.angle_pairs[0]], dists[topology.angle_pairs[1]],

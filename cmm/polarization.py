@@ -44,6 +44,7 @@ def solvePolarizationByCG(
     )
     residual = b_vector - TM0
     P = residual.detach().clone()
+    P.requires_grad_()
     for _ in range(max_iter):
         TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
@@ -64,11 +65,11 @@ def solvePolarizationByCG(
         beta = 1.0 / torch.dot(residual, residual)
         #residual -= gamma * TP
         residual = residual - gamma * TP
-        if torch.norm(residual) < residual_threshold:
-            break
         #beta *= torch.dot(residual, residual)
         beta = beta * torch.dot(residual, residual)
         P = residual + beta * P
+        if torch.norm(residual) < residual_threshold:
+            return guess_vector
     return guess_vector
 
 def computeProductWithPolarizationMatrix(
@@ -84,13 +85,10 @@ def computeProductWithPolarizationMatrix(
     group_scatter: torch.Tensor,
     groups: torch.Tensor,
 ):
-    induced_multipoles_a = torch.zeros((n_charges, 4), device=vec_in.device)
     induced_charges = vec_in[:n_charges]
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
     lagrange_muls = vec_in[(4 * n_charges):]
-    
-    induced_multipoles_a[:, 0] = induced_charges
-    induced_multipoles_a[:, 1:4] = induced_dipoles
+    induced_multipoles_a = torch.hstack((induced_charges.unsqueeze(1), induced_dipoles))
 
     induced_electric_potential, induced_electric_field = computeInducedElectricPotentialAndFieldsFromPairs(
         n_charges, pairs_i_a, pairs_j_a,

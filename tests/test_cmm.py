@@ -187,9 +187,8 @@ def test_total_energy_and_total_gradients():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
     energies_ff = ff.evaluate(cm, topology, parameters)
-    total_energy = energies_ff['tot']
     total_ref = torch.tensor([-4.768231511534177 / HARTREE2KCAL])
-    assert torch.allclose(total_energy, total_ref)
+    assert torch.allclose(energies_ff['tot'], total_ref)
 
     def get_total_energy(coords: torch.Tensor):
         cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
@@ -204,13 +203,28 @@ def test_total_energy_and_total_gradients():
         total_energy = energies_ff['tot']
         return total_energy
 
-    grads_fd = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
-    total_energy.backward()
-    grads_ad = coords.grad
-    #print(grads_ad - grads_fd)
+    grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
+    energies_ff['tot'].backward(retain_graph=True)
+    grads_ad_1 = coords.grad.clone()
+    print(grads_ad_1 - grads_fd_1)
+
+    # Update coordinates #
+    coords = coords.detach().clone()
+    coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
+    coords_no_grad = coords.detach().clone()
+    grads_fd_2 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
+    #total_ref_2 = get_total_energy(coords_no_grad)
+
+    # Re-evaluate with updated coordinates #
+    cm.update_coordinates(coords)
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    energies_ff['tot'].backward(retain_graph=True)
+    grads_ad_2 = coords.grad.clone()
+    print(grads_ad_2 - grads_fd_2)
     # NOTE(JOE): I am not sure if these gradients are completely correct.
     # The field-dependent morse seems to be the problem???
-    assert torch.allclose(grads_ad, grads_fd, atol=1e-7)
+    assert torch.allclose(grads_ad_1, grads_fd_1)#, atol=1e-7)
+    assert torch.allclose(grads_ad_2, grads_fd_2)#, atol=1e-7)
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)

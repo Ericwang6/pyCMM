@@ -57,10 +57,18 @@ class CoordinateManager:
                 xatoms.append(i - 1)
             yatoms.append(-1)
 
-        # TODO: This should probably go in the coordinate manager.
         self._zatoms = torch.tensor(zatoms, dtype=torch.long)
         self._xatoms = torch.tensor(xatoms, dtype=torch.long)
         self._yatoms = torch.tensor(yatoms, dtype=torch.long)
+
+    def update_coordinates(self, new_coords: torch.Tensor):
+        """
+        Update coordinates held by the coordinate manager and neighbor list.
+        If neighbor list needs to be rebuilt, it will be.
+        """
+        self.coords = new_coords
+        self.coords.requires_grad_()
+        self.neighbor_list.update(new_coords)
 
     def get_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """

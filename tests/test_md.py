@@ -31,6 +31,14 @@ def test_md():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
+    energies['tot'].backward(retain_graph=True)
+    print(coords.grad)
+    coords = coords.detach().clone()
+    coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
+    cm.update_coordinates(coords)
+    energies = ff.evaluate(cm, topology, parameters)
+    energies['tot'].backward(retain_graph=True)
+    print(coords.grad)
 
     #num_waters = coords.size(0) // 3
     #model = CMMWater(num_waters, do_polarization=True)
