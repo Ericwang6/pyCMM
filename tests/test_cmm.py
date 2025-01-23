@@ -206,7 +206,8 @@ def test_total_energy_and_total_gradients():
     grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
     energies_ff['tot'].backward(retain_graph=True)
     grads_ad_1 = coords.grad.clone()
-    print(grads_ad_1 - grads_fd_1)
+    if not torch.allclose(grads_ad_1, grads_fd_1):
+        print(grads_ad_1 - grads_fd_1)
 
     # Update coordinates #
     coords = coords.detach().clone()
@@ -220,9 +221,9 @@ def test_total_energy_and_total_gradients():
     energies_ff = ff.evaluate(cm, topology, parameters)
     energies_ff['tot'].backward(retain_graph=True)
     grads_ad_2 = coords.grad.clone()
-    print(grads_ad_2 - grads_fd_2)
-    # NOTE(JOE): I am not sure if these gradients are completely correct.
-    # The field-dependent morse seems to be the problem???
+    if not torch.allclose(grads_ad_2, grads_fd_2):
+        print(grads_ad_2 - grads_fd_2)
+
     assert torch.allclose(grads_ad_1, grads_fd_1)#, atol=1e-7)
     assert torch.allclose(grads_ad_2, grads_fd_2)#, atol=1e-7)
 

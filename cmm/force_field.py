@@ -11,6 +11,8 @@ from .topology import Topology
 from .terms import *
 from .units import *
 
+from copy import copy
+
 # NOTE(JOE): The design of this object is still up in the air. I think that we could
 # allow inheritance for the purpose of making it really trivial to set
 # up a force field. This just saves the user having to call the appropriate
@@ -333,7 +335,6 @@ class CMM(ForceField):
             torch.arange(2, natoms, 3, device=pairs.device)), dim=1)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
-        # DO I need to pull the 
         with torch.no_grad():
             induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, ngroups, polarizabilities, elec_field)
             induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
@@ -349,32 +350,32 @@ class CMM(ForceField):
                 group_indices, groups
             )
         
-        #induced_multipoles_and_lagrange_muls_out.requires_grad_()
-        # Somehow the partial derivatives from TM, elec_potential_induced, and elec_field_induced
-        # are wrong when I use torch.no_grad()
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
             induced_multipoles_and_lagrange_muls_out, natoms,
             pairs_inter_i_a, pairs_inter_j_a,
             dists_inter, dist_vecs_inter,
             b_ij_elec_p, eta_times_2, inverse_polarizabilities,
-            group_indices, groups
+            group_indices, groups, True
         )
         ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
-        # NOTE(JOE): Regarding the below comment. When I test only the polarization gradients,
-        # I get exact agreement whether or not I solve for the energy inside a torch.no_grad() block.
-        # So, the error comes from the derivatives of the induced_field somehow. 
-        
-        # NOTE(JOE): There seems to be a problem with the gradients here when induced
-        # fields are included. The error in the gradients is small enough that I am
-        # going to just ignore it for now... I think the gradients are not being
-        # accumulated properly in the induced electric fields due to the way I compute them.
-        # Will need to revisit when the induced fields are larger so the errors are more
-        # apparent.
+
+        # NOTE(JOE): There is a problem with the gradients here when induced
+        # fields are included. Basically, the partial derivatives of the induced
+        # multipoles with respect to the cartesian coordinates are needed for the
+        # FD morse derivatives. Unfortunately, if gradient tracking is on when the
+        # polarization equations are solved, then things become very slow and
+        # use a lot of memory (but the gradients are right!). If we have gradient
+        # tracking off then everything is much more efficient but the FD morse
+        # gradients are wrong. So, we need to compute the field gradients
+        # due to the induced multipoles and properly incorporate them into the
+        # pytorch computational graph. This is possible, but I am going to
+        # figure that out once we are in a better position to actually run MD.
         re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
             dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
             k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
             ct_slope_1_p, ct_slope_2_p,
-            (elec_field + elec_field_induced)[topology.bonded_atoms[1]],
+            #(elec_field + elec_field_induced)[topology.bonded_atoms[1]],
+            (elec_field)[topology.bonded_atoms[1]],
             dq_a[topology.bonded_atoms[1]]
         )
 

@@ -44,7 +44,6 @@ def solvePolarizationByCG(
     )
     residual = b_vector - TM0
     P = residual.detach().clone()
-    P.requires_grad_()
     for _ in range(max_iter):
         TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
@@ -60,13 +59,13 @@ def solvePolarizationByCG(
         # tracking to work. After doing so, this function should return
         # nothing and we can just use the guess vector as the solution
         # vector since it gets updated in place.
-        #guess_vector += gamma * P
-        guess_vector = guess_vector + gamma * P
+        guess_vector += gamma * P
+        #guess_vector = guess_vector + gamma * P
         beta = 1.0 / torch.dot(residual, residual)
-        #residual -= gamma * TP
-        residual = residual - gamma * TP
-        #beta *= torch.dot(residual, residual)
-        beta = beta * torch.dot(residual, residual)
+        residual -= gamma * TP
+        #residual = residual - gamma * TP
+        beta *= torch.dot(residual, residual)
+        #beta = beta * torch.dot(residual, residual)
         P = residual + beta * P
         if torch.norm(residual) < residual_threshold:
             return guess_vector
@@ -84,6 +83,7 @@ def computeProductWithPolarizationMatrix(
     alpha_inv: torch.Tensor,
     group_scatter: torch.Tensor,
     groups: torch.Tensor,
+    already_solved: bool = False
 ):
     induced_charges = vec_in[:n_charges]
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
