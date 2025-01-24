@@ -34,8 +34,13 @@ def test_ase():
 
     energies = ff.evaluate(cm, topology, parameters)
     energies['tot'].backward()
-    print(energies['tot'])
-    print(cm.coords.grad)
+    grad_1 = cm.coords.grad.detach().clone().cpu()
 
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
+    assert torch.isclose(energies['tot'], torch.tensor(ff_ase.atoms.get_potential_energy()))
+    assert torch.allclose(grad_1, torch.from_numpy(ff_ase.atoms.get_forces()))
+
+
+def test_optimize_dimers_via_ase():
+    pass

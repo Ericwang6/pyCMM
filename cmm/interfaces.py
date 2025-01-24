@@ -11,11 +11,19 @@ import torch
 class CMM_ASE(Calculator):
     def __init__(self, ff: CMM, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         super().__init__()
-        self.atoms = Atoms(positions=cm.coords.detach().cpu().numpy(), cell=cm.box.detach().cpu().numpy(), pbc=[1, 1, 1])
         self._ff = ff
         self._cm = cm
         self._topology = topology
         self._params = params
+        
+        self.atoms = Atoms(
+            positions=cm.coords.detach().cpu().numpy(),
+            cell=cm.box.detach().cpu().numpy(),
+            pbc=[1, 1, 1],
+            calculator=self
+        )
+
+        self.implemented_properties = ['energy', 'forces'] # TODO: add stress and dipole
     
         self.results = {'energy': 0.0,
                 'forces': np.zeros((len(self.atoms), 3)),
@@ -42,5 +50,3 @@ class CMM_ASE(Calculator):
             print("Positions changed")
         
         self._evaluate_ff('forces' in properties)
-        print(self.results['energy'])
-        print(self.results['forces'])
