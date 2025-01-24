@@ -146,6 +146,33 @@ def water_data(coords: torch.Tensor):
         param_ct,
     )
 
+def test_multiple_evaluations():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    
+    ff = CMM()
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    energies_ff['tot'].backward()
+    grads_1 = cm.coords.grad.detach().clone()
+
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    energies_ff['tot'].backward()
+    grads_2 = cm.coords.grad.detach().clone()
+    
+    assert torch.allclose(grads_1, grads_2)
+
 def test_fast_evaluate():
     torch.set_default_dtype(torch.float64)
 
@@ -224,8 +251,8 @@ def test_total_energy_and_total_gradients():
     if not torch.allclose(grads_ad_2, grads_fd_2):
         print(grads_ad_2 - grads_fd_2)
 
-    assert torch.allclose(grads_ad_1, grads_fd_1)#, atol=1e-7)
-    assert torch.allclose(grads_ad_2, grads_fd_2)#, atol=1e-7)
+    assert torch.allclose(grads_ad_1, grads_fd_1)
+    assert torch.allclose(grads_ad_2, grads_fd_2)
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)

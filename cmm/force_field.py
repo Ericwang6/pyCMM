@@ -162,6 +162,9 @@ class CMM(ForceField):
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+
+        # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
+
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # All pairs forming an angle #

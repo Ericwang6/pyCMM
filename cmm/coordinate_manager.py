@@ -26,12 +26,15 @@ class CoordinateManager:
         # TODO: Allow for multiple cutoffs since short_range only needs roughly
         # 6 angstroms but vdw needs 12 angstroms usually. Also allow for choice
         # of neighbor list. We just use a cell list for now.
+        self._need_coordindate_grads = coords.requires_grad
+        self._need_box_grads = box.requires_grad
         self.coords = coords
         self.box = box
-        self.box_inv = torch.inverse(box)
-        self.box_lengths = torch.diag(box)
+        self.box_inv = torch.inverse(self.box)
+        self.box_lengths = torch.diag(self.box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
         self._get_axis_frame_indices()
+        self._check_for_nl_update = False
 
     def _get_axis_frame_indices(self):
         # TODO: This is only applicable to water. I am not sure exactly how to handle this in general...
@@ -64,13 +67,21 @@ class CoordinateManager:
     def update_coordinates(self, new_coords: torch.Tensor):
         """
         Update coordinates held by the coordinate manager and neighbor list.
-        If neighbor list needs to be rebuilt, it will be.
         """
-        self.coords = new_coords
-        self.coords.requires_grad_()
-        self.neighbor_list.update(new_coords)
+        self.coords = new_coords.detach().clone().requires_grad_()
+        self._check_for_nl_update = True
 
-    def get_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def update_box(self, new_box: torch.Tensor):
+        """
+        Update coordinates held by the coordinate manager and neighbor list.
+        """
+        self.box = new_box.detach().clone().requires_grad_()
+        self.box_inv = torch.inverse(self.box)
+        self.box_lengths = torch.diag(self.box)
+        self.neighbor_list.box_lengths = self.box_lengths
+        self._check_for_nl_update = True
+
+    def get_distances_vectors_and_pairs(self, reset_gradients: bool = True) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs.
         """
@@ -78,6 +89,12 @@ class CoordinateManager:
         # transpose. I suppose it probably doens't matter since I end up using both
         # but if I could avoid that, then that would be ideal. I guess I could
         # transpose the coordinate to solve this problem?
+        
+        if reset_gradients:
+            self.update_coordinates(self.coords)
+            self.update_box(self.box)
+        if self._check_for_nl_update:
+            self.neighbor_list.update(self.coords, self.box_lengths)
         self.pairs = self.neighbor_list.get_pairs()
         distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
         self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)

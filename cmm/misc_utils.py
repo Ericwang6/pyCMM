@@ -82,7 +82,7 @@ def read_from_tinker_xyz(xyz_file: str, requires_grad=True):
     permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
-    atom_types = torch.tensor(atom_types, dtype=torch.long) - 1
+    atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False) - 1
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
     return coords, atom_types, bonds
 

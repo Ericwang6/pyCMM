@@ -118,8 +118,8 @@ class CellList(NeighborList):
             assert False, "You requested a cutoff that is larger than the smallest box direction. We can't handle this currently. Set the cutoff to the smallest box direction or smaller."
         
         # Find number of cells in each direction then compute all valid cells.
-        self.n_cells = torch.floor(box_lengths / cutoff).long()
-        self.cell_size = box_lengths / self.n_cells
+        self.n_cells = torch.floor(self.box_lengths / cutoff).long()
+        self.cell_size = self.box_lengths / self.n_cells
         
         # Initialize cell assignments
         self.n_atoms = positions.shape[0]
@@ -259,7 +259,7 @@ class CellList(NeighborList):
         max_displacement = torch.max(torch.abs(positions - self.last_positions))
         return max_displacement > 0.5 * torch.min(self.cell_size)
 
-    def update(self, positions: torch.Tensor) -> None:
+    def update(self, positions: torch.Tensor, box_lengths: torch.Tensor) -> None:
         """
         Update cell list with new positions if needed.
         Increments a counter that keeps track of how many updates
@@ -268,7 +268,9 @@ class CellList(NeighborList):
         
         Args:
             positions (torch.Tensor): (N, 3) array of new positions
+            box_lengths (torch.Tensor): (3) array of box lengths
         """
+        self.box_lengths = box_lengths
         # Check if a rebuild of the cells is needed
         if self._needs_rebuild(positions):
             self._build(positions)

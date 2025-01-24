@@ -13,7 +13,7 @@ from .neighbor_list import NeighborList
 class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
         self.natoms = natoms
-        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device)
+        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
         self.find_bond_and_angle_pair_indices(nl)
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
