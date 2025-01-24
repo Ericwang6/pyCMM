@@ -45,6 +45,7 @@ class NSquaredList(NeighborList):
             positions (torch.Tensor): (N, 3) array of atomic positions
             box_lengths (torch.Tensor): (3,) array of periodic box lengths
         """
+        self.device = positions.device
         self.cutoff = cutoff
         self.box_lengths = box_lengths
         self.natoms = positions.shape[0]
@@ -273,18 +274,12 @@ class CellList(NeighborList):
         # Check if a rebuild of the cells is needed
         if self._needs_rebuild(positions):
             self.box_lengths = box_lengths
+            self.minimum_vector = torch.min(positions, dim=0)[0]
             self._build(positions)
             self.last_positions = positions.detach().clone()
             self.num_updates_since_last_build = 0
             return
         
-        # Update cell assignments
-        self._positions_to_cell_indices(positions)
-        
-        # Update neighbor lists with new positions
-        self._update_neighbor_lists(positions)
-        
-        self.last_positions = positions.detach().clone()
         self.num_updates_since_last_build += 1
         return
 

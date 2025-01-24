@@ -31,7 +31,7 @@ class CoordinateManager:
         self.coords = coords
         self.box = box
         self.box_inv = torch.inverse(self.box)
-        self.box_lengths = torch.diag(self.box)
+        self.box_lengths = torch.diagonal(self.box)
         self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
         self._get_axis_frame_indices()
         self._check_for_nl_update = False
@@ -77,7 +77,7 @@ class CoordinateManager:
         """
         self.box = new_box.detach().clone().requires_grad_()
         self.box_inv = torch.inverse(self.box)
-        self.box_lengths = torch.diag(self.box)
+        self.box_lengths = torch.diagonal(self.box)
         self.neighbor_list.box_lengths = self.box_lengths
         self._check_for_nl_update = True
 
