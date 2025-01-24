@@ -40,10 +40,21 @@ class CMM_ASE(Calculator):
             energies['tot'].backward()
             self.results['forces'] = self._cm.coords.grad.detach().cpu().numpy()
 
+    def get_potential_energy(self, atoms=None):
+        self.calculate(atoms=atoms)
+        return self.results['energy']
+    
+    def get_forces(self, atoms=None):
+        self.calculate(atoms=atoms)
+        return self.results['forces']
+
     def calculate(self,
+        atoms=None,
         properties=['energy', 'forces', 'stress', 'dipole'],
         system_changes=[]
     ):
+        if atoms:
+            self.atoms = atoms
         if 'positions' in system_changes:
             # Update positions on GPU #
             self._cm.update_coordinates(torch.from_numpy(self.atoms.positions).to(self._cm.coords.device))
