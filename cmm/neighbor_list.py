@@ -270,9 +270,9 @@ class CellList(NeighborList):
             positions (torch.Tensor): (N, 3) array of new positions
             box_lengths (torch.Tensor): (3) array of box lengths
         """
-        self.box_lengths = box_lengths
         # Check if a rebuild of the cells is needed
         if self._needs_rebuild(positions):
+            self.box_lengths = box_lengths
             self._build(positions)
             self.last_positions = positions.detach().clone()
             self.num_updates_since_last_build = 0

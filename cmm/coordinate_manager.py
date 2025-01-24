@@ -93,8 +93,10 @@ class CoordinateManager:
         if reset_gradients:
             self.update_coordinates(self.coords)
             self.update_box(self.box)
-        if self._check_for_nl_update:
-            self.neighbor_list.update(self.coords, self.box_lengths)
+        # TODO: Something is broken about NL rebuilds!
+        # Fix that!
+        #if self._check_for_nl_update:
+        #    self.neighbor_list.update(self.coords, self.box_lengths)
         self.pairs = self.neighbor_list.get_pairs()
         distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
         self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)

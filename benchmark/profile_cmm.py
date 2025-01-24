@@ -1,5 +1,6 @@
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
+import torch.utils.benchmark as benchmark
 
 import numpy as np
 import os, sys, time
@@ -43,11 +44,29 @@ def profile_cmm_evaluation():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
-    with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=False) as prof:
-        with record_function("CMM_evaluate_water_box_216"):
-            energies = ff.evaluate(cm, topology, parameters)
-            energies['tot'].backward()
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+    def run_model_forward_and_backward(ff, cm, topology, parameters):
+        energies = ff.evaluate(cm, topology, parameters)
+        energies['tot'].backward(retain_graph=True)
+        return energies
+    
+    #num_threads = torch.get_num_threads()
+    t = benchmark.Timer(
+       stmt = 'run_model_forward_and_backward(ff, cm, topology, parameters)',
+       globals={
+           'run_model_forward_and_backward': run_model_forward_and_backward,
+           'ff': ff, 'cm': cm, 'topology': topology, 'parameters': parameters
+        },
+       #num_threads=num_threads,
+       label="Average Inference Duration",
+    )
+    #print(t.timeit(100))
+    print(t.timeit(5))
+
+    #with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=False) as prof:
+    #    with record_function("CMM_evaluate_water_box_216"):
+    #        energies = ff.evaluate(cm, topology, parameters)
+    #        energies['tot'].backward()
+    #print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
 if __name__ == "__main__":
     profile_cmm_evaluation()
