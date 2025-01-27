@@ -18,7 +18,8 @@ class Molecule:
     forces: np.ndarray = None
     energy: np.ndarray = None
     hessian: np.ndarray = None
-
+    name: str = ""
+    
 
 def init_logger(logname: Optional[os.PathLike] = None) -> logging.Logger:
     # logging
@@ -85,7 +86,7 @@ class Task(ABC):
         stdout.close()
         stderr.close()
         if self.sub.returncode != 0:
-            raise CommandExecuteError(args, self.error)
+            raise CommandExecuteError(args, self.stderr)
 
     def after(self):
         return 
@@ -110,13 +111,13 @@ class CommandExecuteError(Exception):
     def __init__(self, cmd, f_err):
         if isinstance(cmd, list):
             _cmd = ' '.join(cmd)
-        self._str = f'Command {_cmd} failed. Please check {f_err} for more details.'
+        self._errmsg = f'Command {_cmd} failed. Please check {f_err} for more details.'
     
     def __str__(self):
-        return self.msg
+        return self._errmsg
     
     def __repr__(self):
-        return self.msg
+        return self._errmsg
 
 
 

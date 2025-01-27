@@ -57,16 +57,20 @@ class QChemWriter:
     }
 
     def __init__(self, file: os.PathLike, jobtype: str = 'sp', config: Dict[str, Any] = dict()):
-        self.file = open(file, 'w')
         self.config = {key.upper(): value for key, value in config.items()}
         self.jobtype = jobtype
         if ('JOBTYPE' in self.config) and self.config['JOBTYPE'] != self.jobtype:
             warnings.warn(f'Inconsisent job type. Jobtype {jobtype} will be used')
         self.config['JOBTYPE'] = self.jobtype
+
         if self.jobtype == 'eda':
-            self.config = self.default_eda_config.copy().update(self.config)
+            config = self.default_eda_config.copy()
         else:
-            self.config = self.default_job_config.copy().update(self.config)
+            config = self.default_job_config.copy()
+        config.update(self.config)
+        self.config = config
+
+        self.file = open(file, 'w')
     
     def close(self):
         self.file.close()
@@ -121,7 +125,7 @@ class QChemWriter:
     @staticmethod
     def write_rem(config: Dict[str, Any], file: Optional[TextIO] = None):
         maxlen = max([len(key) for key in config.keys()])
-        tmpl = "   {:<" + str(maxlen) + "}  =  {}\n"
+        tmpl = "   {:<" + str(maxlen) + "}  =  {}"
         lines = ['$rem']
         for key, value in config.items():
             if isinstance(value, bool): 
