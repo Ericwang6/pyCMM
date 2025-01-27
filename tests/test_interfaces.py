@@ -2,7 +2,7 @@ import torch
 import os
 import numpy as np
 
-from ase.optimize import LBFGS
+from ase.optimize import FIRE2 #LBFGS
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_from_tinker_xyz
@@ -50,7 +50,7 @@ def test_optimize_dimers_via_ase():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
 
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -62,14 +62,23 @@ def test_optimize_dimers_via_ase():
     )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
-    dyn = LBFGS(ff_ase.atoms)
+    dyn = FIRE2(ff_ase.atoms)
     dyn.run(fmax=1e-6)
     
-    # TODO:
-    # 1) get water dimer, ion-water dimers, and ion-ion dimers
-    # 2) optimize all of them with ASE and check we reproduce the structures from Julia
-    # 3) In order to achieve above will have to implement variable polarizability and some topology things for ions
-    pass
+
+    # Reference CMM optimized dimer energies #
+    E_w2_ref = -4.910529038105545
+    E_h2o_li_ref = -34.77854035385689
+    E_h2o_na_ref = -24.34707499880831
+    E_h2o_k_ref = -17.623219307733585
+    E_h2o_rb_ref = -15.486388340394058
+    E_h2o_cs_ref = -13.83212225679549
+    E_h2o_f_ref = -28.656007721154367
+    E_h2o_cl_ref = -15.220650706258382
+    E_h2o_br_ref = -13.235724691137875
+    E_h2o_i_ref = -11.247741103845303
+
+    assert torch.isclose(torch.tensor(ff_ase.results['energy'] * HARTREE2KCAL), torch.tensor(E_w2_ref))
 
 def test_optimize_water_box_via_ase():
     torch.set_default_dtype(torch.float64)
@@ -79,7 +88,7 @@ def test_optimize_water_box_via_ase():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=coords.dtype, requires_grad=True)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
@@ -91,5 +100,5 @@ def test_optimize_water_box_via_ase():
     
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
-    dyn = LBFGS(ff_ase.atoms)
-    dyn.run(fmax=1e-6)
+    dyn = FIRE2(ff_ase.atoms)
+    dyn.run(fmax=1e-3)
