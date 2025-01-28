@@ -196,6 +196,92 @@ def test_fast_evaluate():
     energies_ref = model.computeEnergy(coords, box)
     assert torch.isclose(energies_ff['tot'], energies_ref['tot'])
 
+def test_total_energy_and_total_gradients_ion_ion():
+    torch.set_default_dtype(torch.float64)
+
+    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=False)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
+    atom_indices_to_names = {0: "Na+", 1: "Cl-"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    total_ref = torch.tensor([-132.66013773479762 / HARTREE2KCAL])
+    assert torch.allclose(energies_ff['tot'], total_ref)
+
+    #def get_total_energy(coords: torch.Tensor):
+    #    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    #    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    #    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    #    ff = CMM()
+    #    parameters = Parameterizer(
+    #        atom_type_names, pairs, topology.angle_atoms,
+    #        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    #    )
+    #    energies_ff = ff.evaluate(cm, topology, parameters)
+    #    total_energy = energies_ff['tot']
+    #    return total_energy
+#
+    #grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
+    #energies_ff['tot'].backward(retain_graph=True)
+    #grads_ad_1 = coords.grad.clone()
+    #if not torch.allclose(grads_ad_1, grads_fd_1):
+    #    print(grads_ad_1 - grads_fd_1)
+    #assert torch.allclose(grads_ad_1, grads_fd_1)
+
+def test_total_energy_and_total_gradients_ion_water():
+    torch.set_default_dtype(torch.float64)
+
+    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=False)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=True)
+    atom_indices_to_names = {
+        0: "O_water", 1: "H_water",
+        2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
+        6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+"
+    }
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    total_ref = torch.tensor([-28.436484613091206 / HARTREE2KCAL])
+    assert torch.allclose(energies_ff['tot'], total_ref)
+
+    #def get_total_energy(coords: torch.Tensor):
+    #    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    #    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    #    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    #    ff = CMM()
+    #    parameters = Parameterizer(
+    #        atom_type_names, pairs, topology.angle_atoms,
+    #        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    #    )
+    #    energies_ff = ff.evaluate(cm, topology, parameters)
+    #    total_energy = energies_ff['tot']
+    #    return total_energy
+#
+    #grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
+    #energies_ff['tot'].backward(retain_graph=True)
+    #grads_ad_1 = coords.grad.clone()
+    #if not torch.allclose(grads_ad_1, grads_fd_1):
+    #    print(grads_ad_1 - grads_fd_1)
+    #assert torch.allclose(grads_ad_1, grads_fd_1)
+
 def test_total_energy_and_total_gradients():
     torch.set_default_dtype(torch.float64)
 

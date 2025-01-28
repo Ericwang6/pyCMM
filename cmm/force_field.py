@@ -42,8 +42,10 @@ class CMM(ForceField):
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
         self._types_to_index = {
-            "O_water": 0,
-            "H_water": 1,
+            "O_water": 0, "H_water": 1,
+            2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
+            6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+",
+            11: "Mg2+", 12: "Ca2+"
         }
 
         self._build()
@@ -57,53 +59,242 @@ class CMM(ForceField):
         # when building atomic_params, bond_params, and pair_params.
 
         # Electrostatic raw params #
-        Z = torch.tensor([3.61565, 0.93619])
-        mono = torch.tensor([-0.390896, 0.195448])
+        Z = torch.tensor([
+            3.61565, 0.93619,
+            4.693, 12.1239, 18.9726, 35.5833,
+            -0.895467, 3.5489, 7.73324, 12.2026, 11.5038,
+            2.83412, 4.93631
+        ])
+        mono = torch.tensor([
+            -0.390896, 0.195448, # Water
+            -1.0, -1.0, -1.0, -1.0, # Halides
+            1.0, 1.0, 1.0, 1.0, 1.0, # Alkali
+            2.0, 2.0 # Mg2+, Ca2+
+        ])
         dipo = torch.tensor([
             [0.0,       0.0, -0.094298], # O_water
-            [0.0910288, 0.0, -0.207851]  # H_water
+            [0.0910288, 0.0, -0.207851], # H_water
+            [0.0,       0.0,  0.0],      # F-
+            [0.0,       0.0,  0.0],      # Cl-
+            [0.0,       0.0,  0.0],      # Br-
+            [0.0,       0.0,  0.0],      # I-
+            [0.0,       0.0,  0.0],      # Li+
+            [0.0,       0.0,  0.0],      # Na+
+            [0.0,       0.0,  0.0],      # K+
+            [0.0,       0.0,  0.0],      # Rb+
+            [0.0,       0.0,  0.0],      # Cs+
+            [0.0,       0.0,  0.0],      # Mg2+
+            [0.0,       0.0,  0.0],      # Ca2+
         ])
         quad_s = torch.tensor([
             # Q20,       Q21c,      Q21s, Q22c,       Q22s
             [-0.330685,  0.0,       0.0,  0.869923,   0.0], # O_water
-            [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]  # H_water
+            [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0], # H_water
+            [0.0,        0.0,       0.0,  0.0,        0.0], # F-
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Cl-
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Br-
+            [0.0,        0.0,       0.0,  0.0,        0.0], # I-
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Li+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Na+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # K+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Rb+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Cs+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Mg2+
+            [0.0,        0.0,       0.0,  0.0,        0.0], # Ca2+
         ])
         
+        b_elec = torch.tensor([
+            2.13358, 2.33322, # Water
+            2.42894, 1.77558, 1.73844, 1.70583, # Halides
+            4.44984, 2.59626, 2.39879, 2.38187, 2.03392, # Alkali
+            1.92445, 2.11191, # Mg2+, Ca2+
+        ])
+
+        b_pauli = torch.tensor([
+            2.1975, 1.96474, # Water
+            1.70352, 1.4384, 1.38496, 1.35031, # Halides
+            2.6441, 2.54145, 2.2465, 2.27644, 2.0059, # Alkali
+            2.66576, 2.21834, # Mg2+, Ca2+
+        ])
+
+        b_disp = torch.tensor([
+            1.84302, 1.30993, # Water
+            1.21488, 1.07019, 0.978881, 1.30013, # Halides
+            2.23422, 1.99839, 1.95926, 4.01118, 4.01118, # Alkali
+            1.60887, 1.63789, # Mg2+, Ca2+
+        ])
+
+        b_ct = torch.tensor([
+            1.89485, 2.36763, # Water
+            1.37059, 0.948365, 0.882003, 0.841482, # Halides
+            1.65423, 1.867647, 2.04256, 2.02393, 1.94083, # Alkali
+            1.5,     1.6, # Mg2+, Ca2+
+        ])
+
+        b_xpol = torch.tensor([
+            2.73582, 2.04028, # Water
+            1.90554, 1.60669, 1.4814, 1.38744, # Halides
+            2.6441, 2.54145, 2.2465, 2.27644, 2.0059, # Alkali
+            5.14456, 3.67375, # Mg2+, Ca2+
+        ])
+
+        C6_disp = torch.tensor([
+            35.8289, 1.98954, # Water
+            146.12, 661.859, 1115.92, 1358.97, # Halides
+            0.609382, 5.4421, 45.6395, 63.085, 170.628, # Alkali
+            3.70387, 26.5808, # Mg2+, Ca2+
+        ])
+
+        q_pauli = torch.tensor([
+            6.50923, 0.527804, # Water
+            3.70166, 5.80737, 7.17975, 10.7103, # Halides
+            1.54888, 4.17489, 10.3705, 19.0684, 20.9948, # Alkali
+            4.25833, 8.06718, # Mg2+, Ca2+
+        ])
+
+        Kdipo_pauli = torch.tensor([
+            -5.61925, -0.515584, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        Kquad_pauli = torch.tensor([
+            -1.56567, -0.440164, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        q_ct_acc = torch.tensor([
+            -0.67857, 1.36735, # Water
+            0.122194, -1.51565, -1.65479, -1.253, # Halides
+            0.913977, 1.03203, 7.34713, 12.6713, 25.443, # Alkali
+            3.5885, 7.30099 # Mg2+, Ca2+
+        ])
+
+        Kdipo_ct_acc = torch.tensor([
+            0.0, 0.0, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        Kquad_ct_acc = torch.tensor([
+            0.0, 0.0, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        q_ct_don = torch.tensor([
+            0.757752, 0.00888982, # Water
+            0.586295, 0.94665, 1.08484, 1.37576, # Halides
+            -0.120616, 0.170082, 0.669004, 1.81764, 3.42462, # Alkali
+            -0.499793, 0.655079, # Mg2+, Ca2+
+        ])
+
+        Kdipo_ct_don = torch.tensor([
+            -0.512036, -0.0511668, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        Kquad_ct_don = torch.tensor([
+            -0.208186, 0.0568152, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        q_xpol = torch.tensor([
+            1.26592, 0.200089, # Water
+            -0.107239, -0.622035, -0.708194, -0.883374, # Halides
+            -4.655, -5.18609, -2.06504, 0.485645, 9.65725, # Alkali
+            -448.263, -220.293, # Mg2+, Ca2+
+        ])
+
+        eta = torch.tensor([
+            6.18699e-6, 0.561535, # Water
+            0.0, 0.0, 0.0, 0.0, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        axistypes = torch.tensor([
+            2, 1, # Water
+            0, 0, 0, 0, # Halide
+            0, 0, 0, 0, 0, # Alkali
+            0, 0, # Divalent cations
+        ])
+
+        alpha = torch.tensor([
+            torch.diag([4.45992, 6.07259, 4.55391]), # O_water
+            torch.diag([2.22001, 1.66835, 0.183855]), # H_water
+            torch.diag([11.7270176, 11.7270176, 11.7270176]), # F-
+            torch.diag([32.2880907, 32.2880907, 32.2880907]), # Cl-
+            torch.diag([42.7172275, 42.7172275, 42.7172275]), # Br-
+            torch.diag([64.1111144, 64.1111144, 64.1111144]), # I-
+            torch.diag([0.1586152, 0.1586152, 0.1586152]), # Li+
+            torch.diag([0.9542199, 0.9542199, 0.9542199]), # Na+
+            torch.diag([5.5376271, 5.5376271, 5.5376271]), # K+
+            torch.diag([8.6857518, 8.6857518, 8.6857518]), # Rb+
+            torch.diag([15.7177865, 15.7177865, 15.7177865]), # Cs+
+            torch.diag([0.4822524, 0.4822524, 0.4822524]), # Mg2+
+            torch.diag([3.2809409, 3.2809409, 3.2809409]), # Ca2+
+        ])
+
+        alpha_damp_exponent = torch.tensor([
+            0.0, 0.0, # Water
+            241.724, 428.717, 484.249, 599.029, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        alpha_damp_max = torch.tensor([
+            0.0, 0.0, # Water
+            0.75, 0.75, 0.75, 0.75, # Halides
+            0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
+            0.0, 0.0, # Mg2+, Ca2+
+        ])
+
+        # TODO: Add all the ion-ion pair-specific parameters!
+
         self._raw_atomic_params = {
             # elec
             "Z": Z,
             "q_shell": mono - Z,
             "dipo": dipo,
             "quad": computeCartesianQuadrupoles(quad_s),
-            "b_elec": torch.tensor([2.13358, 2.33322]),
+            "b_elec": b_elec,
             # Pauli repulsion
-            "b_pauli": torch.tensor([2.1975, 1.96474]),
-            "q_pauli": torch.tensor([6.50923, 0.527804]),
-            "Kdipo_pauli": torch.tensor([-5.61925, -0.515584]),
-            "Kquad_pauli": torch.tensor([-1.56567, -0.440164]),
+            "b_pauli": b_pauli,
+            "q_pauli": q_pauli,
+            "Kdipo_pauli": Kdipo_pauli,
+            "Kquad_pauli": Kquad_pauli,
             # Dispersion
-            "C6_disp": torch.tensor([35.8289, 1.98954]),
-            "b_disp": torch.tensor([1.84302, 1.30993]),
+            "C6_disp": C6_disp,
+            "b_disp": b_disp,
             # Polarization
-            "alpha": torch.tensor([
-                [[4.45992, 0.0, 0.0], [0.0, 6.07259, 0.0], [0.0, 0.0, 4.55391]],
-                [[2.22001, 0.0, 0.0], [0.0, 1.66835, 0.0], [0.0, 0.0, 0.183855]]
-            ]),
-            "eta": torch.tensor([6.18699e-6, 0.561535]),
+            "alpha": alpha,
+            "alpha_damp_exponent": alpha_damp_exponent,
+            "alpha_damp_max": alpha_damp_max,
+            "eta": eta,
             # Exchange-polarization
-            "b_xpol": torch.tensor([2.73582, 2.04028]),
-            "q_xpol": torch.tensor([1.26592, 0.200089]),
-            "Kdipo_xpol": torch.zeros((2,)),
-            "Kquad_xpol": torch.zeros((2,)),
+            "b_xpol": b_xpol,
+            "q_xpol": q_xpol,
+            "Kdipo_xpol": torch.zeros((len(self._types_to_index),)),
+            "Kquad_xpol": torch.zeros((len(self._types_to_index),)),
             # Charge Transfer
-            "b_ct": torch.tensor([1.89485, 2.36763]),
-            "q_ct_acc": torch.tensor([-0.67857, 1.36735]),
-            "Kdipo_ct_acc": torch.tensor([0.0, 0.0]),
-            "Kquad_ct_acc": torch.tensor([0.0, 0.0]),
-            "q_ct_don": torch.tensor([0.757752, 0.00888982]),
-            "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
-            "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
-            "axistypes": torch.tensor([2, 1])
+            "b_ct": b_ct,
+            "q_ct_acc": q_ct_acc,
+            "Kdipo_ct_acc": Kdipo_ct_acc,
+            "Kquad_ct_acc": Kquad_ct_acc,
+            "q_ct_don": q_ct_don,
+            "Kdipo_ct_don": Kdipo_ct_don,
+            "Kquad_ct_don": Kquad_ct_don,
+            "axistypes": axistypes,
         }
 
         self.pair_params = {
@@ -118,7 +309,40 @@ class CMM(ForceField):
                 "dip_deriv_2": torch.tensor([-0.012458400000000472]),
                 "ct_slope_1": torch.tensor([65.0]),
                 "ct_slope_2": torch.tensor([13.7812]),
-                "eps":torch.tensor([1.0 / 0.380979]),
+                "eps": torch.tensor([1.0 / 0.380979]),
+            },
+            ("H_water", "F-"): {
+                "eps": torch.tensor([1.0 / 1.78074]),
+            },
+            ("H_water", "Cl-"): {
+                "eps": torch.tensor([1.0 / 0.929684]),
+            },
+            ("H_water", "Br-"): {
+                "eps": torch.tensor([1.0 / 0.894156]),
+            },
+            ("H_water", "I-"): {
+                "eps": torch.tensor([1.0 / 0.655324]),
+            },
+            ("O_water", "Li+"): {
+                "eps": torch.tensor([1.0 / 0.964901]),
+            },
+            ("O_water", "Na+"): {
+                "eps": torch.tensor([1.0 / 0.80]),
+            },
+            ("O_water", "K+"): {
+                "eps": torch.tensor([1.0 / 0.70]),
+            },
+            ("O_water", "Rb+"): {
+                "eps": torch.tensor([1.0 / 0.684706]),
+            },
+            ("O_water", "Cs+"): {
+                "eps": torch.tensor([1.0 / 0.584055]),
+            },
+            ("O_water", "Mg2+"): {
+                "eps": torch.tensor([1.0 / 0.638288]),
+            },
+            ("O_water", "Ca2+"): {
+                "eps": torch.tensor([1.0 / 2.4784]),
             },
         }
 
