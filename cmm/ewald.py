@@ -15,8 +15,6 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
   U_ct = 0
   U_dt =0
   U_tt = 0
-  p = q[:, None] * coords
-  print("DIPOLES: ", p)
   constant = 1/(4*math.pi * EPSILON0) 
   N = len(coords) #atoms
   boxInv = torch.linalg.inv(box)  # Inverse of the simulation box matrix
@@ -43,44 +41,49 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
         f_3 = r3 * f_2
         f_4 = 8 * kappa/math.pi * (kappa2 * r2 + 1)/r4 * torch.exp(-kappa2 * r2)
         f_5 = r3 * f_4 - 3 * r * f_2
-        f_6 = 2(kappa2 + 1/r2) * f_4 + 4*f_2/r4
+        f_6 = 2*(kappa2 + 1/r2) * f_4 + 4*f_2/r4
         #######|||||Multipole tensors are represented by T_. Also implemented are the D_ tensors|||||#######
         T_ = 1/r
         T_a = -rhat/r3
         T_ab = (3 * torch.outer(r_,r_) - r2 * delta)/r5
+        print("T_AB: ", T_ab)
         #################################################################
-        term1_abg = 15 * torch.outer(r_,torch.outer(r_,r_)).reshape(3,3,3)
+        term1_abg = 15 * torch.einsum("i,j,k->ijk", r_,r_,r_)
         term2_abg = -3 * r2 *(
                     torch.einsum("i,jk->ijk", r_, delta)+
                     torch.einsum("j,ik->ijk", r_, delta)+
-                    torch.einsum("k,ik->ijk", r_, delta)
+                    torch.einsum("k,ij->ijk", r_, delta)
         )
         T_abg = -(term1_abg + term2_abg) / r7
+        print("T_ABG: ", T_abg)
         #################################################################
-        term1_abgd = 105 * torch.outer(r_, torch.outer(r_, torch.outer(r_, r_))).reshape(3, 3, 3, 3)
-        term1 = torch.einsum("ab,cd->abcd", r_outer, delta)  # R_ij,a R_ij,b k_gd
-        term2 = torch.einsum("ag,bd->abcd", r_outer, delta)  # R_ij,a R_ij,g k_bd
-        term3 = torch.einsum("ad,bg->abcd", r_outer, delta)  # R_ij,a R_ij,d k_bg
-        term4 = torch.einsum("bg,ad->abcd", r_outer, delta)  # R_ij,b R_ij,g k_ad
-        term5 = torch.einsum("bd,ag->abcd", r_outer, delta)  # R_ij,b R_ij,d k_ag
-        term6 = torch.einsum("gd,ab->abcd", r_outer, delta)  # R_ij,g R_ij,d k_ab
+        term1_abgd = 105 * torch.einsum("i,j,k,l -> ijkl", r_,r_,r_,r_)
+        term1 = torch.einsum("i,j,kl->ijkl", r_, r_, delta)  # R_ij,a R_ij,b k_gd
+        term2 = torch.einsum("i,k,jl->ijkl", r_, r_, delta)  # R_ij,a R_ij,g k_bd
+        term3 = torch.einsum("i,l,jk->ijkl", r_, r_, delta)  # R_ij,a R_ij,d k_bg
+        term4 = torch.einsum("j,k,il->ijkl", r_, r_, delta)  # R_ij,b R_ij,g k_ad
+        term5 = torch.einsum("j,l,ik->ijkl", r_, r_, delta)  # R_ij,b R_ij,d k_ag
+        term6 = torch.einsum("k,l,ij->ijkl", r_, r_, delta)  # R_ij,g R_ij,d k_ab
         term2_abgd = -15 * r2 * (term1 + term2 + term3 + term4 + term5 + term6)
         term3_abgd = 3 * r4 * (
-          torch.einsum("ab,cd->abcd", delta, delta) +
-          torch.einsum("ac,bd->abcd", delta, delta) +
-          torch.einsum("ad,bc->abcd", delta, delta)
+          torch.einsum("ij,kl->ijkl", delta, delta) +
+          torch.einsum("ik,jl->ijkl", delta, delta) +
+          torch.einsum("il,jk->ijkl", delta, delta)
         )
         T_abgd = (term1_abgd +term2_abgd + term3_abgd)/r9 #final term
-        D_ab = torch.outer(r_,r_)
-        D_abgd = 
+        print("T_ABGD: ", T_abgd)
+        print("DIPOLE: ", p[i])
+        print("QUADRUPOLE: ", t[i])
+        D_ab = torch.einsum("i,j->ij", r_,r_)
+        D_abgd = 0 
         ###charge-charge###
         U_cc += (q[i] * q[j])*f_0*T_    
         ###charge-dipole###
         U_cd += -f_1*(q[i]*torch.dot(T_a,p[j]) - q[j]*torch.dot(T_a,p[i]))
         ###dipole-dipole###
-        U_dd = -(f_1* torch.dot(p[i],torch.matmul(T_ab,p[j])) + f_2 *torch.dot(p[i],torch.matmul(D_ab,p[j])))
+        U_dd += -(f_1* torch.dot(p[i],torch.matmul(T_ab,p[j])) + f_2 *torch.dot(p[i],torch.matmul(D_ab,p[j])))
         ###charge-quadrupole###
-        U_ct = f_1*(q[i]*torch.sum(T_ab * t[j]) + q[j]* torch.sum(T_ab*t[i]))  + f_2*(q[i] * torch.sum(D_ab * t[j]) + q[j] * torch.sum(D_ab * t[i]))
+        U_ct += f_1*(q[i]*torch.sum(T_ab * t[j]) + q[j]* torch.sum(T_ab*t[i]))  + f_2*(q[i] * torch.sum(D_ab * t[j]) + q[j] * torch.sum(D_ab * t[i]))
         ###dipole-quadrupole###
         ###quadrupole-quadrupole###
 
@@ -92,7 +95,7 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
   U_cd *= constant
   U_dd *= constant
   U_ct *= constant/3
-  U_s = U_cc + U_cd + U_dd
+  U_s = U_cc + U_cd + U_dd + U_ct
   print("FINAL REAL SPACE ENERGY: ", U_s)
   return U_s
 
@@ -117,35 +120,47 @@ def long_range(coords, q, p, t, box, kappa, kcutoff):
   kvectors = torch.stack(kvectors)
   k_squared = torch.sum(kvectors ** 2, dim=1)
   gaussian_factor = torch.exp(-k_squared /(4*kappa**2)) / k_squared
-
-  ###Charge–charge### 
+  #Calculating all structure factors
   sk_cos = torch.zeros(len(kvectors))
   sk_sin = torch.zeros(len(kvectors))
-  for i, kvec in enumerate(kvectors):
-    k_dot_r = torch.sum(kvec * coords, dim=1)
-    sk_cos[i] = torch.sum(q * torch.cos(k_dot_r))
-    sk_sin[i] = torch.sum(q * torch.sin(k_dot_r))
-  cc_ene = (4*math.pi/ V)* torch.sum(gaussian_factor * (sk_cos**2 + sk_sin**2))
-  ###Charge–dipole### 
   sk_dipole_cos = torch.zeros(len(kvectors))
   sk_dipole_sin = torch.zeros(len(kvectors))
+  sk_quad_cos = torch.zeros(len(kvectors))
+  sk_quad_sin = torch.zeros(len(kvectors))
   for i, kvec in enumerate(kvectors):
+    k_dot_r = torch.sum(kvec * coords, dim=1)
     k_dot_p = torch.sum(p * kvec, dim=1)
+    k_outer = torch.outer(kvec, kvec)         # h_a h_b
+    h_dot_theta = torch.einsum("ij,ijk->i", k_outer, t)  # h_a h_b theta_iab
+    sk_cos[i] = torch.sum(q * torch.cos(k_dot_r))
+    sk_sin[i] = torch.sum(q * torch.sin(k_dot_r))
     sk_dipole_cos[i] = torch.sum(k_dot_p * torch.cos(k_dot_r))
     sk_dipole_sin[i] = torch.sum(k_dot_p * torch.sin(k_dot_r))
+    sk_quad_cos[i] = torch.sum(h_dot_theta * torch.cos(k_dot_r))
+    sk_quad_sin[i] = torch.sum(h_dot_theta * torch.sin(k_dot_r))
+  ###Charge–charge### 
+  cc_ene = (4*math.pi/ V)* torch.sum(gaussian_factor * (sk_cos**2 + sk_sin**2))
+  ###Charge–dipole### 
   cd_ene = (8 * math.pi / V) * torch.sum(gaussian_factor* (sk_sin * sk_dipole_cos - sk_cos * sk_dipole_sin))
   ###Dipole-dipole### 
   dd_ene = (4 * math.pi / V) *torch.sum(gaussian_factor * (sk_dipole_cos**2 + sk_dipole_sin**2))
   ###charge-quadrupole###
+  ct_ene = -(8*math.pi/V) * torch.sum(gaussian_factor * (sk_cos *sk_quad_cos + sk_sin * sk_quad_sin)/3)
   ###dipole-quadrupole###
+  dt_ene = (8*math.pi/V) * torch.sum(gaussian_factor*(sk_dipole_sin * sk_quad_cos - sk_dipole_cos * sk_quad_sin)/3)
   ###quadrupole-quadrupole###
-  U_l = cc_ene + cd_ene + dd_ene
+  tt_ene = (4*math.pi/V) * torch.sum(gaussian_factor*(sk_quad_cos**2 + sk_quad_sin**2)/9)
+  #Final reciprocal energy
+  U_l = cc_ene + cd_ene + dd_ene + ct_ene + dt_ene + tt_ene
   print("KVECTORS: \n",kvectors)
   print("k_squared values: ", k_squared)
   print("GAUSSIAN FACTOR: \n", gaussian_factor)
   print("CHARGE CHARGE ENERGY: ", cc_ene)
   print("CHARGE DIPOLE ENERGY: ", cd_ene)
   print("DIPOLE DIPOLE ENERGY: ", dd_ene)
+  print("CHARGE QUADRUPOLE ENERGY: ", ct_ene)
+  print("DIPOLE QUADRUPOLE ENERGY: ", dt_ene)
+  print("QUADRUPOLE QUADRUPOLE ENERGY: ", tt_ene)
   print("RECIPROCAL SPACE ENERGY: ", U_l)
   return  U_l
 
@@ -162,7 +177,6 @@ def self_interaction(coords, q , p, t, kappa):
     #monopole
     U_q += q[i]**2
     #dipole
-    print("DIPOLE: ", p[i])
     U_d += torch.sum(p[i]**2)
     #charge-quadrupole
     U_cq += q[i] * torch.trace(t[i])
@@ -184,31 +198,11 @@ def self_interaction(coords, q , p, t, kappa):
   return U_self
 
 
-def get_quadrupole_moments(coords, q):
-  entries = len(q)
-  Q = []
-  for i in range(entries):
-    qi = q[i]
-    pos = coords[i]
-    x,y,z = pos[0], pos[1], pos[2]
-    quad = torch.empty(3,3)
-    quad[0][0] = qi*x*x
-    quad[0][1] = qi*x*y
-    quad[0][2] = qi*x*z
-    quad[1][0] = qi*y*z
-    quad[1][1] = qi*y*y
-    quad[1][2] = qi*y*z
-    quad[2][0] = qi*z*x
-    quad[2][1] = qi*z*y
-    quad[2][2] = qi*z*z
-    Q.append(quad)
-  Q = torch.stack(Q)
-  return Q 
-def compute_ewald(coords, q ,box, kappa, rcutoff, kcutoff):
+def compute_ewald(coords, q ,p, t,box, kappa, rcutoff, kcutoff):
 #Total energy = short range + long range - self interaction
-  q = q * ELE_CHG
-  p = q[:, None] * coords
-  t =  get_quadrupole_moments(coords,q)
+  print("CHARGES: ", q)
+  print("DIPOLES: ", p)
+  print("QUADRUPOLES: ", t)
   return short_range(coords, q,p,t, box, kappa, rcutoff) + long_range(coords, q,p,t, box, kappa, kcutoff) - self_interaction(coords, q,p,t, kappa)
 
 
