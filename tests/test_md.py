@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import os
 import time
+import torch._dynamo as dynamo
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_from_tinker_xyz
@@ -61,15 +62,18 @@ def test_md():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
+    #explanation = dynamo.explain(ff.evaluate)(cm, topology, parameters)
+    #print(explanation)
     energies = ff.evaluate(cm, topology, parameters)
     energies['tot'].backward()
     print(coords.grad)
-    coords = coords.detach().clone()
-    coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
-    cm.update_coordinates(coords)
-    energies = ff.evaluate(cm, topology, parameters)
-    energies['tot'].backward()
-    print(coords.grad)
+    
+    #coords = coords.detach().clone()
+    #coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
+    #cm.update_coordinates(coords)
+    #energies = ff.evaluate(cm, topology, parameters)
+    #energies['tot'].backward()
+    #print(coords.grad)
 
     #num_waters = coords.size(0) // 3
     #model = CMMWater(num_waters, do_polarization=True)

@@ -43,9 +43,9 @@ class CMM(ForceField):
         # atom type indices which are decided by the Parameterizer.
         self._types_to_index = {
             "O_water": 0, "H_water": 1,
-            2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
-            6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+",
-            11: "Mg2+", 12: "Ca2+"
+            "F-": 2, "Cl-": 3, "Br-": 4, "I-": 5,
+            "Li+": 6, "Na+": 7, "K+": 8, "Rb+": 9, "Cs+": 10,
+            "Mg2+": 11, "Ca2+": 12
         }
 
         self._build()
@@ -60,10 +60,10 @@ class CMM(ForceField):
 
         # Electrostatic raw params #
         Z = torch.tensor([
-            3.61565, 0.93619,
-            4.693, 12.1239, 18.9726, 35.5833,
-            -0.895467, 3.5489, 7.73324, 12.2026, 11.5038,
-            2.83412, 4.93631
+            3.61565, 0.93619, # Water
+            4.693, 12.1239, 18.9726, 35.5833, # Halides
+            -0.895467, 3.5489, 7.73324, 12.2026, 11.5038, # Alkali
+            2.83412, 4.93631 # Mg2+, Ca2+
         ])
         mono = torch.tensor([
             -0.390896, 0.195448, # Water
@@ -229,21 +229,21 @@ class CMM(ForceField):
             0, 0, # Divalent cations
         ])
 
-        alpha = torch.tensor([
-            torch.diag([4.45992, 6.07259, 4.55391]), # O_water
-            torch.diag([2.22001, 1.66835, 0.183855]), # H_water
-            torch.diag([11.7270176, 11.7270176, 11.7270176]), # F-
-            torch.diag([32.2880907, 32.2880907, 32.2880907]), # Cl-
-            torch.diag([42.7172275, 42.7172275, 42.7172275]), # Br-
-            torch.diag([64.1111144, 64.1111144, 64.1111144]), # I-
-            torch.diag([0.1586152, 0.1586152, 0.1586152]), # Li+
-            torch.diag([0.9542199, 0.9542199, 0.9542199]), # Na+
-            torch.diag([5.5376271, 5.5376271, 5.5376271]), # K+
-            torch.diag([8.6857518, 8.6857518, 8.6857518]), # Rb+
-            torch.diag([15.7177865, 15.7177865, 15.7177865]), # Cs+
-            torch.diag([0.4822524, 0.4822524, 0.4822524]), # Mg2+
-            torch.diag([3.2809409, 3.2809409, 3.2809409]), # Ca2+
-        ])
+        alpha = torch.stack((
+            torch.diag(torch.tensor([4.45992, 6.07259, 4.55391])), # O_water
+            torch.diag(torch.tensor([2.22001, 1.66835, 0.183855])), # H_water
+            torch.diag(torch.tensor([11.7270176, 11.7270176, 11.7270176])), # F-
+            torch.diag(torch.tensor([32.2880907, 32.2880907, 32.2880907])), # Cl-
+            torch.diag(torch.tensor([42.7172275, 42.7172275, 42.7172275])), # Br-
+            torch.diag(torch.tensor([64.1111144, 64.1111144, 64.1111144])), # I-
+            torch.diag(torch.tensor([0.1586152, 0.1586152, 0.1586152])), # Li+
+            torch.diag(torch.tensor([0.9542199, 0.9542199, 0.9542199])), # Na+
+            torch.diag(torch.tensor([5.5376271, 5.5376271, 5.5376271])), # K+
+            torch.diag(torch.tensor([8.6857518, 8.6857518, 8.6857518])), # Rb+
+            torch.diag(torch.tensor([15.7177865, 15.7177865, 15.7177865])), # Cs+
+            torch.diag(torch.tensor([0.4822524, 0.4822524, 0.4822524])), # Mg2+
+            torch.diag(torch.tensor([3.2809409, 3.2809409, 3.2809409])), # Ca2+
+        ))
 
         alpha_damp_exponent = torch.tensor([
             0.0, 0.0, # Water
@@ -366,6 +366,11 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
 
         # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
+
+        # TODO: HERE! 1) Filter the pairs based on short-range cutoff and 2) apply a switching function
+        # to everything!
+        sr_cutoff = torch.tensor(6.0)
+        sr_indices = torch.nonzero(torch.where(dists < sr_cutoff, torch.arange(dists.size(0)), torch.tensor(0.0)), as_tuple=False).flatten() # This appears to work
 
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 

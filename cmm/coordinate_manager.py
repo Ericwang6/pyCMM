@@ -81,7 +81,7 @@ class CoordinateManager:
         self.neighbor_list.box_lengths = self.box_lengths
         self._check_for_nl_update = True
 
-    def get_distances_vectors_and_pairs(self, reset_gradients: bool = True) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_distances_vectors_and_pairs(self, reset_gradients: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs.
         """
