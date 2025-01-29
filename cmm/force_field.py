@@ -311,39 +311,17 @@ class CMM(ForceField):
                 "ct_slope_2": torch.tensor([13.7812]),
                 "eps": torch.tensor([1.0 / 0.380979]),
             },
-            ("H_water", "F-"): {
-                "eps": torch.tensor([1.0 / 1.78074]),
-            },
-            ("H_water", "Cl-"): {
-                "eps": torch.tensor([1.0 / 0.929684]),
-            },
-            ("H_water", "Br-"): {
-                "eps": torch.tensor([1.0 / 0.894156]),
-            },
-            ("H_water", "I-"): {
-                "eps": torch.tensor([1.0 / 0.655324]),
-            },
-            ("O_water", "Li+"): {
-                "eps": torch.tensor([1.0 / 0.964901]),
-            },
-            ("O_water", "Na+"): {
-                "eps": torch.tensor([1.0 / 0.80]),
-            },
-            ("O_water", "K+"): {
-                "eps": torch.tensor([1.0 / 0.70]),
-            },
-            ("O_water", "Rb+"): {
-                "eps": torch.tensor([1.0 / 0.684706]),
-            },
-            ("O_water", "Cs+"): {
-                "eps": torch.tensor([1.0 / 0.584055]),
-            },
-            ("O_water", "Mg2+"): {
-                "eps": torch.tensor([1.0 / 0.638288]),
-            },
-            ("O_water", "Ca2+"): {
-                "eps": torch.tensor([1.0 / 2.4784]),
-            },
+            ("H_water", "F-"): {"eps": torch.tensor([1.0 / 1.78074]),},
+            ("H_water", "Cl-"): {"eps": torch.tensor([1.0 / 0.929684]),},
+            ("H_water", "Br-"): {"eps": torch.tensor([1.0 / 0.894156]),},
+            ("H_water", "I-"): {"eps": torch.tensor([1.0 / 0.655324]),},
+            ("O_water", "Li+"): {"eps": torch.tensor([1.0 / 0.964901]),},
+            ("O_water", "Na+"): {"eps": torch.tensor([1.0 / 0.80]),},
+            ("O_water", "K+"): {"eps": torch.tensor([1.0 / 0.70]),},
+            ("O_water", "Rb+"): {"eps": torch.tensor([1.0 / 0.684706]),},
+            ("O_water", "Cs+"): {"eps": torch.tensor([1.0 / 0.584055]),},
+            ("O_water", "Mg2+"): {"eps": torch.tensor([1.0 / 0.638288]),},
+            ("O_water", "Ca2+"): {"eps": torch.tensor([1.0 / 2.4784]),},
         }
 
         self.pair_pair_params = {
