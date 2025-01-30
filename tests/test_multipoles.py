@@ -92,7 +92,7 @@ def test_ewald():
     context = mm.Context(system, mm.LangevinIntegrator(300, 1.0, 1.0))
     context.setPositions(pdb.positions)
     force = [force for force in system.getForces() if isinstance(force, mm.AmoebaMultipoleForce)][0]
-    # There is a bunch of parameters you can pull out the force object so do that when we actually
+    # There are a bunch of parameters you can pull out the force object so do that when we actually
     # get to testing for ewald properly.
 
     mono, dipo, quad = [], [], []

@@ -141,7 +141,7 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     dist_vecs_p: torch.Tensor,
     b_i_p: torch.Tensor, b_ij_p: torch.Tensor,
     mPoles_a: torch.Tensor,
-    Z_a: torch.Tensor,
+    Z_a: torch.Tensor
 ):
     # NOTE(JOE): Currently, we always compute the potential, field, and field gradients
     # even though we do not actually need to compute these field gradients. To support

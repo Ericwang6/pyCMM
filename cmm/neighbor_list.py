@@ -96,7 +96,7 @@ class NSquaredList(NeighborList):
 
 
 class CellList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=512):
+    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: torch.Tensor, max_neighbors: int=512):
         """
         Initialize cell list structure.
         

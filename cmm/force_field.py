@@ -10,6 +10,7 @@ from .parameters import Parameterizer
 from .topology import Topology
 from .terms import *
 from .units import *
+from .switching_functions import switch_543
 
 from copy import copy
 
@@ -37,7 +38,7 @@ class ForceField(torch.nn.Module):
         self._pair_params = {}
 
 class CMM(ForceField):
-    def __init__(self) -> None:
+    def __init__(self, cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG)) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -47,6 +48,7 @@ class CMM(ForceField):
             "Li+": 6, "Na+": 7, "K+": 8, "Rb+": 9, "Cs+": 10,
             "Mg2+": 11, "Ca2+": 12
         }
+        self.cutoff_sr = cutoff_short_range
 
         self._build()
     
@@ -363,26 +365,43 @@ class CMM(ForceField):
 
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
+        # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+        
+        # Get pairs, dists, and vectors for long-range nonbonded potential #
+        pairs_lr = pairs[topology.all_intermolecular_pairs, :]
+        pairs_lr_i_a = pairs_lr[:, 0]
+        pairs_lr_j_a = pairs_lr[:, 1]
+        dists_lr = dists[topology.all_intermolecular_pairs]
+        dist_vecs_lr = dist_vecs[topology.all_intermolecular_pairs]
 
+        # Get switching function values for long-range nonbonded potential #
+        cutoff_lr = cm.cutoff
+        switch_start_lr = cutoff_lr - 2.0
+        switch_start_lr = switch_start_lr if switch_start_lr > 0.0 else 0.0
+        switch_lr = switch_543(dists_lr, switch_start_lr, cutoff_lr)
         # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
 
-        # TODO: HERE! 1) Filter the pairs based on short-range cutoff and 2) apply a switching function
-        # to everything!
-        sr_cutoff = torch.tensor(6.0)
-        sr_indices = torch.nonzero(torch.where(dists < sr_cutoff, torch.arange(dists.size(0)), torch.tensor(0.0)), as_tuple=False).flatten() # This appears to work
+        # Get pairs, dists, and vectors for short-range nonbonded potential #
+        indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long), torch.tensor(-1, dtype=torch.long))
+        indices_lr_to_sr = indices_lr_to_sr[indices_lr_to_sr >= 0]
+        all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_lr_to_sr]
+
+        pairs_sr = pairs_lr[indices_lr_to_sr, :]
+        pairs_sr_i_a = pairs_sr[:, 0]
+        pairs_sr_j_a = pairs_sr[:, 1]
+        dists_sr = dists_lr[indices_lr_to_sr]
+        dist_vecs_sr = dist_vecs_lr[indices_lr_to_sr]
+
+        # Get switching function values for short-range nonbonded potential #
+        switch_start_sr = self.cutoff_sr - 2.0
+        switch_start_sr = switch_start_sr if switch_start_sr > 0.0 else 0.0
+        switch_sr = switch_543(dists_sr, switch_start_sr, self.cutoff_sr)
 
         angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # All pairs forming an angle #
         pairs_angles_a = topology.angle_pairs.T.flatten()
-
-        # Intermolecular pairs #
-        pairs_inter_i_a = pairs[:, 0][topology.all_intermolecular_pairs]
-        pairs_inter_j_a = pairs[:, 1][topology.all_intermolecular_pairs]
-
-        dists_inter = dists[topology.all_intermolecular_pairs]
-        dist_vecs_inter = dist_vecs[topology.all_intermolecular_pairs]
 
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
@@ -423,7 +442,7 @@ class CMM(ForceField):
         b_ct = params.get_atomic_parameters('b_ct')
         eta = params.get_atomic_parameters('eta')
 
-        eps = params.get_pair_parameters('eps', topology.all_intermolecular_pairs)
+        eps = params.get_pair_parameters('eps', all_intermolecular_pairs_sr)
         r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
         k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
         D_p = params.get_pair_parameters('D', topology.bonded_pairs)
@@ -490,15 +509,15 @@ class CMM(ForceField):
         multipoles_xpol = scaleMultipoles(multipoles, q_xpol, Kdipo_xpol, Kquad_xpol)
 
         ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
-            dist_vecs_inter,
-            multipoles_ct_acc[pairs_inter_i_a], multipoles_ct_acc[pairs_inter_j_a],
-            multipoles_ct_don[pairs_inter_i_a], multipoles_ct_don[pairs_inter_j_a],
-            b_ct[pairs_inter_i_a], b_ct[pairs_inter_j_a],
-            eps
+            dist_vecs_sr,
+            multipoles_ct_acc[pairs_sr_i_a], multipoles_ct_acc[pairs_sr_j_a],
+            multipoles_ct_don[pairs_sr_i_a], multipoles_ct_don[pairs_sr_j_a],
+            b_ct[pairs_sr_i_a], b_ct[pairs_sr_j_a],
+            eps, switch_lr
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq_a = torch.zeros(natoms, device=pairs.device)
-        dq_a = dq_a.scatter_add(0, pairs_inter_j_a, dq_pairwise)
+        dq_a = dq_a.scatter_add(0, pairs_sr_j_a, dq_pairwise)
         group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3, device=pairs.device), 3)
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
@@ -519,22 +538,19 @@ class CMM(ForceField):
         dq_groups = dq_groups.scatter_add(0, group_indices, dq_a)
 
         # Get electrostatic energy, electric potential, field, and field gradients
-        b_i_elec_p = b_elec[pairs_inter_i_a]
-        b_j_elec_p = b_elec[pairs_inter_j_a]
+        b_i_elec_p = b_elec[pairs_lr_i_a]
+        b_j_elec_p = b_elec[pairs_lr_j_a]
         b_ij_elec_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
         ene_perm_elec, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairs(
             natoms,
-            pairs_inter_i_a,
-            pairs_inter_j_a,
-            dists_inter, dist_vecs_inter,
+            pairs_lr_i_a,
+            pairs_lr_j_a,
+            dists_lr, dist_vecs_lr,
             b_i_elec_p, b_ij_elec_p,
             multipoles, Z
         )
 
-        # TODO: Need the topology to determine the polarization groups. I really hate this
-        # polarization group concept. The polarization group, I suppose, is the mask
-        # which specifies all intramolecular atoms (including that atom itself) for each
-        # atom. The charge constraints are then enforced over those groups.
+        # TODO: Need the topology to determine the polarization groups.
         #
         # The below is again a hack to work for water.
 
@@ -542,7 +558,8 @@ class CMM(ForceField):
         groups = torch.stack((
             torch.arange(0, natoms, 3, device=pairs.device),
             torch.arange(1, natoms, 3, device=pairs.device),
-            torch.arange(2, natoms, 3, device=pairs.device)), dim=1)
+            torch.arange(2, natoms, 3, device=pairs.device)), dim=1
+        )
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
         with torch.no_grad():
@@ -551,9 +568,9 @@ class CMM(ForceField):
                 induced_multipoles_and_lagrange_muls,
                 b_vec,
                 natoms,
-                pairs_inter_i_a,
-                pairs_inter_j_a,
-                dists_inter, dist_vecs_inter,
+                pairs_lr_i_a,
+                pairs_lr_j_a,
+                dists_lr, dist_vecs_lr,
                 b_ij_elec_p,
                 eta_times_2,
                 inverse_polarizabilities,
@@ -562,8 +579,8 @@ class CMM(ForceField):
         
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
             induced_multipoles_and_lagrange_muls_out, natoms,
-            pairs_inter_i_a, pairs_inter_j_a,
-            dists_inter, dist_vecs_inter,
+            pairs_lr_i_a, pairs_lr_j_a,
+            dists_lr, dist_vecs_lr,
             b_ij_elec_p, eta_times_2, inverse_polarizabilities,
             group_indices, groups, True
         )
@@ -616,26 +633,28 @@ class CMM(ForceField):
 
         ## Pauli repulsion
         pauli_pairwise = computeShortRangeEnergyFromPairs(
-            dists_inter, dist_vecs_inter,
-            multipoles_pauli[pairs_inter_i_a], multipoles_pauli[pairs_inter_j_a],
-            torch.sqrt(b_pauli[pairs_inter_i_a] * b_pauli[pairs_inter_j_a])
+            dists_sr, dist_vecs_sr,
+            multipoles_pauli[pairs_sr_i_a], multipoles_pauli[pairs_sr_j_a],
+            torch.sqrt(b_pauli[pairs_sr_i_a] * b_pauli[pairs_sr_j_a]),
+            switch_sr
         )
         ene_pauli = torch.sum(pauli_pairwise) / 2
 
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
-            dists_inter,
-            torch.sqrt(C6_disp[pairs_inter_i_a] * C6_disp[pairs_inter_j_a]),
-            torch.sqrt(b_disp[pairs_inter_i_a] * b_disp[pairs_inter_j_a])
+            dists_lr,
+            torch.sqrt(C6_disp[pairs_lr_i_a] * C6_disp[pairs_lr_j_a]),
+            torch.sqrt(b_disp[pairs_lr_i_a] * b_disp[pairs_lr_j_a]),
+            switch_lr
         )
         ene_disp = torch.sum(disp_pairwise) / 2
 
         # exchange-polarization
         xpol_pairwise = computeShortRangeEnergyFromPairs(
-            dists_inter, dist_vecs_inter,
-            multipoles_xpol[pairs_inter_i_a], multipoles_xpol[pairs_inter_j_a],
-            torch.sqrt(b_xpol[pairs_inter_i_a] * b_xpol[pairs_inter_j_a]),
-            False
+            dists_sr, dist_vecs_sr,
+            multipoles_xpol[pairs_sr_i_a], multipoles_xpol[pairs_sr_j_a],
+            torch.sqrt(b_xpol[pairs_sr_i_a] * b_xpol[pairs_sr_j_a]),
+            switch_sr, False
         )
         ene_xpol = torch.sum(xpol_pairwise) / 2
 

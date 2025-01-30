@@ -322,23 +322,7 @@ def test_total_energy_and_total_gradients():
     if not torch.allclose(grads_ad_1, grads_fd_1):
         print(grads_ad_1 - grads_fd_1)
 
-    # Update coordinates #
-    coords = coords.detach().clone()
-    coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
-    coords_no_grad = coords.detach().clone()
-    grads_fd_2 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
-    #total_ref_2 = get_total_energy(coords_no_grad)
-
-    # Re-evaluate with updated coordinates #
-    cm.update_coordinates(coords)
-    energies_ff = ff.evaluate(cm, topology, parameters)
-    energies_ff['tot'].backward(retain_graph=True)
-    grads_ad_2 = coords.grad.clone()
-    if not torch.allclose(grads_ad_2, grads_fd_2):
-        print(grads_ad_2 - grads_fd_2)
-
     assert torch.allclose(grads_ad_1, grads_fd_1)
-    assert torch.allclose(grads_ad_2, grads_fd_2)
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)

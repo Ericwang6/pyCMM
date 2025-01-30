@@ -58,8 +58,8 @@ def computeShortRangeEnergy(
 def computeShortRangeEnergyFromPairs(
     dists_p: torch.Tensor, dist_vecs_p: torch.Tensor,
     mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
-    b_ij_p: torch.Tensor,
-    positive: bool = True,
+    b_ij_p: torch.Tensor, switching_values: torch.Tensor,
+    positive: bool = True
 ):
 
     drInv_p = 1 / dists_p
@@ -70,7 +70,7 @@ def computeShortRangeEnergyFromPairs(
 
     iTensor = computeInteractionTensor(dist_vecs_p, damps, drInv_p, 2)
     enes = torch.bmm(mPoles_j_p.unsqueeze(1), torch.bmm(iTensor, mPoles_i_p.unsqueeze(2))).flatten()
-    return enes
+    return enes * switching_values
 
 
 def computePairwiseChargeTransfer(
@@ -78,7 +78,7 @@ def computePairwiseChargeTransfer(
     mPoles_acc_i: torch.Tensor, mPoles_acc_j: torch.Tensor,
     mPoles_don_i: torch.Tensor, mPoles_don_j: torch.Tensor,
     b_i: torch.Tensor, b_j: torch.Tensor,
-    eps_ij: torch.Tensor
+    eps_ij: torch.Tensor, switching_values: torch.Tensor
 ):
     dr = torch.norm(drVec, dim=1)
     drInv = 1 / dr
@@ -96,4 +96,4 @@ def computePairwiseChargeTransfer(
     drInvDamp = iTensor[:, 0, 0].flatten()
     dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp * eps_ij
     dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp * eps_ij
-    return enes, dq_forward - dq_backward
+    return enes * switching_values, (dq_forward - dq_backward) * switching_values

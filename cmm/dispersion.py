@@ -21,7 +21,8 @@ def computeDispersion(
 
 def computeDispersionFromPairs(
     dists_p: torch.Tensor, 
-    c6_ij_p: torch.Tensor,b_ij_p: torch.Tensor
+    c6_ij_p: torch.Tensor,b_ij_p: torch.Tensor,
+    switching_values: torch.Tensor
 ):
     u = b_ij_p * dists_p
     u2 = u * u
@@ -31,4 +32,4 @@ def computeDispersionFromPairs(
     u6 = u5 * u
     exp_u = torch.exp(-u)
     damp = 1 - exp_u * (1 + u + u2 / 2 + u3 / 6 + u4 / 24 + u5 / 120 + u6 / 720)
-    return -damp * c6_ij_p / torch.pow(dists_p, 6)
+    return -damp * c6_ij_p * switching_values / torch.pow(dists_p, 6)

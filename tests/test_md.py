@@ -62,10 +62,9 @@ def test_md():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
-    #explanation = dynamo.explain(ff.evaluate)(cm, topology, parameters)
-    #print(explanation)
     energies = ff.evaluate(cm, topology, parameters)
     energies['tot'].backward()
+    print(energies['tot'])
     print(coords.grad)
     
     #coords = coords.detach().clone()

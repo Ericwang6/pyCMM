@@ -23,16 +23,14 @@ from .pbc import applyPBC
 
 class CoordinateManager:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, max_neighbors: int = 512) -> None:
-        # TODO: Allow for multiple cutoffs since short_range only needs roughly
-        # 6 angstroms but vdw needs 12 angstroms usually. Also allow for choice
-        # of neighbor list. We just use a cell list for now.
         self._need_coordindate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
         self.coords = coords
         self.box = box
+        self.cutoff = torch.tensor(cutoff)
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
-        self.neighbor_list = CellList(coords, self.box_lengths, cutoff, max_neighbors=max_neighbors)
+        self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=max_neighbors)
         self._get_axis_frame_indices()
         self._check_for_nl_update = False
 
