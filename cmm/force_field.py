@@ -368,6 +368,8 @@ class CMM(ForceField):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         
+        # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
+        
         # Get pairs, dists, and vectors for long-range nonbonded potential #
         pairs_lr = pairs[topology.all_intermolecular_pairs, :]
         pairs_lr_i_a = pairs_lr[:, 0]
@@ -380,7 +382,6 @@ class CMM(ForceField):
         switch_start_lr = cutoff_lr - 2.0
         switch_start_lr = switch_start_lr if switch_start_lr > 0.0 else 0.0
         switch_lr = switch_543(dists_lr, switch_start_lr, cutoff_lr)
-        # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
 
         # Get pairs, dists, and vectors for short-range nonbonded potential #
         indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long), torch.tensor(-1, dtype=torch.long))
@@ -405,10 +406,10 @@ class CMM(ForceField):
 
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
+        natoms = torch.tensor(Z.size(0), device=pairs.device)
         q_shell = params.get_atomic_parameters('q_shell')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
-        natoms = torch.tensor(Z.size(0), device=pairs.device)
 
         # Polarizability #
         alpha = params.get_atomic_parameters('alpha')
