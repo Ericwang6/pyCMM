@@ -10,11 +10,18 @@ from .neighbor_list import NeighborList
 # Once these index arrays are constructed, they will be used to
 # index the pairs when computing potentials.
 
+# TODO: Probably the simplest way to get everything we want is to do a breadth-first search over
+# the topology beginning with each atom. Stop when we reach a depth of 5. We store the topological
+# distance of each atom from every other atom. This let's us easily separate everything into
+# inter and intramolecular spaces. We can also query these arrays to get the groups, angles, dihedrals, etc.
+
 class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
         self.natoms = natoms
         self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
         self.find_bond_and_angle_pair_indices(nl)
+        self._find_atoms_for_building_local_axes()
+        self._find_polarization_groups()
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
         """
@@ -37,6 +44,25 @@ class Topology:
         
         return bonded_pairs_i, angle_pairs_i
 
+    def _find_atoms_for_building_local_axes(self):
+        self.xatoms = torch.full((self.natoms,), -1)
+        self.yatoms = torch.full((self.natoms,), -1)
+        self.zatoms = torch.full((self.natoms,), -1)
+        
+        # This is basically a way of finding all the 1-2 and 1-3 atoms I think.
+        for i in torch.arange(self.natoms):
+            all_bonded_atoms_i = torch.concat((
+                self.bonded_atoms[1, (self.bonded_atoms[0] == i)], self.bonded_atoms[0, (self.bonded_atoms[1] == i)]
+            ))
+            if all_bonded_atoms_i.size(0) == 1:
+                self.zatoms[i] = all_bonded_atoms_i[0]
+            elif all_bonded_atoms_i.size(0) == 2:
+                self.zatoms[i] = all_bonded_atoms_i[0]
+                self.xatoms[i] = all_bonded_atoms_i[1]
+                self.xatoms[all_bonded_atoms_i[0]] = all_bonded_atoms_i[1]
+                self.xatoms[all_bonded_atoms_i[1]] = all_bonded_atoms_i[0]
+            # TODO: Do the 3-atom and higher cases here once we have examples of that.
+
     def find_bond_and_angle_pair_indices(self, nl: NeighborList):
         """
         The bonds array which is stored here is ASSUMED to be sorted such that
@@ -48,7 +74,7 @@ class Topology:
         TODO: In the future, this is where we should create self.dihedral_indices
         and the appropriate couplings for that. Whether or not to construct
         the couplings could be a user input. Probably doesn't make a difference
-        if we just always do it but that's an empirical question.
+        if we just always do it.
         """
         self.bonded_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
         self.angle_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
@@ -99,3 +125,17 @@ class Topology:
         mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0], device=pairs.device)) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
         self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
         
+    def _find_polarization_groups(self):
+        # I think in the general case, this will be the full 1-4 (or maybe 1-3) space of each atom.
+        # So, the polarization groups will be OVERLAPPING unlike in AMOEBA.
+        
+        # TODO: This also only works for water and ions because water's angle atoms
+        # are the polarization group and I already collapsed them into one set.
+        # Normally, we would have to eliminate all identical sets of atoms so that
+        # we do not have duplicate polarization groups.
+        groups = torch.sort(self.angle_atoms, dim=1).values
+
+        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(0)
+
+        self.polarization_groups = torch.nested.nested_tensor(list(single_atom_groups.unbind(dim=0) + groups.unbind(dim=0)))
+        # HERE: I have the groups! Now just incorporate them into the polarization code and also get the group scatter indices!

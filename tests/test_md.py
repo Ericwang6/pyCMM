@@ -36,7 +36,7 @@ def test_virial_tensor():
     energies = ff.evaluate(cm, topology, parameters)
     energies['tot'].backward()
 
-    # This equation for the virial stress is derived in the Appendix of: https://doi.org/10.1016/j.cpc.2019.107057 
+    # This equation for the virial stress is derived in the Appendix of: https://doi.org/10.1016/j.cpc.2019.107057
     #right = torch.matmul(box.grad.T, box)
     #left = torch.matmul(coords.grad.T, coords)
     #virial = right + left

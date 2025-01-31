@@ -6,6 +6,7 @@ from .polarization import direct_field_induced_dipole_guess, solvePolarizationBy
 from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs
 from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
+from .axis_types import AxisTypes
 from .parameters import Parameterizer
 from .topology import Topology
 from .terms import *
@@ -13,23 +14,6 @@ from .units import *
 from .switching_functions import switch_543
 
 from copy import copy
-
-# NOTE(JOE): The design of this object is still up in the air. I think that we could
-# allow inheritance for the purpose of making it really trivial to set
-# up a force field. This just saves the user having to call the appropriate
-# set up functions manually I guess? Custom force fields can just work with
-# the base class I think. Ultimately all that this object does is hold
-# onto a list of functions we need to call and all of the parameters
-# needed to pass to the Parameterizer to populate the parameter arrays.
-# Also, in the future, we will add the option to specify parameters
-# from a file or dictionary or something.
-
-# TODO: The axis types are specified as follows:
-# 0 = Identity
-# 1 = z-then-x
-# 2 = bisector
-# That's all we have for now. The axis type should really be specified by the
-# force field by using a mapping from the atom type to the axis type. Don't have that yet.
 
 class ForceField(torch.nn.Module):
     def __init__(self) -> None:
@@ -224,11 +208,12 @@ class CMM(ForceField):
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
+        notype = AxisTypes.NoAxisType.value
         axistypes = torch.tensor([
-            2, 1, # Water
-            0, 0, 0, 0, # Halide
-            0, 0, 0, 0, 0, # Alkali
-            0, 0, # Divalent cations
+            AxisTypes.Bisector.value, AxisTypes.ZThenX.value, # Water
+            notype, notype, notype, notype, # Halide
+            notype, notype, notype, notype, notype, # Alkali
+            notype, notype, # Divalent cations
         ])
 
         alpha = torch.stack((
@@ -404,12 +389,14 @@ class CMM(ForceField):
         # All pairs forming an angle #
         pairs_angles_a = topology.angle_pairs.T.flatten()
 
+
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
         natoms = torch.tensor(Z.size(0), device=pairs.device)
         q_shell = params.get_atomic_parameters('q_shell')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
+        axis_types = params.get_atomic_parameters("axistypes")
 
         # Polarizability #
         alpha = params.get_atomic_parameters('alpha')
@@ -495,7 +482,7 @@ class CMM(ForceField):
         eta_times_2 = 2 * eta
 
         # Rotation Matrices #
-        rotation_matrices = cm.compute_rotation_matrices(params.get_atomic_parameters("axistypes"))
+        rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         
         multipoles = rotateMultipoles(
             q_shell, dipo, quad, rotation_matrices
@@ -556,11 +543,12 @@ class CMM(ForceField):
         # The below is again a hack to work for water.
 
         # Solve Polarization Equations #
-        groups = torch.stack((
-            torch.arange(0, natoms, 3, device=pairs.device),
-            torch.arange(1, natoms, 3, device=pairs.device),
-            torch.arange(2, natoms, 3, device=pairs.device)), dim=1
-        )
+        #groups = torch.stack((
+        #    torch.arange(0, natoms, 3, device=pairs.device),
+        #    torch.arange(1, natoms, 3, device=pairs.device),
+        #    torch.arange(2, natoms, 3, device=pairs.device)), dim=1
+        #)
+        groups = torch.nested.nested_tensor([torch.arange(i, i+3) for i in torch.arange(0, natoms, 3)], layout=torch.jagged)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
         with torch.no_grad():

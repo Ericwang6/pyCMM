@@ -246,7 +246,7 @@ class CMMWater(nn.Module):
             mPoles_ct_acc[pairs[0]], mPoles_ct_acc[pairs[1]],
             mPoles_ct_don[pairs[0]], mPoles_ct_don[pairs[1]],
             self.nb_params['b_ct'][pairs[0]], self.nb_params['b_ct'][pairs[1]],
-            self.nb_params['eps'][pairs[0], pairs[1]]
+            self.nb_params['eps'][pairs[0], pairs[1]], torch.ones(pairs.size(0))
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq = scatter(dq_pairwise, pairs[1])

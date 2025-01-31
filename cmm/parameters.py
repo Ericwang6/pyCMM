@@ -148,7 +148,7 @@ class Parameterizer:
     def _build_pair_parameter_arrays(self, raw_pair_params: Dict[Tuple[str, str], torch.Tensor]):
         for param_key in self._pair_param_arrays.keys():
             for i in torch.arange(len(self._unique_pair_type_names)):
-                if self._unique_pair_type_names[i] in raw_pair_params:
+                if self._unique_pair_type_names[i] in raw_pair_params and param_key in raw_pair_params[self._unique_pair_type_names[i]]:
                     self._pair_param_arrays[param_key][self._name_to_pair_type[self._unique_pair_type_names[i]]] = raw_pair_params[self._unique_pair_type_names[i]][param_key][0]
     
     def _build_pair_pair_parameter_arrays(self, raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor]):
