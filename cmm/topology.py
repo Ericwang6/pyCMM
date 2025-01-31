@@ -17,11 +17,12 @@ from .neighbor_list import NeighborList
 
 class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
+        self.device = nl.device
         self.natoms = natoms
         self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
         self.find_bond_and_angle_pair_indices(nl)
         self._find_atoms_for_building_local_axes()
-        self._find_polarization_groups()
+        self._find_polarization_groups_and_scatter_indices()
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
         """
@@ -125,7 +126,7 @@ class Topology:
         mask_2 = torch.where((torch.index_select(self.intramolecular_atom_indices, 1, torch.tensor([1, 0], device=pairs.device)) == pairs.unsqueeze(1)).all(-1).any(-1))[0]
         self.all_intramolecular_pairs, _ = torch.sort(torch.stack((mask_1, mask_2), dim=1).flatten())
         
-    def _find_polarization_groups(self):
+    def _find_polarization_groups_and_scatter_indices(self):
         # I think in the general case, this will be the full 1-4 (or maybe 1-3) space of each atom.
         # So, the polarization groups will be OVERLAPPING unlike in AMOEBA.
         
@@ -134,8 +135,11 @@ class Topology:
         # Normally, we would have to eliminate all identical sets of atoms so that
         # we do not have duplicate polarization groups.
         groups = torch.sort(self.angle_atoms, dim=1).values
-
         single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(0)
-
-        self.polarization_groups = torch.nested.nested_tensor(list(single_atom_groups.unbind(dim=0) + groups.unbind(dim=0)))
-        # HERE: I have the groups! Now just incorporate them into the polarization code and also get the group scatter indices!
+        if single_atom_groups.numel() > 0:
+            self.polarization_groups = torch.nested.nested_tensor(list(single_atom_groups.unbind() + groups.unbind()), device=self.device, requires_grad=False)
+        else:
+            self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind()), device=self.device, requires_grad=False)
+        self.natoms_in_pol_groups = torch.tensor([self.polarization_groups.unbind()[i].size(0) for i in torch.arange(self.polarization_groups.size(0))], device=self.device, requires_grad=False)
+        self.n_pol_groups = self.natoms_in_pol_groups.size(0)
+        self.polarization_group_indices = torch.arange(self.n_pol_groups, device=self.device, requires_grad=False).repeat_interleave(self.natoms_in_pol_groups)

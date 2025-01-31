@@ -506,7 +506,7 @@ class CMM(ForceField):
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq_a = torch.zeros(natoms, device=pairs.device)
         dq_a = dq_a.scatter_add(0, pairs_sr_j_a, dq_pairwise)
-        group_indices = torch.repeat_interleave(torch.arange(q_shell.size(0) // 3, device=pairs.device), 3)
+        
         # ^^^ This is just a hack to get things working for water. Ultimately, we will
         # need a more general approach which will be provided by the topology. This
         # way of defining groups is somewhat troublesome. It means that we chop up molecules
@@ -523,7 +523,7 @@ class CMM(ForceField):
         # model.
         ngroups = natoms // 3
         dq_groups = torch.zeros(ngroups, device=pairs.device)
-        dq_groups = dq_groups.scatter_add(0, group_indices, dq_a)
+        dq_groups = dq_groups.scatter_add(0, topology.polarization_group_indices, dq_a)
 
         # Get electrostatic energy, electric potential, field, and field gradients
         b_i_elec_p = b_elec[pairs_lr_i_a]
@@ -548,7 +548,7 @@ class CMM(ForceField):
         #    torch.arange(1, natoms, 3, device=pairs.device),
         #    torch.arange(2, natoms, 3, device=pairs.device)), dim=1
         #)
-        groups = torch.nested.nested_tensor([torch.arange(i, i+3) for i in torch.arange(0, natoms, 3)], layout=torch.jagged)
+        #groups = torch.nested.nested_tensor([torch.arange(i, i+3) for i in torch.arange(0, natoms, 3)], layout=torch.jagged)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
         with torch.no_grad():
@@ -563,7 +563,7 @@ class CMM(ForceField):
                 b_ij_elec_p,
                 eta_times_2,
                 inverse_polarizabilities,
-                group_indices, groups
+                topology.polarization_group_indices, topology.polarization_groups
             )
         
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
@@ -571,7 +571,7 @@ class CMM(ForceField):
             pairs_lr_i_a, pairs_lr_j_a,
             dists_lr, dist_vecs_lr,
             b_ij_elec_p, eta_times_2, inverse_polarizabilities,
-            group_indices, groups, True
+            topology.polarization_group_indices, topology.polarization_groups, True
         )
         ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
 

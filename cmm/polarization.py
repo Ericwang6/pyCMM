@@ -96,6 +96,5 @@ def computeProductWithPolarizationMatrix(
     )
 
     constraints = torch.tensor([torch.sum(induced_charges[groups.unbind()[i]]) for i in torch.arange(groups.size(0))])
-    
     res = torch.concat((eta * induced_charges + lagrange_muls[group_scatter] + induced_electric_potential, torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(), constraints))
     return res, induced_electric_potential, induced_electric_field
