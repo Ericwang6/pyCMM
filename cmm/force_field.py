@@ -1,5 +1,5 @@
 import torch, math
-from torch_scatter import scatter
+from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
 from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePolarizationEnergyAndInducedMultipolesFromPairs, computeInducedElectricPotentialAndFieldsFromPairs
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix
@@ -521,9 +521,8 @@ class CMM(ForceField):
         # charge flux model which moves around charge based on the potential difference between pairs
         # of atoms. We can actually parameterize the pairwise model to reproduce the variational EEM
         # model.
-        ngroups = natoms // 3
-        dq_groups = torch.zeros(ngroups, device=pairs.device)
-        dq_groups = dq_groups.scatter_add(0, topology.polarization_group_indices, dq_a)
+        dq_groups = torch.zeros(topology.n_pol_groups, device=pairs.device)
+        dq_groups = segment_csr(dq_a[topology.pol_group_indices_a], topology.pol_group_segment_indices, reduce='sum')
 
         # Get electrostatic energy, electric potential, field, and field gradients
         b_i_elec_p = b_elec[pairs_lr_i_a]
@@ -538,21 +537,9 @@ class CMM(ForceField):
             multipoles, Z
         )
 
-        # TODO: Need the topology to determine the polarization groups.
-        #
-        # The below is again a hack to work for water.
-
-        # Solve Polarization Equations #
-        #groups = torch.stack((
-        #    torch.arange(0, natoms, 3, device=pairs.device),
-        #    torch.arange(1, natoms, 3, device=pairs.device),
-        #    torch.arange(2, natoms, 3, device=pairs.device)), dim=1
-        #)
-        #groups = torch.nested.nested_tensor([torch.arange(i, i+3) for i in torch.arange(0, natoms, 3)], layout=torch.jagged)
-
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups)) # TODO: This should actually add in the "groupCharges" to dq_groups which are zero for water but nonzero for ions.
         with torch.no_grad():
-            induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, ngroups, polarizabilities, elec_field)
+            induced_multipoles_and_lagrange_muls = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
             induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
                 induced_multipoles_and_lagrange_muls,
                 b_vec,
@@ -563,7 +550,10 @@ class CMM(ForceField):
                 b_ij_elec_p,
                 eta_times_2,
                 inverse_polarizabilities,
-                topology.polarization_group_indices, topology.polarization_groups
+                topology.pol_group_indices_a,
+                topology.pol_group_segment_indices,
+                topology.pol_group_lengths_g
+                #topology.polarization_group_indices, topology.polarization_groups
             )
         
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
@@ -571,7 +561,9 @@ class CMM(ForceField):
             pairs_lr_i_a, pairs_lr_j_a,
             dists_lr, dist_vecs_lr,
             b_ij_elec_p, eta_times_2, inverse_polarizabilities,
-            topology.polarization_group_indices, topology.polarization_groups, True
+            topology.pol_group_indices_a,
+            topology.pol_group_segment_indices,
+            topology.pol_group_lengths_g
         )
         ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
 

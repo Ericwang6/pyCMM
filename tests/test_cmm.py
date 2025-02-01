@@ -217,10 +217,10 @@ def test_total_energy_and_total_gradients_ion_ion():
 def test_total_energy_and_total_gradients_ion_water():
     torch.set_default_dtype(torch.float64)
 
-    #coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=False)
-    #coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=True)
-    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=False)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=True)
+    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=False)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=True)
+    #coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=False)
+    #coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=True)
     atom_indices_to_names = {
         0: "O_water", 1: "H_water",
         2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
@@ -239,6 +239,7 @@ def test_total_energy_and_total_gradients_ion_water():
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters)
+    print(energies_ff)
     total_ref = torch.tensor([-28.436484613091206 / HARTREE2KCAL])
     assert torch.allclose(energies_ff['tot'], total_ref)
 

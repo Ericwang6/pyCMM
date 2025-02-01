@@ -1,4 +1,5 @@
 import torch
+from torch_scatter import segment_csr
 
 from .electrostatics import computeInducedElectricPotentialAndFieldsFromPairs
 
@@ -24,8 +25,9 @@ def solvePolarizationByCG(
     b_ij_p: torch.Tensor,
     eta: torch.Tensor,
     inverse_polarizabilities: torch.Tensor,
-    group_scatter: torch.Tensor,
-    groups: torch.Tensor,
+    pol_group_indices_a: torch.Tensor,
+    pol_group_segment_indices: torch.Tensor,
+    pol_group_lengths_g: torch.Tensor,
     residual_threshold: torch.Tensor = torch.tensor(1e-20),
     max_iter: torch.NumberType = 400,
 ):
@@ -35,12 +37,15 @@ def solvePolarizationByCG(
     # Basically just need to decide when/how we are going to do this. These options start
     # to interact with user setting though so will want to discuss with Eric.
     
+    # Precondition using whatever was put in the guess_vector
     TM0, _, _ = computeProductWithPolarizationMatrix(
         guess_vector, n_charges,
         pairs_i_a, pairs_j_a,
         dists_p, dist_vecs_p,
         b_ij_p, eta, inverse_polarizabilities,
-        group_scatter, groups
+        pol_group_indices_a,
+        pol_group_segment_indices,
+        pol_group_lengths_g
     )
     residual = b_vector - TM0
     P = residual.detach().clone()
@@ -50,7 +55,9 @@ def solvePolarizationByCG(
             pairs_i_a, pairs_j_a,
             dists_p, dist_vecs_p,
             b_ij_p, eta, inverse_polarizabilities,
-            group_scatter, groups
+            pol_group_indices_a,
+            pol_group_segment_indices,
+            pol_group_lengths_g
         )
         gamma = torch.dot(residual, residual) / torch.dot(P, TP)
         # NOTE(JOE): When we switch to not using autodiff through
@@ -63,12 +70,12 @@ def solvePolarizationByCG(
         #guess_vector = guess_vector + gamma * P
         beta = 1.0 / torch.dot(residual, residual)
         residual -= gamma * TP
+        if torch.norm(residual) < residual_threshold:
+            return guess_vector
         #residual = residual - gamma * TP
         beta *= torch.dot(residual, residual)
         #beta = beta * torch.dot(residual, residual)
         P = residual + beta * P
-        if torch.norm(residual) < residual_threshold:
-            return guess_vector
     return guess_vector
 
 def computeProductWithPolarizationMatrix(
@@ -81,9 +88,12 @@ def computeProductWithPolarizationMatrix(
     b_ij_p: torch.Tensor,
     eta: torch.Tensor,
     alpha_inv: torch.Tensor,
-    group_scatter: torch.Tensor,
-    groups: torch.Tensor,
-    already_solved: bool = False
+    pol_group_indices_a: torch.Tensor,
+    pol_group_segment_indices: torch.Tensor,
+    pol_group_lengths_g: torch.Tensor
+    #group_scatter: torch.Tensor,
+    #groups: torch.Tensor,
+    #already_solved: bool = False
 ):
     induced_charges = vec_in[:n_charges]
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
@@ -95,6 +105,16 @@ def computeProductWithPolarizationMatrix(
         dists_p, dist_vecs_p, b_ij_p, induced_multipoles_a
     )
 
-    constraints = torch.tensor([torch.sum(induced_charges[groups.unbind()[i]]) for i in torch.arange(groups.size(0))])
-    res = torch.concat((eta * induced_charges + lagrange_muls[group_scatter] + induced_electric_potential, torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(), constraints))
+    # Get sum of induced charges in every polarization group
+    constraints = segment_csr(induced_charges[pol_group_indices_a], pol_group_segment_indices, reduce='sum')
+
+    # Expand lagrange multipliers from group index space to atomic index space
+    expanded_lagrange_muls = lagrange_muls.repeat_interleave(pol_group_lengths_g)
+
+    # Now we need to scatter these values back to the atomic indices
+    lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device)
+    lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
+
+    #lagrange_muls_a = lagrange_muls[group_scatter]
+    res = torch.concat((eta * induced_charges + lagrange_muls_a + induced_electric_potential, torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(), constraints))
     return res, induced_electric_potential, induced_electric_field

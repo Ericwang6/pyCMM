@@ -136,10 +136,23 @@ class Topology:
         # we do not have duplicate polarization groups.
         groups = torch.sort(self.angle_atoms, dim=1).values
         single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(0)
+        
         if single_atom_groups.numel() > 0:
-            self.polarization_groups = torch.nested.nested_tensor(list(single_atom_groups.unbind() + groups.unbind()), device=self.device, requires_grad=False)
+            self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind() + single_atom_groups.unbind()), device=self.device, requires_grad=False)
         else:
             self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind()), device=self.device, requires_grad=False)
-        self.natoms_in_pol_groups = torch.tensor([self.polarization_groups.unbind()[i].size(0) for i in torch.arange(self.polarization_groups.size(0))], device=self.device, requires_grad=False)
-        self.n_pol_groups = self.natoms_in_pol_groups.size(0)
-        self.polarization_group_indices = torch.arange(self.n_pol_groups, device=self.device, requires_grad=False).repeat_interleave(self.natoms_in_pol_groups)
+        
+
+        # NOTE(JOE): The below code should still work for scattering between groups and atoms
+        # even when the groups are overlapping. The code above this comment is not general.
+        # The point is, only the code for finding the groups needs to be changed. The below
+        # should just work...
+        self.pol_group_indices_a = torch.cat(self.polarization_groups.unbind())
+        self.pol_group_lengths_g = torch.tensor([g.size(0) for g in self.polarization_groups.unbind()], 
+                             dtype=torch.long,
+                             device=groups.device)
+        self.n_pol_groups = self.pol_group_lengths_g.size(0)
+        self.pol_group_segment_indices = torch.zeros(self.n_pol_groups + 1, 
+                            dtype=torch.long,
+                            device=groups.device)
+        self.pol_group_segment_indices[1:] = torch.cumsum(self.pol_group_lengths_g, dim=0)
