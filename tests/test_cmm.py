@@ -232,15 +232,14 @@ def test_total_energy_and_total_gradients_ion_water():
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
+    ff = CMM(cutoff_short_range=torch.tensor(10.0 / BOHR2ANG))
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters)
-    print(energies_ff)
-    total_ref = torch.tensor([-28.436484613091206 / HARTREE2KCAL])
+    total_ref = torch.tensor([-28.231218043296266 / HARTREE2KCAL])
     assert torch.allclose(energies_ff['tot'], total_ref)
 
     #def get_total_energy(coords: torch.Tensor):

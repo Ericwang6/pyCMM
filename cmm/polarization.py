@@ -1,7 +1,18 @@
 import torch
 from torch_scatter import segment_csr
+from typing import Optional
 
 from .electrostatics import computeInducedElectricPotentialAndFieldsFromPairs
+
+def get_field_dependent_polarizabilities(
+        polarizabilities_a: torch.Tensor,
+        elec_field_a: torch.Tensor,
+        alpha_damp_exponent_a: torch.Tensor,
+        alpha_damp_max_a: torch.Tensor
+    ):
+    elec_field_mag_sq_a = torch.func.vmap(torch.dot)(elec_field_a, elec_field_a)
+    damp_factor_a = alpha_damp_max_a * (1 - torch.exp(-alpha_damp_exponent_a * elec_field_mag_sq_a))
+    return polarizabilities_a - damp_factor_a.view(-1, 1, 1) * polarizabilities_a
 
 def direct_field_induced_dipole_guess(
     n_charges: torch.NumberType,
@@ -91,9 +102,6 @@ def computeProductWithPolarizationMatrix(
     pol_group_indices_a: torch.Tensor,
     pol_group_segment_indices: torch.Tensor,
     pol_group_lengths_g: torch.Tensor
-    #group_scatter: torch.Tensor,
-    #groups: torch.Tensor,
-    #already_solved: bool = False
 ):
     induced_charges = vec_in[:n_charges]
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
