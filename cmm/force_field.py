@@ -575,8 +575,8 @@ class CMM(ForceField):
             dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
             k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
             ct_slope_1_p, ct_slope_2_p,
-            (elec_field + elec_field_induced)[topology.bonded_atoms[1]],
-            #(elec_field)[topology.bonded_atoms[1]],
+            #(elec_field + elec_field_induced)[topology.bonded_atoms[1]],
+            (elec_field)[topology.bonded_atoms[1]],
             dq_a[topology.bonded_atoms[1]]
         )
 
