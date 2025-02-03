@@ -269,7 +269,11 @@ class CMMWater(nn.Module):
         )
         ene_xpol = torch.sum(xpol_pairwise) / 2
 
-        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
+        #Multipolar Ewald Summation
+        ene_ewald = cmm.compute_ewald(coords,self.nb_params['mono'] , self.nb_params['dipo'], self.nb_params['quad'], box, kappa=1.41, rcutoff=50, kcutoff=1.5)
+
+        #Total energy
+        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ewald
         energies = {
             "perm_elec": ene_perm_elec,
             "pol": ene_pol,
@@ -281,10 +285,10 @@ class CMMWater(nn.Module):
             "angle": ene_angles,
             "bond_bond": ene_bbs,
             "bond_angle": ene_angles,
+            "ewald": ene_ewald,
             "tot": ene_tot
         }
         return energies
-
         
     def computeNeighborList(self, coords: torch.Tensor, box: torch.Tensor, boxInv: torch.Tensor):
         drVecs = cmm.pbc.applyPBC(coords[self.all_pairs[1]] - coords[self.all_pairs[0]], box, boxInv)
@@ -305,7 +309,7 @@ if __name__ == '__main__':
         [-1.7503754020,   0.7612382608,   0.3583875091]
     ]) / cmm.BOHR2ANG, dtype=torch.float32, requires_grad=True)
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float32, requires_grad=True)
-
+    charges = model.nb_params["Z"]  # Retrieve charges (Z)
     energies = model.computeEnergy(coords, box)
     energies['tot'].backward()
     grad = coords.grad
