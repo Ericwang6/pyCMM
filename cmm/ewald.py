@@ -9,12 +9,7 @@ import numpy as np
 torch.set_printoptions(profile="full")
 # This file contains the Ewald Summation for computing Long range interactions
 def short_range(coords, q , p, t, box, kappa, rcutoff):
-  U_cc =0
-  U_cd = 0
-  U_dd = 0
-  U_ct = 0
-  U_dt =0
-  U_tt = 0
+  U_cc, U_cd, U_dd, U_ct, U_dt, U_tt = 0, 0, 0, 0, 0, 0
   constant = 1/(4*math.pi * EPSILON0) 
   N = len(coords) #atoms
   boxInv = torch.linalg.inv(box)  # Inverse of the simulation box matrix
@@ -70,7 +65,7 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
         )
         T_abgd = (term1_abgd +term2_abgd + term3_abgd)/r9 #final term
         D_ab = torch.einsum("i,j->ij", r_,r_)
-        D_abgd = 0 
+        D_abgd = torch.einsum("ij,k,l -> ijkl", delta, r_, r_) + torch.einsum("ik,j,l->ijkl", delta, r_, r_) + torch.einsum("il,j,k->ijkl", delta, r_, r_) 
         ###charge-charge###
         U_cc += (q[i] * q[j])*f_0*T_    
         ###charge-dipole###
@@ -80,7 +75,23 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
         ###charge-quadrupole###
         U_ct += f_1*(q[i]*torch.sum(T_ab * t[j]) + q[j]* torch.sum(T_ab*t[i]))  + f_2*(q[i] * torch.sum(D_ab * t[j]) + q[j] * torch.sum(D_ab * t[i]))
         ###dipole-quadrupole###
+        term1_dt = f_1 * (torch.einsum("i,ijk,ik->",p[i], T_abg,t[j]) - torch.einsum("i,ijk,ik->",p[j], T_abg,t[i   ]))
+        term2_dt = f_2 * (torch.einsum("i,j,ij->", p[i],r_,t[j]) - torch.einsum("i,j,ij->", p[j],r_,t[i]))
+        term3_dt = -f_3 * (torch.einsum("i,i,jk,jk->",p[i],r_,T_ab,t[j]) - torch.einsum("i,i,jk,jk->",p[j],r_,T_ab,t[i]))
+        term4_dt = -f_4 * (torch.einsum("i,i,jk,jk->",p[i],r_,D_ab,t[j]) - torch.einsum("i,i,jk,jk->",p[j],r_,D_ab,t[i])) 
+        U_dt += term1_dt + term2_dt + term3_dt + term4_dt
         ###quadrupole-quadrupole###
+        term1_tt = f_1 * torch.einsum("ij,ijkl,kl->",t[i],T_abgd,t[j])
+        term2_tt = 2 * f_2 * torch.einsum("ij,ij->",t[i],t[j])
+        term3_tt = f_3 * (torch.einsum("ij,ij,kl,kl->",t[i],delta,T_ab,t[j]) + torch.einsum("ij,ij,kl,kl",t[i],T_ab,delta,t[j]))/2
+        term4_tt = -f_3 * (torch.einsum("ij,i,jkl,kl->",t[i],r_,T_abg,t[j]) + torch.einsum("ij,i,jkl,kl->",t[j],r_,T_abg,t[i]))
+        term5_tt = -f_4 * (torch.einsum("ij,ijkl,kl->",t[i],D_abgd,t[j]) + torch.einsum("ij,klij,kl->",t[i],D_abgd,t[j]))/2 
+        term6_tt = -2 * f_4 * torch.einsum("i,ij,jk,k->",r_,t[i],t[j],r_)
+        term7_tt = f_5 * 1/2 * (torch.einsum("ij,ij->",D_ab,t[i]) * torch.einsum("ij,ij->", T_ab,t[j])+
+                   torch.einsum("ij,ij->",D_ab,t[j]) * torch.einsum("ij,ij->", T_ab,t[i])
+                   ) 
+        term8_tt = f_6 * torch.einsum("ij,ij->",D_ab,t[i]) * torch.einsum("ij,ij->",D_ab,t[j]) 
+        U_tt = term1_tt + term2_tt + term3_tt + term4_tt + term5_tt + term6_tt + term7_tt + term8_tt
 
         print(f"Atom {i}-{j}: r = {r}, q[i] = {q[i]}, q[j] = {q[j]},"
               f" p[i] = {p[i]}, p[j] = {p[j]} U_cc = {U_cc},"
@@ -92,7 +103,7 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
   U_ct *= 1/3
   U_dt *= 1/3
   U_tt *= 1/9
-  U_s = U_cc + U_cd + U_dd + U_ct
+  U_s = U_cc + U_cd + U_dd + U_ct + U_dt + U_tt
   return U_s
 
 def long_range(coords, q, p, t, box, kappa, kcutoff):
@@ -198,7 +209,7 @@ def compute_ewald(coords, q ,p, t,box, kappa, rcutoff, kcutoff):
   U_l =  long_range(coords, q,p,t, box, kappa, kcutoff)  
   U_self = self_interaction(coords, q,p,t, kappa)
   U_ewald = U_s + U_l - U_self
-  print(f"FINAL ENERGIES: U_s = {U_s} , U_l = {U_l} , U_self = {U_self}, total = {total}")
+  print(f"FINAL ENERGIES: U_s = {U_s} , U_l = {U_l} , U_self = {U_self}, Total Coulombic Energy = {U_ewald}")
   return U_ewald
 
 
