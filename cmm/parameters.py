@@ -27,6 +27,7 @@ class Parameterizer:
 
         self._define_type_names_and_indices()
         self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
+        
         self._build_atomic_parameter_arrays(raw_atomic_params)
         self._build_pair_parameter_arrays(raw_pair_params)
         self._build_pair_pair_parameter_arrays(raw_pair_pair_params)
@@ -36,6 +37,13 @@ class Parameterizer:
         self._atom_types = torch.tensor([self._name_to_atom_type[name] for name in self._atom_type_names], dtype=torch.long, device=self.device)
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
         self._angle_types = self._get_angle_types_from_angle_atoms(angle_atoms)
+
+    def rebuild(self, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
+        self._build_atomic_parameter_arrays(raw_atomic_params)
+        self._build_pair_parameter_arrays(raw_pair_params)
+        self._build_pair_pair_parameter_arrays(raw_pair_pair_params)
+        self._build_pair_angle_parameter_arrays(raw_pair_angle_params)
+        self._build_angle_parameter_arrays(raw_angle_params)
 
     def _get_angle_types_from_angle_atoms(self, angle_atoms: torch.Tensor):
         return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]), self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]]))))

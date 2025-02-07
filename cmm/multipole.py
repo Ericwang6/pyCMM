@@ -96,6 +96,14 @@ def computeCartesianQuadrupoles(quad_s: torch.Tensor):
     quad = torch.vstack((qxx, qxy, qxz, qxy, qyy, qyz, qxz, qyz, qzz)).T.reshape(-1, 3, 3)
     return quad
 
+def computeSphericalQuadrupoles(quad_c: torch.Tensor):
+    # Conversion factors come from Table E.1 of Anthony Stone book
+    Q_20  = quad_c[:, 2, 2]
+    Q_21c = quad_c[:, 0, 2] / HALF_SQRT3
+    Q_21s = quad_c[:, 1, 2] / HALF_SQRT3
+    Q_22c = (quad_c[:, 0, 0] - quad_c[:, 1, 1]) / HALF_SQRT3 / 2
+    Q_22s = quad_c[:, 0, 1] / HALF_SQRT3
+    return torch.vstack((Q_20, Q_21c, Q_21s, Q_22c, Q_22s)).T.reshape(-1, 5)
 
 def computeInteractionTensor(drVec: torch.Tensor, dampFactors: Optional[List[torch.Tensor]] = None, drInv: Optional[torch.Tensor] = None, rank: int = 2):
     """
@@ -312,9 +320,9 @@ def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Ten
 #     b_ij = torch.sqrt(b_i * b_j)
 #     dr = torch.norm(drVec, dim=1)
 #     drInv = 1 / dr
-#     oneCenterDamps_i = computePermElecOneCenterDampFactors(dr, b_i)
-#     oneCenterDamps_j = computePermElecOneCenterDampFactors(dr, b_j)
-#     twoCenterDamps = computePermElecTwoCenterDampFactors(dr, b_ij)
+#     oneCenterDamps_i = computeOneCenterDampFactorsSlater(dr, b_i)
+#     oneCenterDamps_j = computeOneCenterDampFactorsSlater(dr, b_j)
+#     twoCenterDamps = computeTwoCenterDampFactorsSlater(dr, b_ij)
 
 #     mPoles_j_scaled = mPoles_j * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
 #     # core-core interactions

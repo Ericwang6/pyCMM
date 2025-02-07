@@ -1,7 +1,7 @@
 import torch, math
 from torch_scatter import segment_csr
-from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles
-from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePolarizationEnergyAndInducedMultipolesFromPairs, computeInducedElectricPotentialAndFieldsFromPairs
+from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeLocal2GlobalRotationMatrix
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
 from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs
 from .dispersion import computeDispersionFromPairs
@@ -22,7 +22,7 @@ class ForceField(torch.nn.Module):
         self._pair_params = {}
 
 class CMM(ForceField):
-    def __init__(self, cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG)) -> None:
+    def __init__(self, cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG), use_ewald: bool=False) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -33,6 +33,7 @@ class CMM(ForceField):
             "Mg2+": 11, "Ca2+": 12
         }
         self.cutoff_sr = cutoff_short_range
+        self.use_ewald = use_ewald
 
         self._build()
     
@@ -45,19 +46,19 @@ class CMM(ForceField):
         # when building atomic_params, bond_params, and pair_params.
 
         # Electrostatic raw params #
-        Z = torch.tensor([
+        self.Z = torch.tensor([
             3.61565, 0.93619, # Water
             4.693, 12.1239, 18.9726, 35.5833, # Halides
             -0.895467, 3.5489, 7.73324, 12.2026, 11.5038, # Alkali
             2.83412, 4.93631 # Mg2+, Ca2+
         ])
-        mono = torch.tensor([
+        self.mono = torch.tensor([
             -0.390896, 0.195448, # Water
             -1.0, -1.0, -1.0, -1.0, # Halides
             1.0, 1.0, 1.0, 1.0, 1.0, # Alkali
             2.0, 2.0 # Mg2+, Ca2+
         ])
-        dipo = torch.tensor([
+        self.dipo = torch.tensor([
             [0.0,       0.0, -0.094298], # O_water
             [0.0910288, 0.0, -0.207851], # H_water
             [0.0,       0.0,  0.0],      # F-
@@ -72,7 +73,7 @@ class CMM(ForceField):
             [0.0,       0.0,  0.0],      # Mg2+
             [0.0,       0.0,  0.0],      # Ca2+
         ])
-        quad_s = torch.tensor([
+        self.quad_s = torch.tensor([
             # Q20,       Q21c,      Q21s, Q22c,       Q22s
             [-0.330685,  0.0,       0.0,  0.869923,   0.0], # O_water
             [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0], # H_water
@@ -89,119 +90,119 @@ class CMM(ForceField):
             [0.0,        0.0,       0.0,  0.0,        0.0], # Ca2+
         ])
         
-        b_elec = torch.tensor([
+        self.b_elec = torch.tensor([
             2.13358, 2.33322, # Water
             2.42894, 1.77558, 1.73844, 1.70583, # Halides
             4.44984, 2.59626, 2.39879, 2.38187, 2.03392, # Alkali
             1.92445, 2.11191, # Mg2+, Ca2+
         ])
 
-        b_disp = torch.tensor([
+        self.b_disp = torch.tensor([
             1.84302, 1.30993, # Water
             1.21488, 1.07019, 0.978881, 1.30013, # Halides
             2.23422, 1.99839, 1.95926, 4.01118, 4.01118, # Alkali
             1.60887, 1.63789, # Mg2+, Ca2+
         ])
 
-        b_ct = torch.tensor([
+        self.b_ct = torch.tensor([
             1.89485, 2.36763, # Water
             1.39081, 0.96508, 0.897324, 0.865887, # Halides
             1.69562, 1.876471, 2.0527, 2.04252, 1.97119, # Alkali
             1.5,     1.6, # Mg2+, Ca2+
         ])
 
-        C6_disp = torch.tensor([
+        self.C6_disp = torch.tensor([
             35.8289, 1.98954, # Water
             146.12, 661.859, 1115.92, 1358.97, # Halides
             0.609382, 5.4421, 45.6395, 63.085, 170.628, # Alkali
             3.70387, 26.5808, # Mg2+, Ca2+
         ])
 
-        b_pauli = torch.tensor([
+        self.b_pauli = torch.tensor([
             2.1975, 1.96474, # Water
             1.6851, 1.39256, 1.33717, 1.30314, # Halides
             2.82412, 2.9209, 2.38994, 2.34565, 2.06684, # Alkali
             2.75822, 2.21105, # Mg2+, Ca2+
         ])
 
-        q_pauli = torch.tensor([
+        self.q_pauli = torch.tensor([
             6.50923, 0.527804, # Water
             3.61413, 5.22659, 6.36105, 9.36718, # Halides
             1.91402, 7.34252, 13.6855, 22.0153, 24.1029, # Alkali
             4.63567, 7.89129, # Mg2+, Ca2+
         ])
 
-        Kdipo_pauli = torch.tensor([
+        self.Kdipo_pauli = torch.tensor([
             -5.61925, -0.515584, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        Kquad_pauli = torch.tensor([
+        self.Kquad_pauli = torch.tensor([
             -1.56567, -0.440164, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        q_ct_acc = torch.tensor([
+        self.q_ct_acc = torch.tensor([
             -0.67857, 1.36735, # Water
             0.271625, -1.49937, -1.65442, -1.23716, # Halides
             1.01809, 1.07641, 7.67781, 13.5199, 27.9703, # Alkali
             3.5885, 7.30099 # Mg2+, Ca2+
         ])
 
-        Kdipo_ct_acc = torch.tensor([
+        self.Kdipo_ct_acc = torch.tensor([
             0.0, 0.0, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        Kquad_ct_acc = torch.tensor([
+        self.Kquad_ct_acc = torch.tensor([
             0.0, 0.0, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        q_ct_don = torch.tensor([
+        self.q_ct_don = torch.tensor([
             0.757752, 0.00888982, # Water
             0.601589, 0.990161, 1.13917, 1.50009, # Halides
             -0.12094, 0.167905, 0.670336, 1.89103, 3.63343, # Alkali
             -0.499793, 0.655079, # Mg2+, Ca2+
         ])
 
-        Kdipo_ct_don = torch.tensor([
+        self.Kdipo_ct_don = torch.tensor([
             -0.512036, -0.0511668, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        Kquad_ct_don = torch.tensor([
+        self.Kquad_ct_don = torch.tensor([
             -0.208186, 0.0568152, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        b_xpol = torch.tensor([
+        self.b_xpol = torch.tensor([
             2.73582, 2.04028, # Water
             1.90554, 1.60669, 1.4814, 1.38744, # Halides
             2.6441, 2.54145, 2.2465, 2.27644, 2.0059, # Alkali
             5.14456, 3.67375, # Mg2+, Ca2+
         ])
 
-        q_xpol = torch.tensor([
+        self.q_xpol = torch.tensor([
             1.26592, 0.200089, # Water
             -0.0914759, -1.11363, -1.46248, -2.28003, # Halides
             -4.68943, -5.33155, -3.61961, -3.15899, 5.43047, # Alkali
             -445.336, -220.273, # Mg2+, Ca2+
         ])
 
-        eta = torch.tensor([
+        self.eta = torch.tensor([
             6.18699e-6, 0.561535, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
@@ -209,14 +210,14 @@ class CMM(ForceField):
         ])
 
         notype = AxisTypes.NoAxisType.value
-        axistypes = torch.tensor([
+        self.axistypes = torch.tensor([
             AxisTypes.Bisector.value, AxisTypes.ZThenX.value, # Water
             notype, notype, notype, notype, # Halide
             notype, notype, notype, notype, notype, # Alkali
             notype, notype, # Divalent cations
         ])
 
-        alpha = torch.stack((
+        self.alpha = torch.stack((
             torch.diag(torch.tensor([4.45992, 6.07259, 4.55391])), # O_water
             torch.diag(torch.tensor([2.22001, 1.66835, 0.183855])), # H_water
             torch.diag(torch.tensor([11.7270176, 11.7270176, 11.7270176])), # F-
@@ -232,14 +233,14 @@ class CMM(ForceField):
             torch.diag(torch.tensor([3.2809409, 3.2809409, 3.2809409])), # Ca2+
         ))
 
-        alpha_damp_exponent = torch.tensor([
+        self.alpha_damp_exponent = torch.tensor([
             0.0, 0.0, # Water
             241.724, 428.717, 484.249, 599.029, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        alpha_damp_max = torch.tensor([
+        self.alpha_damp_max = torch.tensor([
             0.0, 0.0, # Water
             0.75, 0.75, 0.75, 0.75, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
@@ -247,42 +248,6 @@ class CMM(ForceField):
         ])
 
         # TODO: Add all the ion-ion pair-specific parameters!
-
-        self._raw_atomic_params = {
-            # elec
-            "Z": Z,
-            "q_shell": mono - Z,
-            "dipo": dipo,
-            "quad": computeCartesianQuadrupoles(quad_s),
-            "b_elec": b_elec,
-            # Pauli repulsion
-            "b_pauli": b_pauli,
-            "q_pauli": q_pauli,
-            "Kdipo_pauli": Kdipo_pauli,
-            "Kquad_pauli": Kquad_pauli,
-            # Dispersion
-            "C6_disp": C6_disp,
-            "b_disp": b_disp,
-            # Polarization
-            "alpha": alpha,
-            "alpha_damp_exponent": alpha_damp_exponent,
-            "alpha_damp_max": alpha_damp_max,
-            "eta": eta,
-            # Exchange-polarization
-            "b_xpol": b_xpol,
-            "q_xpol": q_xpol,
-            "Kdipo_xpol": torch.zeros((len(self._types_to_index),)),
-            "Kquad_xpol": torch.zeros((len(self._types_to_index),)),
-            # Charge Transfer
-            "b_ct": b_ct,
-            "q_ct_acc": q_ct_acc,
-            "Kdipo_ct_acc": Kdipo_ct_acc,
-            "Kquad_ct_acc": Kquad_ct_acc,
-            "q_ct_don": q_ct_don,
-            "Kdipo_ct_don": Kdipo_ct_don,
-            "Kquad_ct_don": Kquad_ct_don,
-            "axistypes": axistypes,
-        }
 
         self.pair_params = {
             ("O_water", "H_water"): {
@@ -333,7 +298,46 @@ class CMM(ForceField):
                 "k_hardness_angle": torch.tensor([-0.0991956]),
             }
         }
+    
+        self.rebuild_atomic_params()
+        self.parameters_have_changed = False
 
+    def rebuild_atomic_params(self):
+        self._raw_atomic_params = {
+            # elec
+            "Z": self.Z,
+            "q_shell": self.mono - self.Z,
+            "dipo": self.dipo,
+            "quad": computeCartesianQuadrupoles(self.quad_s),
+            "b_elec": self.b_elec,
+            # Pauli repulsion
+            "b_pauli": self.b_pauli,
+            "q_pauli": self.q_pauli,
+            "Kdipo_pauli": self.Kdipo_pauli,
+            "Kquad_pauli": self.Kquad_pauli,
+            # Dispersion
+            "C6_disp": self.C6_disp,
+            "b_disp": self.b_disp,
+            # Polarization
+            "alpha": self.alpha,
+            "alpha_damp_exponent": self.alpha_damp_exponent,
+            "alpha_damp_max": self.alpha_damp_max,
+            "eta": self.eta,
+            # Exchange-polarization
+            "b_xpol": self.b_xpol,
+            "q_xpol": self.q_xpol,
+            "Kdipo_xpol": torch.zeros((len(self._types_to_index),)),
+            "Kquad_xpol": torch.zeros((len(self._types_to_index),)),
+            # Charge Transfer
+            "b_ct": self.b_ct,
+            "q_ct_acc": self.q_ct_acc,
+            "Kdipo_ct_acc": self.Kdipo_ct_acc,
+            "Kquad_ct_acc": self.Kquad_ct_acc,
+            "q_ct_don": self.q_ct_don,
+            "Kdipo_ct_don": self.Kdipo_ct_don,
+            "Kquad_ct_don": self.Kquad_ct_don,
+            "axistypes": self.axistypes,
+        }
         with torch.no_grad():
             self.atomic_params = {}
             for type_key in self._types_to_index.keys():
@@ -347,13 +351,21 @@ class CMM(ForceField):
                 self.pair_params[(key[1], key[0])] = self.pair_params[key]
             for key in list(self.angle_params.keys()):
                 self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
+        
+            self.parameters_have_changed = True
 
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         
-        # TODO: Should check if the parameters need to be updated here before actually doing anything!! #
+        if self.parameters_have_changed:
+            # SPEED: Can of course do this per parameter type so that not everything is rebuilt
+            # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
+            # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.
+            # This would be a reason to add setter functions. In addition to a way to set the status bool.
+            params.rebuild(self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
+            self.parameters_have_changed = False
         
         # Get pairs, dists, and vectors for long-range nonbonded potential #
         pairs_lr = pairs[topology.all_intermolecular_pairs, :]
@@ -462,6 +474,26 @@ class CMM(ForceField):
         k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
         k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
+        if self.use_ewald:
+            monopoles = (q_shell + Z).detach().clone()
+            dipo_2 = dipo.detach().clone()
+            quad_2 = quad.detach().clone()
+            rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
+            multipoles_2 = rotateMultipoles(
+                monopoles, dipo_2, quad_2, rotation_matrices
+            ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
+            kappa = torch.tensor(0.1930453722791694)
+
+            ene_ewald_direct, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
+                natoms,
+                pairs_lr_i_a,
+                pairs_lr_j_a,
+                dists_lr, dist_vecs_lr,
+                kappa, multipoles_2
+            )
+            print(ene_ewald_direct * HARTREE2KJ)
+        
+
         # Pauli charge flux #
         evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
@@ -489,7 +521,6 @@ class CMM(ForceField):
             q_shell, dipo, quad, rotation_matrices
         ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
 
-        # SPEED: Makes copies. Might be unavoidable but could maybe be done more efficiently.
         multipoles_ct_acc = scaleMultipoles(multipoles, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
         multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
         multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
@@ -500,7 +531,7 @@ class CMM(ForceField):
             multipoles_ct_acc[pairs_sr_i_a], multipoles_ct_acc[pairs_sr_j_a],
             multipoles_ct_don[pairs_sr_i_a], multipoles_ct_don[pairs_sr_j_a],
             b_ct[pairs_sr_i_a], b_ct[pairs_sr_j_a],
-            eps, switch_lr
+            eps, switch_sr
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         
@@ -530,9 +561,6 @@ class CMM(ForceField):
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
         with torch.no_grad():
             guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
-            # HERE: The problem with polarization for ions is that we do not include mutual polarization.
-            # Basically, I need to filter out all the pairs involving ions and just omit them from
-            # the polarization solve. I can then fill in the 
 
             induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
                 guess_solution,

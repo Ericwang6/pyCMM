@@ -220,7 +220,8 @@ class CMMWater(nn.Module):
             mPoles_ct_acc[pairs[0]], mPoles_ct_acc[pairs[1]],
             mPoles_ct_don[pairs[0]], mPoles_ct_don[pairs[1]],
             self.nb_params['b_ct'][pairs[0]], self.nb_params['b_ct'][pairs[1]],
-            self.nb_params['eps'][pairs[0], pairs[1]]
+            self.nb_params['eps'][pairs[0], pairs[1]],
+            torch.ones(pairs[0].size(0))
         )
         ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
         dq = scatter(dq_pairwise, pairs[1])
@@ -270,7 +271,10 @@ class CMMWater(nn.Module):
         ene_xpol = torch.sum(xpol_pairwise) / 2
 
         #Multipolar Ewald Summation
-        ene_ewald = cmm.compute_ewald(coords,self.nb_params['mono'] , self.nb_params['dipo'], self.nb_params['quad'], box, kappa=1.41, rcutoff=50, kcutoff=1.5)
+        mono = self.nb_params['mono']
+        dipo = cmm.rotateDipoles(self.nb_params['dipo'], rotMatrix).squeeze(1)
+        quad = cmm.rotateQuadrupoles(self.nb_params['quad'], rotMatrix)
+        ene_ewald = cmm.compute_ewald(coords, mono, dipo, quad, box, kappa=0.2, rcutoff=50, kcutoff=1.5)
 
         #Total energy
         ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ewald
@@ -301,12 +305,12 @@ class CMMWater(nn.Module):
 if __name__ == '__main__':
     model = CMMWater(2, do_polarization=True)
     coords = torch.tensor(np.array([
-        [ 1.5165013870,  -0.0000008497,   0.1168590962],
-        [ 0.5714469342,   0.0000007688,  -0.0477240756],
-        [ 1.9206469769,   0.0000030303,  -0.7531309382],
-        [-1.3965797657,   0.0000005579,  -0.1058991347],
-        [-1.7503737705,  -0.7612400781,   0.3583839434],
-        [-1.7503754020,   0.7612382608,   0.3583875091]
+        [0.0031771858, 1.4710501499, -0.0034222052],
+        [0.0981342864, 0.5090994249, -0.0041139499],
+        [0.8976520298, 1.8147098331, 0.0031728568],
+        [-0.0036002768, -1.3547622039, 0.0027150961],
+        [-0.492886242, -1.6733692175, 0.7647713563],
+        [-0.4948459831, -1.6611969865, -0.763123154]
     ]) / cmm.BOHR2ANG, dtype=torch.float32, requires_grad=True)
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float32, requires_grad=True)
     charges = model.nb_params["Z"]  # Retrieve charges (Z)
@@ -318,16 +322,16 @@ if __name__ == '__main__':
         energies[key] *= cmm.HARTREE2KCAL
     pprint(energies)
 
-    with torch.no_grad():
-        grad_numerical = np.zeros_like(coords.detach().numpy())
-        for i in range(coords.shape[0]):
-            for j in range(coords.shape[1]):
-                h = 0.01
-                coords[i, j] += h
-                ene_u = model.computeEnergy(coords, box)['tot']
-                coords[i, j] -= 2 * h
-                ene_d = model.computeEnergy(coords, box)['tot']
-                grad_numerical[i, j] += (ene_u.detach().item() - ene_d.detach().item()) / (2 * h)
-                coords[i, j] += h
-
-    print(grad, grad_numerical, sep='\n')    
+    #with torch.no_grad():
+    #    grad_numerical = np.zeros_like(coords.detach().numpy())
+    #    for i in range(coords.shape[0]):
+    #        for j in range(coords.shape[1]):
+    #            h = 0.01
+    #            coords[i, j] += h
+    #            ene_u = model.computeEnergy(coords, box)['tot']
+    #            coords[i, j] -= 2 * h
+    #            ene_d = model.computeEnergy(coords, box)['tot']
+    #            grad_numerical[i, j] += (ene_u.detach().item() - ene_d.detach().item()) / (2 * h)
+    #            coords[i, j] += h
+    #
+    #print(grad, grad_numerical, sep='\n')    

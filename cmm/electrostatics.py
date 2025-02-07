@@ -1,11 +1,55 @@
 from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
-
 from .multipole import computeInteractionTensor
 
+def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
+    u = b * dr
+    erf_u = torch.erf(u)
+    exp2_u = torch.exp(-u * u)
 
-def computePermElecOneCenterDampFactors(dr, b):
+    m3 = 1
+    m5 = 3
+    m7 = 15
+    m9 = 105
+    
+    u2 = u * u
+    u3 = u2 * u
+    u5 = u3 * u2
+    u7 = u5 * u2
+    
+    p1 = torch.tensor(0)
+    p3  = u / m3
+    p5  = (3*u + 2*u3) / m5
+    p7  = (15*u + 10*u3 + 4*u5) / m7
+    p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
+
+    return torch.stack([erf_u - p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
+
+def computeDampFactorsErfc(dr: torch.Tensor, b: torch.Tensor):
+    u = b * dr
+    erfc_u = torch.erfc(u)
+    exp2_u = torch.exp(-u * u)
+
+    m3 = 1
+    m5 = 3
+    m7 = 15
+    m9 = 105
+    
+    u2 = u * u
+    u3 = u2 * u
+    u5 = u3 * u2
+    u7 = u5 * u2
+    
+    p1 = torch.tensor(0)
+    p3  = u / m3
+    p5  = (3*u + 2*u3) / m5
+    p7  = (15*u + 10*u3 + 4*u5) / m7
+    p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
+
+    return torch.stack([erfc_u + p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
+
+def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
     u2 = u * u
     u3 = u2 * u
@@ -21,7 +65,7 @@ def computePermElecOneCenterDampFactors(dr, b):
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
 
-def computePermElecTwoCenterDampFactors(dr, bij):
+def computeTwoCenterDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
     u3 = u2 * u
@@ -41,7 +85,7 @@ def computePermElecTwoCenterDampFactors(dr, bij):
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
 
-def computePolarizationDampFactors(dr, bij):
+def computePolarizationDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
     u3 = u2 * u
@@ -92,7 +136,7 @@ def computePermanentElectricPotentialExpansion(
 
     # damping factors
     b_i = b[pairs[0]]
-    oneCenterDamps_i = computePermElecOneCenterDampFactors(dr, b_i)
+    oneCenterDamps_i = computeOneCenterDampFactorsSlater(dr, b_i)
 
     # core-core interactions
     Z_pairs = Z[pairs[0]]
@@ -133,6 +177,59 @@ def computePermanentElectricPotentialExpansion(
 
     return E_potentials, E_fields, E_field_grads
 
+def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
+    natoms: torch.NumberType,
+    pairs_i_a: torch.Tensor,
+    pairs_j_a: torch.Tensor,
+    dists_p: torch.Tensor,
+    dist_vecs_p: torch.Tensor,
+    kappa: torch.Tensor, mPoles_a: torch.Tensor
+):
+    # NOTE(JOE): This is hard-coded for ewald erfc but we should really come up
+    # with a generic solution. We can basically just take in the damping factors that are needed.
+    # The force field can define the damping type (per-atom perhaps) and then we can just have
+    # a utility function to get the damping factors outside of this function call.
+
+    mPoles_i_p = mPoles_a[pairs_i_a]
+    mPoles_j_p = mPoles_a[pairs_j_a]
+
+    drInv = 1 / dists_p
+
+    # damping factors
+    erfc_damps = computeDampFactorsErfc(dists_p, kappa)
+    #print(erfc_damps)
+
+    # interaction tensors
+    ss_tensor_ij = computeInteractionTensor(dist_vecs_p, erfc_damps, drInv)
+
+    # shell-shell interactions
+    ss_edata = torch.bmm(ss_tensor_ij, mPoles_i_p.unsqueeze(2))
+    ssPairwiseEnergies = torch.bmm(mPoles_j_p.unsqueeze(1), ss_edata).flatten()
+    ePot_i = ss_edata[:, 0].flatten()
+    eField_i = ss_edata[:, 1:4].reshape(-1, 3)
+    eFieldGrad_i = ss_edata[:, 4:].reshape(-1, 6)
+
+    # Accumulate fields #
+    E_potentials = torch.zeros(natoms, device=mPoles_a.device) # N
+    E_fields = torch.zeros(natoms, 3, device=mPoles_a.device) # Nx3
+    E_field_grads = torch.zeros(natoms, 6, device=mPoles_a.device) # Nx6 because only store upper triangle
+
+    # How do I do this in a way that doesn't copy?
+    E_potentials.scatter_add_(0, pairs_j_a, ePot_i)
+    E_fields[:, 0].scatter_add_(0, pairs_j_a, -eField_i[:, 0])
+    E_fields[:, 1].scatter_add_(0, pairs_j_a, -eField_i[:, 1])
+    E_fields[:, 2].scatter_add_(0, pairs_j_a, -eField_i[:, 2])
+    # Yes, I am doing it like this. Please help.
+    E_field_grads[:, 0].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 0])
+    E_field_grads[:, 1].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 1])
+    E_field_grads[:, 2].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 2])
+    E_field_grads[:, 3].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 3])
+    E_field_grads[:, 4].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 4])
+    E_field_grads[:, 5].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 5])
+
+    ene_elec = 0.5 * torch.sum(ssPairwiseEnergies)
+    return ene_elec, E_potentials, E_fields, E_field_grads
+
 def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     natoms: torch.NumberType,
     pairs_i_a: torch.Tensor,
@@ -172,8 +269,8 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     eFieldGradCore = eFieldGradCore.view(-1, 9)
 
     # damping factors
-    oneCenterDamps_i = computePermElecOneCenterDampFactors(dists_p, b_i_p)
-    twoCenterDamps = computePermElecTwoCenterDampFactors(dists_p, b_ij_p)
+    oneCenterDamps_i = computeOneCenterDampFactorsSlater(dists_p, b_i_p)
+    twoCenterDamps = computeTwoCenterDampFactorsSlater(dists_p, b_ij_p)
 
     # interaction tensors
     cs_tensor_ij = computeInteractionTensor(dist_vecs_p, oneCenterDamps_i, drInv)
@@ -229,7 +326,7 @@ def computeInducedElectricPotentialAndFields(
     # damping factors
     b_i, b_j = b[pairs[0]], b[pairs[1]]
     b_ij = torch.sqrt(b_i * b_j)
-    polDamps_ij = computePolarizationDampFactors(dr, b_ij)
+    polDamps_ij = computePolarizationDampFactorsSlater(dr, b_ij)
 
     E_potentials = torch.zeros(natoms) # N
     E_fields = torch.zeros(natoms, 3) # Nx3
@@ -265,7 +362,7 @@ def computeInducedElectricPotentialAndFieldsFromPairs(
     drInv = 1 / dists_p
 
     # damping factors
-    polDamps_ij = computePolarizationDampFactors(dists_p, b_ij_p)
+    polDamps_ij = computePolarizationDampFactorsSlater(dists_p, b_ij_p)
 
     E_potentials = torch.zeros(natoms, device=natoms.device) # N
     E_fields_x = torch.zeros(natoms, device=natoms.device) # N
@@ -303,8 +400,8 @@ def computeDampedMultipolarInteractionEnergies(
     # damping factors
     b_i, b_j = b[pairs[0]], b[pairs[1]]
     b_ij = torch.sqrt(b_i * b_j)
-    oneCenterDamps_i = computePermElecOneCenterDampFactors(dr, b_i)
-    twoCenterDamps = computePermElecTwoCenterDampFactors(dr, b_ij)
+    oneCenterDamps_i = computeOneCenterDampFactorsSlater(dr, b_i)
+    twoCenterDamps = computeTwoCenterDampFactorsSlater(dr, b_ij)
 
     Z_j = Z[pairs[1]]
 
@@ -362,7 +459,7 @@ def computePolarizationEnergyAndInducedMultipoles(
         matA[numSites + i, groups[i]] = 1.0
         matA[groups[i], numSites + i] = 1.0
 
-    polDamps_i = computePolarizationDampFactors(dr, b_ij)
+    polDamps_i = computePolarizationDampFactorsSlater(dr, b_ij)
     polTensor = computeInteractionTensor(drVec, polDamps_i, rank=1)
     for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
         # dipo-dipo
@@ -442,7 +539,7 @@ def computePolarizationEnergyAndInducedMultipolesFromPairs(
         matA[nsites + i, groups[i]] = 1.0
         matA[groups[i], nsites + i] = 1.0
 
-    polDamps_i = computePolarizationDampFactors(dists_p, b_ij_p)
+    polDamps_i = computePolarizationDampFactorsSlater(dists_p, b_ij_p)
     polTensor = computeInteractionTensor(dist_vecs_p, polDamps_i, rank=1)
     for i, (ai, aj) in enumerate(zip(pairs_i_a, pairs_j_a)):
         # dipo-dipo
@@ -486,9 +583,9 @@ def computePermElecAndPolarizationEnergy(
     # damping factors
     b_i, b_j = b[pairs[0]], b[pairs[1]]
     b_ij = torch.sqrt(b_i * b_j)
-    oneCenterDamps_i = computePermElecOneCenterDampFactors(dr, b_i)
-    oneCenterDamps_j = computePermElecOneCenterDampFactors(dr, b_j)
-    twoCenterDamps = computePermElecTwoCenterDampFactors(dr, b_ij)
+    oneCenterDamps_i = computeOneCenterDampFactorsSlater(dr, b_i)
+    oneCenterDamps_j = computeOneCenterDampFactorsSlater(dr, b_j)
+    twoCenterDamps = computeTwoCenterDampFactorsSlater(dr, b_ij)
 
     Z_i, Z_j = Z[pairs[0]], Z[pairs[1]]
     # core-core interactions
@@ -541,7 +638,7 @@ def computePermElecAndPolarizationEnergy(
             matA[numSites + i, groups[i]] = 1.0
             matA[groups[i], numSites + i] = 1.0
 
-        polDamps_i = computePolarizationDampFactors(dr, b_ij)
+        polDamps_i = computePolarizationDampFactorsSlater(dr, b_ij)
         polTensor = computeInteractionTensor(drVec, polDamps_i, rank=1)
         for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
             # dipo-dipo 
