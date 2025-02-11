@@ -113,7 +113,7 @@ def test_ewald():
         nonbondedMethod=app.PME,
         nonbondedCutoff=0.8 * nanometer,
         vdwCutoff=0.8 * nanometer,
-        ewaldErrorTolerance=0.0001,
+        ewaldErrorTolerance=0.00001,
     )
     box_np = np.eye(3) * 18.643 / BOHR2ANG
     box = torch.tensor(box_np, dtype=torch.float64, requires_grad=True)
@@ -142,7 +142,7 @@ def test_ewald():
         xatoms.append(param[5])
         yatoms.append(param[6])
     
-    force.setPMEParameters(0.3, 29, 29, 29)
+    #force.setPMEParameters(0.3, 29, 29, 29)
     force.updateParametersInContext(context)
     print(force.getPMEParametersInContext(context)[0] * BOHR2NM)
     print(force.getPMEParametersInContext(context))
@@ -165,7 +165,7 @@ def test_ewald():
     cm = CoordinateManager(coords, box, 8.0 / BOHR2ANG, 2048)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True)
+    ff = CMM(cutoff_ewald=torch.tensor(8.0 / BOHR2ANG), use_ewald=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params

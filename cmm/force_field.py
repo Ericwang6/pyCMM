@@ -2,6 +2,7 @@ import torch, math
 from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeLocal2GlobalRotationMatrix
 from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald
+from .ewald import long_range_vectorized, self_interaction
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
 from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs
 from .dispersion import computeDispersionFromPairs
@@ -22,7 +23,11 @@ class ForceField(torch.nn.Module):
         self._pair_params = {}
 
 class CMM(ForceField):
-    def __init__(self, cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG), use_ewald: bool=False) -> None:
+    def __init__(self,
+                 cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG),
+                 cutoff_ewald: torch.Tensor=torch.tensor(10.0 / BOHR2ANG),
+                 ewald_tolerance: torch.Tensor=torch.tensor(1e-6),
+                 use_ewald: bool=False) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -34,6 +39,8 @@ class CMM(ForceField):
         }
         self.cutoff_sr = cutoff_short_range
         self.use_ewald = use_ewald
+        self.cutoff_ewald = cutoff_ewald
+        self.ewald_tolerance = ewald_tolerance
 
         self._build()
     
@@ -274,6 +281,7 @@ class CMM(ForceField):
             ("O_water", "Cs+"): {"eps": torch.tensor([1.0 / 0.584055]),},
             ("O_water", "Mg2+"): {"eps": torch.tensor([1.0 / 0.638288]),},
             ("O_water", "Ca2+"): {"eps": torch.tensor([1.0 / 2.4784]),},
+            ("Na+", "Cl-"): {"eps": torch.tensor([1.0 / 1e15]),}, # PLACEHOLDER VALUE FOR TESTING!!
         }
 
         self.pair_pair_params = {
@@ -396,7 +404,8 @@ class CMM(ForceField):
         switch_start_sr = switch_start_sr if switch_start_sr > 0.0 else 0.0
         switch_sr = switch_543(dists_sr, switch_start_sr, self.cutoff_sr)
 
-        angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
+        if topology.angle_pairs.size(0) > 0:
+            angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # All pairs forming an angle #
         pairs_angles_p = topology.angle_pairs.T.flatten()
@@ -444,37 +453,50 @@ class CMM(ForceField):
         eta = params.get_atomic_parameters('eta')
 
         eps = params.get_pair_parameters('eps', all_intermolecular_pairs_sr)
-        r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
-        k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
-        D_p = params.get_pair_parameters('D', topology.bonded_pairs)
-        dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
-        dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
-        ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
-        ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
-        j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
-        j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
-        k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
+
+        if topology.bonded_pairs.size(0) > 0:
+            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
+            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
+            D_p = params.get_pair_parameters('D', topology.bonded_pairs)
+            dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
+            dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
+            ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
+            ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
+            j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
+            j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
+            k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
         
         # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
         # Currently, we don't have parameters for a non-symmetric angle but they will come up with
         # organic molecules.
-        r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
-        r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
-        r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
+        if topology.angle_pairs.size(0) > 0:
+            r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
+            r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
+            r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
 
-        k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-        j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-        j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
-        k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-        k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+            k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+            k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
 
-        theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
-        k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
-        j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
-        k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
-        k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
+            theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
+            k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
+            j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
+            k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
+            k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
         if self.use_ewald:
+            # Find appropraiate ewald parameters. This should really be done by the CM.
+            if self.use_ewald:
+                self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+                self.k_max = 0
+                for i in range(2, 50):
+                    error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                    if error_estimate < self.ewald_tolerance:
+                        self.k_max = i
+                        break
+
             monopoles = (q_shell + Z).detach().clone()
             dipo_2 = dipo.detach().clone()
             quad_2 = quad.detach().clone()
@@ -482,36 +504,39 @@ class CMM(ForceField):
             multipoles_2 = rotateMultipoles(
                 monopoles, dipo_2, quad_2, rotation_matrices
             ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
-            kappa = torch.tensor(0.1930453722791694)
 
             ene_ewald_direct, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
                 natoms,
                 pairs_lr_i_a,
                 pairs_lr_j_a,
                 dists_lr, dist_vecs_lr,
-                kappa, multipoles_2
+                self.alpha_ewald, multipoles_2
             )
-            print(ene_ewald_direct * HARTREE2KJ)
-        
+            ene_ewald_long_range = long_range_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
+            ene_ewald_self = self_interaction(cm.coords, monopoles, dipo_2, quad_2, self.alpha_ewald)
+            ene_ewald = ene_ewald_direct + ene_ewald_long_range + ene_ewald_self
 
         # Pauli charge flux #
-        evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
+        if topology.bonded_pairs.size(0):
+            evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
-        evaluate_bond_and_angle_charge_flux(
-            pairs, dists, angles,
-            topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-            q_shell, r_eq, theta_eq, j_cf, j_cf_angle,
-            r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
-        )
+        if topology.angle_pairs.size(0) > 0:
+            evaluate_bond_and_angle_charge_flux(
+                pairs, dists, angles,
+                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+                q_shell, r_eq, theta_eq, j_cf, j_cf_angle,
+                r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
+            )
+
+            # Hardness change #
+            evaluate_hardness_change(
+                pairs, dists, angles,
+                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+                eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
+                r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
+            )
         
-        # Hardness change #
-        evaluate_hardness_change(
-            pairs, dists, angles,
-            topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-            eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
-            r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
-        )
         eta_times_2 = 2 * eta
 
         # Rotation Matrices #
@@ -599,39 +624,45 @@ class CMM(ForceField):
         # due to the induced multipoles and properly incorporate them into the
         # pytorch computational graph. This is possible, but I am going to
         # figure that out once we are in a better position to actually run MD.
-        re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
-            dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
-            k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
-            ct_slope_1_p, ct_slope_2_p,
-            #(elec_field + elec_field_induced)[topology.bonded_atoms[1]],
-            (elec_field)[topology.bonded_atoms[1]],
-            dq_a[topology.bonded_atoms[1]]
-        )
+        ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
+        ene_bbs = torch.zeros(1, dtype=dists.dtype, device=dists.device)
+        if topology.bonded_pairs.size(0) > 0:
+            re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
+                dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
+                k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
+                ct_slope_1_p, ct_slope_2_p,
+                #(elec_field + elec_field_induced)[topology.bonded_atoms[1]],
+                (elec_field)[topology.bonded_atoms[1]],
+                dq_a[topology.bonded_atoms[1]]
+            )
 
-        # morse-bond
-        ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
-        ene_bonds = torch.sum(ene_bond_list)
-        
-        # bond-bond couplings
-        ene_bbs_list = computeBondBondCoupling(
-            dists[topology.angle_pairs[0]], dists[topology.angle_pairs[1]],
-            r_eq_bb_1, r_eq_bb_2, k_bb
-        )
-        ene_bbs = torch.sum(ene_bbs_list)
+            # morse-bond
+            ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
+            ene_bonds = torch.sum(ene_bond_list)
 
-        # angles
-        ene_angles_list = computeCosAnglePotential(
-            angles, theta_eq, k_theta
-        )
-        ene_angles = torch.sum(ene_angles_list)
+            # bond-bond couplings
+            ene_bbs_list = computeBondBondCoupling(
+                dists[topology.angle_pairs[0]], dists[topology.angle_pairs[1]],
+                r_eq_bb_1, r_eq_bb_2, k_bb
+            )
+            ene_bbs = torch.sum(ene_bbs_list)
 
-        ## bond-angle couplings
-        ene_bas_list = computeBondAngleCoupling(
-            dists[pairs_angles_p], r_eq_ba,
-            angles.repeat_interleave(2), theta_eq.repeat_interleave(2),
-            k_ba
-        )
-        ene_bas = torch.sum(ene_bas_list)
+        ene_angles = torch.zeros(1, dtype=dists.dtype, device=dists.device)
+        ene_bas = torch.zeros(1, dtype=dists.dtype, device=dists.device)
+        if topology.angle_atoms.size(0) > 0:
+            # angles
+            ene_angles_list = computeCosAnglePotential(
+                angles, theta_eq, k_theta
+            )
+            ene_angles = torch.sum(ene_angles_list)
+
+            ## bond-angle couplings
+            ene_bas_list = computeBondAngleCoupling(
+                dists[pairs_angles_p], r_eq_ba,
+                angles.repeat_interleave(2), theta_eq.repeat_interleave(2),
+                k_ba
+            )
+            ene_bas = torch.sum(ene_bas_list)
 
         ## Pauli repulsion
         pauli_pairwise = computeShortRangeEnergyFromPairs(
@@ -675,4 +706,12 @@ class CMM(ForceField):
             "bond_angle": ene_bas,
             "tot": ene_tot
         }
+
+        if self.use_ewald:
+            energies["ewald_direct"] = ene_ewald_direct
+            energies["ewald_long_range"] = ene_ewald_long_range
+            energies["ewald_self"] = ene_ewald_self
+            energies["ewald"] = ene_ewald
+            energies["tot"] = ene_tot + ene_ewald
+
         return energies

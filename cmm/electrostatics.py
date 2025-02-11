@@ -183,7 +183,7 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
     pairs_j_a: torch.Tensor,
     dists_p: torch.Tensor,
     dist_vecs_p: torch.Tensor,
-    kappa: torch.Tensor, mPoles_a: torch.Tensor
+    alpha: torch.Tensor, mPoles_a: torch.Tensor
 ):
     # NOTE(JOE): This is hard-coded for ewald erfc but we should really come up
     # with a generic solution. We can basically just take in the damping factors that are needed.
@@ -196,7 +196,7 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
     drInv = 1 / dists_p
 
     # damping factors
-    erfc_damps = computeDampFactorsErfc(dists_p, kappa)
+    erfc_damps = computeDampFactorsErfc(dists_p, alpha)
     #print(erfc_damps)
 
     # interaction tensors

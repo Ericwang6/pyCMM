@@ -32,10 +32,14 @@ class Topology:
         we only have to store the unique bond_indices (i<j). Currently nothing actually
         enforces that condition I am pretty sure.
         """
+        if self.bonded_atoms.size(0) == 0:
+            return torch.empty_like(self.bonded_atoms), torch.empty((0, 0), dtype=self.bonded_atoms.dtype, device=self.device)
+
         half_bond_starting_with_i = self.bonded_atoms[1, (self.bonded_atoms[0] == i)]
         half_bond_matches_1 = torch.nonzero(torch.sum((half_bond_starting_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
         bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i])
         angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
+
         
         # Below will get the same bond pairs as above but will find them in the 
         # reverse order. I don't think we need them ever but I'm not sure yet so leaving the comment.
@@ -49,6 +53,9 @@ class Topology:
         self.xatoms = torch.full((self.natoms,), -1)
         self.yatoms = torch.full((self.natoms,), -1)
         self.zatoms = torch.full((self.natoms,), -1)
+
+        if self.bonded_atoms.size(0) == 0:
+            return
         
         # This is basically a way of finding all the 1-2 and 1-3 atoms I think.
         for i in torch.arange(self.natoms):
@@ -111,6 +118,12 @@ class Topology:
         # is not bonded but should be ignored in the intermolecular
         # calculations.
         # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
+        if self.bonded_atoms.size(0) == 0:
+            self.angle_atoms = torch.empty_like(self.bonded_atoms)
+            self.intramolecular_atom_indices = torch.empty_like(self.bonded_atoms)
+            self.all_intramolecular_pairs = torch.empty_like(self.bonded_pairs)
+            return
+
         self.angle_atoms = torch.unique(torch.hstack((pairs[self.angle_pairs[0]], pairs[self.angle_pairs[1]])), dim=1)[:, [1, 0, 2]]
         # ^^^ It is unclear to me if the above re-ordering will always work or just for water. These indices are used
         # when evaluating angle-dependent parameters. If that seems to be a problem, then this ordering is probably not
@@ -134,7 +147,10 @@ class Topology:
         # are the polarization group and I already collapsed them into one set.
         # Normally, we would have to eliminate all identical sets of atoms so that
         # we do not have duplicate polarization groups.
-        groups = torch.sort(self.angle_atoms, dim=1).values
+        if self.angle_atoms.size(0) > 0:
+            groups = torch.sort(self.angle_atoms, dim=1).values
+        else:
+            groups = torch.empty_like(self.angle_atoms)
         single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(0)
         
         if single_atom_groups.numel() > 0:
