@@ -486,11 +486,13 @@ class CMM(ForceField):
             k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
             k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
+        # Rotation Matrices #
+        rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         if self.use_ewald:
             # Find appropraiate ewald parameters. This should really be done by the CM.
             if self.use_ewald:
                 self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-                self.k_max = 0
+                self.k_max = 50
                 for i in range(2, 50):
                     error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
                     if error_estimate < self.ewald_tolerance:
@@ -500,7 +502,6 @@ class CMM(ForceField):
             monopoles = (q_shell + Z).detach().clone()
             dipo_2 = dipo.detach().clone()
             quad_2 = quad.detach().clone()
-            rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
             multipoles_2 = rotateMultipoles(
                 monopoles, dipo_2, quad_2, rotation_matrices
             ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
@@ -538,9 +539,6 @@ class CMM(ForceField):
             )
         
         eta_times_2 = 2 * eta
-
-        # Rotation Matrices #
-        rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         
         multipoles = rotateMultipoles(
             q_shell, dipo, quad, rotation_matrices

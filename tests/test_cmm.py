@@ -240,6 +240,7 @@ def test_total_energy_and_total_gradients_ion_water():
 
     energies_ff = ff.evaluate(cm, topology, parameters)
     total_ref = torch.tensor([-28.231218043296266 / HARTREE2KCAL])
+    # NOTE(JOE): REQUIRES NONZERO INDUCED FIELD FOR FD MORSE TO PASS. FIX THE GRADIENT BUG BY WRITING CUSTOM BACKWARD METHOD FOR ENE_POL?
     assert torch.allclose(energies_ff['tot'], total_ref)
 
     #def get_total_energy(coords: torch.Tensor):
