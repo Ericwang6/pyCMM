@@ -581,35 +581,36 @@ class CMM(ForceField):
         polarizabilities = get_field_dependent_polarizabilities(polarizabilities, elec_field, alpha_damp_exponent, alpha_damp_max)
         inverse_polarizabilities = torch.linalg.inv(polarizabilities)
 
-        b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        with torch.no_grad():
-            guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
-
-            induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
-                guess_solution,
-                b_vec,
-                natoms,
-                pairs_lr_i_a,
-                pairs_lr_j_a,
-                dists_lr, dist_vecs_lr,
-                b_ij_elec_p,
-                eta_times_2,
-                inverse_polarizabilities,
-                topology.pol_group_indices_a,
-                topology.pol_group_segment_indices,
-                topology.pol_group_lengths_g
-            )
-        
-        TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
-            induced_multipoles_and_lagrange_muls_out, natoms,
-            pairs_lr_i_a, pairs_lr_j_a,
-            dists_lr, dist_vecs_lr,
-            b_ij_elec_p, eta_times_2, inverse_polarizabilities,
-            topology.pol_group_indices_a,
-            topology.pol_group_segment_indices,
-            topology.pol_group_lengths_g
-        )
-        ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
+        #b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
+        #with torch.no_grad():
+        #    guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
+#
+        #    induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
+        #        guess_solution,
+        #        b_vec,
+        #        natoms,
+        #        pairs_lr_i_a,
+        #        pairs_lr_j_a,
+        #        dists_lr, dist_vecs_lr,
+        #        b_ij_elec_p,
+        #        eta_times_2,
+        #        inverse_polarizabilities,
+        #        topology.pol_group_indices_a,
+        #        topology.pol_group_segment_indices,
+        #        topology.pol_group_lengths_g
+        #    )
+        #
+        #TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
+        #    induced_multipoles_and_lagrange_muls_out, natoms,
+        #    pairs_lr_i_a, pairs_lr_j_a,
+        #    dists_lr, dist_vecs_lr,
+        #    b_ij_elec_p, eta_times_2, inverse_polarizabilities,
+        #    topology.pol_group_indices_a,
+        #    topology.pol_group_segment_indices,
+        #    topology.pol_group_lengths_g
+        #)
+        #ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
+        ene_pol = torch.tensor(0.0)
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced

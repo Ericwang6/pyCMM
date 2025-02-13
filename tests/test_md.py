@@ -2,8 +2,6 @@ import pytest
 import torch
 import numpy as np
 import os
-import time
-import torch._dynamo as dynamo
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG, BOHR2NM
 from cmm.misc_utils import read_from_tinker_xyz
@@ -12,6 +10,9 @@ from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
+from cmm.interfaces import CMM_ASE
+
+from ase.optimize import FIRE2
 
 def test_virial_tensor():
     torch.set_default_dtype(torch.float64)
@@ -97,7 +98,7 @@ def test_optimize_nacl():
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-6), use_ewald=True)
+    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-5), use_ewald=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -105,10 +106,9 @@ def test_optimize_nacl():
 
     ff.alpha_damp_exponent[3] = 0.0 # 3 corresponds to Cl-
     ff.alpha_damp_max[3] = 0.0
-    #ff._raw_atomic_params['b_elec'][1] = 10000000000.0
     ff.rebuild_atomic_params()
 
-    energies = ff.evaluate(cm, topology, parameters)
-    energies['tot'].backward()
-    #print(energies)
-    #print(coords.grad)
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    ff_ase.calculate()
+    dyn = FIRE2(ff_ase.atoms)
+    dyn.run(fmax=1e-6)

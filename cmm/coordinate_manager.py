@@ -31,7 +31,8 @@ class CoordinateManager:
         self.cutoff = torch.tensor(cutoff)
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
-        self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=max_neighbors)
+        with torch.no_grad():
+            self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=max_neighbors)
         self._check_for_nl_update = False
 
     def update_coordinates(self, new_coords: torch.Tensor):
