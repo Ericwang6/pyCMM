@@ -2,7 +2,7 @@ import torch
 import os
 import numpy as np
 
-from ase.optimize import FIRE2 #LBFGS
+from ase.optimize import FIRE2, LBFGS
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_from_tinker_xyz
@@ -11,6 +11,8 @@ from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
+
+from ase.units import kcal, mol, Hartree, Bohr, Angstrom
 
 def test_ase():
     torch.set_default_dtype(torch.float64)
@@ -53,18 +55,18 @@ def test_optimize_dimers_via_ase():
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
+    ff = CMM(use_ewald=False)
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
-    dyn = FIRE2(ff_ase.atoms)
+    dyn = LBFGS(ff_ase.atoms)
     dyn.run(fmax=1e-6)
-    
 
     # Reference CMM optimized dimer energies #
     E_w2_ref = -4.910529038105545
@@ -78,7 +80,8 @@ def test_optimize_dimers_via_ase():
     E_h2o_br_ref = -13.235724691137875
     E_h2o_i_ref = -11.247741103845303
 
-    assert torch.isclose(torch.tensor(ff_ase.results['energy'] * HARTREE2KCAL), torch.tensor(E_w2_ref))
+    # TODO: Fails because of lack of induced field gradients for FD morse.
+    assert torch.isclose(torch.tensor(ff_ase.results['energy'] / (kcal / mol)), torch.tensor(E_w2_ref))
 
 def test_optimize_water_box_via_ase():
     torch.set_default_dtype(torch.float64)

@@ -365,7 +365,7 @@ class CMM(ForceField):
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_gradients=True)
         
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
@@ -584,7 +584,7 @@ class CMM(ForceField):
         #b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
         #with torch.no_grad():
         #    guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
-#
+        #
         #    induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
         #        guess_solution,
         #        b_vec,

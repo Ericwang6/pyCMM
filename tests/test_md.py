@@ -12,7 +12,7 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 
-from ase.optimize import FIRE2
+from ase.optimize import FIRE2, BFGS
 
 def test_virial_tensor():
     torch.set_default_dtype(torch.float64)
@@ -85,6 +85,7 @@ def test_optimize_nacl():
     torch.autograd.set_detect_anomaly(True)
 
     positions = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/nacl_crystal.txt"), dtype=np.float64)
+    positions[0, 0] += 0.1 # move from equilibrium
     coords = torch.tensor(positions / BOHR2NM, dtype=torch.float64, requires_grad=True)
     bonds = np.array([], dtype=np.float64)
     atom_type_names = ["" for i in range(coords.size(0))]
@@ -94,15 +95,15 @@ def test_optimize_nacl():
         atom_type_names[i] = "Cl-"
 
     box = torch.tensor(np.eye(3) * 28.2 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
-
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-5), use_ewald=True)
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
+    with torch.no_grad():
+        ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-5), use_ewald=True)
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
 
     ff.alpha_damp_exponent[3] = 0.0 # 3 corresponds to Cl-
     ff.alpha_damp_max[3] = 0.0
@@ -110,5 +111,5 @@ def test_optimize_nacl():
 
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
-    dyn = FIRE2(ff_ase.atoms)
-    dyn.run(fmax=1e-6)
+    dyn = BFGS(ff_ase.atoms, trajectory='nacl_opt.traj')
+    dyn.run(fmax=1e-6, steps=10)

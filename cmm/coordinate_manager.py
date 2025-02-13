@@ -68,7 +68,8 @@ class CoordinateManager:
         # Fix that!
         #if self._check_for_nl_update:
         #    self.neighbor_list.update(self.coords, self.box_lengths)
-        self.pairs = self.neighbor_list.get_pairs()
+        with torch.no_grad():
+            self.pairs = self.neighbor_list.get_pairs()
         distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
         self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
         self.dists = torch.linalg.vector_norm(self.distance_vecs, dim=1)

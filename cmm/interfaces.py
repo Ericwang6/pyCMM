@@ -1,5 +1,6 @@
 from ase import Atoms
 from ase.calculators.calculator import Calculator
+from ase.units import Bohr, Hartree
 
 from cmm.parameters import Parameterizer
 from cmm.coordinate_manager import CoordinateManager
@@ -17,8 +18,8 @@ class CMM_ASE(Calculator):
         self._params = params
         
         self.atoms = Atoms(
-            positions=cm.coords.detach().cpu().numpy(),
-            cell=cm.box.detach().cpu().numpy(),
+            positions=cm.coords.detach().cpu().numpy() * Bohr,
+            cell=cm.box.detach().cpu().numpy() / Bohr,
             pbc=[1, 1, 1],
             calculator=self
         )
@@ -39,8 +40,8 @@ class CMM_ASE(Calculator):
             self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
             self._energies['tot'].backward()
 
-            self.results['energy'] = float(self._energies['tot'].detach().cpu())
-            self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy()
+            self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
+            self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
 
     def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):
         self.calculate(atoms=atoms)
@@ -65,6 +66,6 @@ class CMM_ASE(Calculator):
         if atoms:
             # Update positions on GPU #
             self.atoms = atoms
-            self._cm.update_coordinates(torch.from_numpy(self.atoms.positions).to(self._cm.coords.device))
+            self._cm.update_coordinates(torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device))
         
         self._evaluate_ff()
