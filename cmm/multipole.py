@@ -177,7 +177,7 @@ def computeInteractionTensor(drVec: torch.Tensor, dampFactors: Optional[List[tor
 
         tzzzz = 105 * z2 * z2 * drInv9 - 90 * z2 * drInv7 + 9 * drInv5
         tzzzx = 105 * z2 * xz * drInv9 - 45 * xz * drInv7
-        tzzzy = 105 * z2 * yz * drInv9 - 45 * yz * drInv7
+        tzzzy = 105 * z2 * yz * drInv9 - 45 * yz * drInv7                
         tzzxy = 105 * z2 * xy * drInv9 - 15 * xy * drInv7
 
     
@@ -208,6 +208,183 @@ def computeInteractionTensor(drVec: torch.Tensor, dampFactors: Optional[List[tor
     
     return iTensor
 
+def computeUndampedInteractionTensorBlocks(dist_vecs: torch.Tensor, dists: torch.Tensor):
+    XX = torch.zeros_like(dists)
+    t_r1 = 1 / dists
+    drInv2 = torch.pow(t_r1, 2)
+    drInv3 = drInv2 * t_r1
+    drInv5 = drInv3 * drInv2
+    drInv7 = drInv5 * drInv2
+    drInv9 = drInv7 * drInv2
+
+    x, y, z = dist_vecs[:, 0], dist_vecs[:, 1], dist_vecs[:, 2]
+    x2, y2, z2 = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    
+    tx_r3, ty_r3, tz_r3 = -x * drInv3, -y * drInv3, -z * drInv3
+        
+    txx_r5 = 3 * x2 * drInv5
+    txy_r5 = 3 * xy * drInv5
+    txz_r5 = 3 * xz * drInv5
+    tyy_r5 = 3 * y2 * drInv5
+    tyz_r5 = 3 * yz * drInv5
+    tzz_r5 = 3 * z2 * drInv5
+    
+    txx_r3 = -drInv3
+    tyy_r3 = -drInv3
+    tzz_r3 = -drInv3
+
+    txxx_r7 = -15 * x2 * x * drInv7
+    txxy_r7 = -15 * x2 * y * drInv7
+    txxz_r7 = -15 * x2 * z * drInv7
+    tyyy_r7 = -15 * y2 * y * drInv7
+    tyyx_r7 = -15 * y2 * x * drInv7
+    tyyz_r7 = -15 * y2 * z * drInv7
+    tzzz_r7 = -15 * z2 * z * drInv7
+    tzzx_r7 = -15 * z2 * x * drInv7
+    tzzy_r7 = -15 * z2 * y * drInv7
+    txyz_r7 = -15 * x * y * z * drInv7
+
+    txxx_r5 = 9 * x * drInv5
+    txxy_r5 = 3 * y * drInv5
+    txxz_r5 = 3 * z * drInv5
+    tyyy_r5 = 9 * y * drInv5
+    tyyx_r5 = 3 * x * drInv5
+    tyyz_r5 = 3 * z * drInv5
+    tzzz_r5 = 9 * z * drInv5
+    tzzx_r5 = 3 * x * drInv5
+    tzzy_r5 = 3 * y * drInv5
+
+    txxxx_r9 = 105 * x2 * x2 * drInv9
+    txxxy_r9 = 105 * x2 * xy * drInv9
+    txxxz_r9 = 105 * x2 * xz * drInv9
+    txxyy_r9 = 105 * x2 * y2 * drInv9
+    txxzz_r9 = 105 * x2 * z2 * drInv9
+    txxyz_r9 = 105 * x2 * yz * drInv9
+    tyyyy_r9 = 105 * y2 * y2 * drInv9
+    tyyyx_r9 = 105 * y2 * xy * drInv9
+    tyyyz_r9 = 105 * y2 * yz * drInv9
+    tyyzz_r9 = 105 * y2 * z2 * drInv9
+    tyyxz_r9 = 105 * y2 * xz * drInv9
+    tzzzz_r9 = 105 * z2 * z2 * drInv9
+    tzzzx_r9 = 105 * z2 * xz * drInv9
+    tzzzy_r9 = 105 * z2 * yz * drInv9
+    tzzxy_r9 = 105 * z2 * xy * drInv9
+
+    txxxx_r7 = -90 * x2 * drInv7
+    txxxy_r7 = -45 * xy * drInv7
+    txxxz_r7 = -45 * xz * drInv7
+    txxyy_r7 = -15 * (x2 + y2) * drInv7
+    txxzz_r7 = -15 * (x2 + z2) * drInv7
+    txxyz_r7 = -15 * yz * drInv7
+    tyyyy_r7 = -90 * y2 * drInv7
+    tyyyx_r7 = -45 * xy * drInv7
+    tyyyz_r7 = -45 * yz * drInv7
+    tyyzz_r7 = -15 * (y2 + z2) * drInv7
+    tyyxz_r7 = -15 * xz * drInv7
+    tzzzz_r7 = -90 * z2 * drInv7
+    tzzzx_r7 = -45 * xz * drInv7
+    tzzzy_r7 = -45 * yz * drInv7                
+    tzzxy_r7 = -15 * xy * drInv7
+
+    txxxx_r5 = 9 * drInv5
+    txxyy_r5 = 3 * drInv5
+    txxzz_r5 = 3 * drInv5
+    tyyyy_r5 = 9 * drInv5
+    tyyzz_r5 = 3 * drInv5
+    tzzzz_r5 = 9 * drInv5
+
+
+    interaction_tensor_13579 = torch.vstack((
+        t_r1,     -tx_r3,   -ty_r3,   -tz_r3,   txx_r5,   txy_r5,   txz_r5,   tyy_r5,   tyz_r5,   tzz_r5,
+        tx_r3,    -txx_r5,  -txy_r5,  -txz_r5,  txxx_r7,  txxy_r7,  txxz_r7,  tyyx_r7,  txyz_r7,  tzzx_r7,
+        ty_r3,    -txy_r5,  -tyy_r5,  -tyz_r5,  txxy_r7,  tyyx_r7,  txyz_r7,  tyyy_r7,  tyyz_r7,  tzzy_r7,
+        tz_r3,    -txz_r5,  -tyz_r5,  -tzz_r5,  txxz_r7,  txyz_r7,  tzzx_r7,  tyyz_r7,  tzzy_r7,  tzzz_r7,
+        txx_r5,   -txxx_r7, -txxy_r7, -txxz_r7, txxxx_r9, txxxy_r9, txxxz_r9, txxyy_r9, txxyz_r9, txxzz_r9,
+        txy_r5,   -txxy_r7, -tyyx_r7, -txyz_r7, txxxy_r9, txxyy_r9, txxyz_r9, tyyyx_r9, tyyxz_r9, tzzxy_r9,
+        txz_r5,   -txxz_r7, -txyz_r7, -tzzx_r7, txxxz_r9, txxyz_r9, txxzz_r9, tyyxz_r9, tzzxy_r9, tzzzx_r9,
+        tyy_r5,   -tyyx_r7, -tyyy_r7, -tyyz_r7, txxyy_r9, tyyyx_r9, tyyxz_r9, tyyyy_r9, tyyyz_r9, tyyzz_r9,
+        tyz_r5,   -txyz_r7, -tyyz_r7, -tzzy_r7, txxyz_r9, tyyxz_r9, tzzxy_r9, tyyyz_r9, tyyzz_r9, tzzzy_r9,
+        tzz_r5,   -tzzx_r7, -tzzy_r7, -tzzz_r7, txxzz_r9, tzzxy_r9, tzzzx_r9, tyyzz_r9, tzzzy_r9, tzzzz_r9
+    )).T.reshape(-1, 10, 10)
+
+    interaction_tensor_00357 = torch.vstack((
+        XX,             XX,       XX,       XX,   txx_r3,       XX,       XX,   tyy_r3,       XX,   tzz_r3,
+        XX,        -txx_r3,       XX,       XX,  txxx_r5,  txxy_r5,  txxz_r5,  tyyx_r5,       XX,  tzzx_r5,
+        XX,             XX,  -tyy_r3,       XX,  txxy_r5,  tyyx_r5,       XX,  tyyy_r5,  tyyz_r5,  tzzy_r5,
+        XX,             XX,       XX,  -tzz_r3,  txxz_r5,       XX,  tzzx_r5,  tyyz_r5,  tzzy_r5,  tzzz_r5,
+        txx_r3,   -txxx_r5, -txxy_r5, -txxz_r5, txxxx_r7, txxxy_r7, txxxz_r7, txxyy_r7, txxyz_r7, txxzz_r7,
+        XX,       -txxy_r5, -tyyx_r5,       XX, txxxy_r7, txxyy_r7, txxyz_r7, tyyyx_r7, tyyxz_r7, tzzxy_r7,
+        XX,       -txxz_r5,       XX, -tzzx_r5, txxxz_r7, txxyz_r7, txxzz_r7, tyyxz_r7, tzzxy_r7, tzzzx_r7,
+        tyy_r3,   -tyyx_r5, -tyyy_r5, -tyyz_r5, txxyy_r7, tyyyx_r7, tyyxz_r7, tyyyy_r7, tyyyz_r7, tyyzz_r7,
+        XX,             XX, -tyyz_r5, -tzzy_r5, txxyz_r7, tyyxz_r7, tzzxy_r7, tyyyz_r7, tyyzz_r7, tzzzy_r7,
+        tzz_r3,   -tzzx_r5, -tzzy_r5, -tzzz_r5, txxzz_r7, tzzxy_r7, tzzzx_r7, tyyzz_r7, tzzzy_r7, tzzzz_r7
+    )).T.reshape(-1, 10, 10)
+
+    interaction_tensor_00005 = torch.vstack((
+        XX, XX, XX, XX,       XX,       XX,       XX,       XX,       XX,       XX,
+        XX, XX, XX, XX,       XX,       XX,       XX,       XX,       XX,       XX,
+        XX, XX, XX, XX,       XX,       XX,       XX,       XX,       XX,       XX,
+        XX, XX, XX, XX,       XX,       XX,       XX,       XX,       XX,       XX,
+        XX, XX, XX, XX, txxxx_r5,       XX,       XX, txxyy_r5,       XX, txxzz_r5,
+        XX, XX, XX, XX,       XX, txxyy_r5,       XX,       XX,       XX,       XX,
+        XX, XX, XX, XX,       XX,       XX, txxzz_r5,       XX,       XX,       XX,
+        XX, XX, XX, XX, txxyy_r5,       XX,       XX, tyyyy_r5,       XX, tyyzz_r5,
+        XX, XX, XX, XX,       XX,       XX,       XX,       XX, tyyzz_r5,       XX,
+        XX, XX, XX, XX, txxzz_r5,       XX,       XX, tyyzz_r5,       XX, tzzzz_r5
+    )).T.reshape(-1, 10, 10)
+    
+    return interaction_tensor_13579, interaction_tensor_00357, interaction_tensor_00005
+
+def formDampingFactorBlocks(damp_factors: torch.Tensor):
+    f1 = damp_factors[0]
+    f3 = damp_factors[1]
+    f5 = damp_factors[2]
+    f7 = damp_factors[3]
+    f9 = damp_factors[4]
+    XX = torch.zeros_like(f1)
+
+    damp_13579 = torch.vstack((
+        f1, f3, f3, f3, f5, f5, f5, f5, f5, f5,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9,
+        f5, f7, f7, f7, f9, f9, f9, f9, f9, f9
+    )).T.reshape(-1, 10, 10)
+
+    damp_00357 = torch.vstack((
+        XX, XX, XX, XX, f3, XX, XX, f3, XX, f3,
+        XX, f3, XX, XX, f5, f5, f5, f5, XX, f5,
+        XX, XX, f3, XX, f5, f5, XX, f5, f5, f5,
+        XX, XX, XX, f3, f5, XX, f5, f5, f5, f5,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7,
+        XX, f5, f5, XX, f7, f7, f7, f7, f7, f7,
+        XX, f5, XX, f5, f7, f7, f7, f7, f7, f7,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7,
+        XX, XX, f5, f5, f7, f7, f7, f7, f7, f7,
+        f3, f5, f5, f5, f7, f7, f7, f7, f7, f7
+    )).T.reshape(-1, 10, 10)
+
+    damp_00005 = torch.vstack((
+        XX, XX, XX, XX, XX, XX, XX, XX, XX, XX,
+        XX, XX, XX, XX, XX, XX, XX, XX, XX, XX,
+        XX, XX, XX, XX, XX, XX, XX, XX, XX, XX,
+        XX, XX, XX, XX, XX, XX, XX, XX, XX, XX,
+        XX, XX, XX, XX, f5, XX, XX, f5, XX, f5,
+        XX, XX, XX, XX, XX, f5, XX, XX, XX, XX,
+        XX, XX, XX, XX, XX, XX, f5, XX, XX, XX,
+        XX, XX, XX, XX, f5, XX, XX, f5, XX, f5,
+        XX, XX, XX, XX, XX, XX, XX, XX, f5, XX,
+        XX, XX, XX, XX, f5, XX, XX, f5, XX, f5
+    )).T.reshape(-1, 10, 10)
+    
+    return damp_13579, damp_00357, damp_00005
+
 
 def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Tensor, mPoles_j: torch.Tensor, rank: int = 2):
     """
@@ -230,133 +407,3 @@ def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Ten
     else:
         energies = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return energies
-
-
-#def computeElectrostaticData(drVec: torch.Tensor, mPoles: torch.Tensor, dampFactors: Optional[List[torch.Tensor]] = None, drInv: Optional[torch.Tensor] = None):
-#     """
-#     drVec: N x 3
-#     mPoles: N x 10
-#     dampFactors: 5 x N
-#     eData: N x 
-#     """
-#     if drInv is None:
-#         drInv = 1 / torch.norm(drVec, dim=1)
-#   
-#     drInv2 = torch.pow(drInv, 2)
-#     drInv3 = drInv2 * drInv
-#     drInv5 = drInv3 * drInv2
-#     drInv7 = drInv5 * drInv2
-#     drInv9 = drInv7 * drInv2
-#     if dampFactors is not None:
-#         drInv  = drInv  * dampFactors[0]
-#         drInv3 = drInv3 * dampFactors[1]
-#         drInv5 = drInv5 * dampFactors[2]
-#         drInv7 = drInv7 * dampFactors[3]
-#         drInv9 = drInv9 * dampFactors[4]
-#     drVec2 = torch.pow(drVec, 2)
-#     x, y, z = drVec[:, 0], drVec[:, 1], drVec[:, 2]
-#     x2, y2, z2 = drVec2[:, 0], drVec2[:, 1], drVec2[:, 2]
-#     xy, xz, yz = x * y, x * z, y * z
-#     # Interaction Tensors
-#     tx, ty, tz = -x * drInv3, -y * drInv3, -z * drInv3
-#   
-#     txx = 3 * x2 * drInv5 - drInv3
-#     txy = 3 * xy * drInv5
-#     txz = 3 * xz * drInv5
-#     tyy = 3 * y2 * drInv5 - drInv3
-#     tyz = 3 * yz * drInv5
-#     tzz = 3 * z2 * drInv5 - drInv3
-#     txxx = -15 * x2 * x * drInv7 + 9 * x * drInv5
-#     txxy = -15 * x2 * y * drInv7 + 3 * y * drInv5
-#     txxz = -15 * x2 * z * drInv7 + 3 * z * drInv5
-#     tyyy = -15 * y2 * y * drInv7 + 9 * y * drInv5
-#     tyyx = -15 * y2 * x * drInv7 + 3 * x * drInv5
-#     tyyz = -15 * y2 * z * drInv7 + 3 * z * drInv5
-#     tzzz = -15 * z2 * z * drInv7 + 9 * z * drInv5
-#     tzzx = -15 * z2 * x * drInv7 + 3 * x * drInv5
-#     tzzy = -15 * z2 * y * drInv7 + 3 * y * drInv5
-#     txyz = -15 * x * y * z * drInv7
-#     txxxx = 105 * x2 * x2 * drInv9 - 90 * x2 * drInv7 + 9 * drInv5
-#     txxxy = 105 * x2 * xy * drInv9 - 45 * xy * drInv7
-#     txxxz = 105 * x2 * xz * drInv9 - 45 * xz * drInv7
-#     txxyy = 105 * x2 * y2 * drInv9 - 15 * (x2 + y2) * drInv7 + 3 * drInv5
-#     txxzz = 105 * x2 * z2 * drInv9 - 15 * (x2 + z2) * drInv7 + 3 * drInv5
-#     txxyz = 105 * x2 * yz * drInv9 - 15 * yz * drInv7
-#     tyyyy = 105 * y2 * y2 * drInv9 - 90 * y2 * drInv7 + 9 * drInv5
-#     tyyyx = 105 * y2 * xy * drInv9 - 45 * xy * drInv7
-#     tyyyz = 105 * y2 * yz * drInv9 - 45 * yz * drInv7
-#     tyyzz = 105 * y2 * z2 * drInv9 - 15 * (y2 + z2) * drInv7 + 3 * drInv5
-#     tyyxz = 105 * y2 * xz * drInv9 - 15 * xz * drInv7
-#     tzzzz = 105 * z2 * z2 * drInv9 - 90 * z2 * drInv7 + 9 * drInv5
-#     tzzzx = 105 * z2 * xz * drInv9 - 45 * xz * drInv7
-#     tzzzy = 105 * z2 * yz * drInv9 - 45 * yz * drInv7
-#     tzzxy = 105 * z2 * xy * drInv9 - 15 * xy * drInv7
-#     mPolesScaled = mPoles * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
-#     iTensor = torch.vstack((
-#         drInv, -tx,   -ty,   -tz,   txx,   txy,   txz,   tyy,   tyz,   tzz,
-#         tx,    -txx,  -txy,  -txz,  txxx,  txxy,  txxz,  tyyx,  txyz,  tzzx,
-#         ty,    -txy,  -tyy,  -tyz,  txxy,  tyyx,  txyz,  tyyy,  tyyz,  tzzy,
-#         tz,    -txz,  -tyz,  -tzz,  txxz,  txyz,  tzzx,  tyyz,  tzzy,  tzzz,
-#         txx,   -txxx, -txxy, -txxz, txxxx, txxxy, txxxz, txxyy, txxyz, txxzz,
-#         txy,   -txxy, -tyyx, -txyz, txxxy, txxyy, txxyz, tyyyx, tyyxz, tzzxy,
-#         txz,   -txxz, -txyz, -tzzx, txxxz, txxyz, txxzz, tyyxz, tzzxy, tzzzx,
-#         tyy,   -tyyx, -tyyy, -tyyz, txxyy, tyyyx, tyyxz, tyyyy, tyyyz, tyyzz,
-#         tyz,   -txyz, -tyyz, -tzzy, txxyz, tyyxz, tzzxy, tyyyz, tyyzz, tzzzy,
-#         tzz,   -tzzx, -tzzy, -tzzz, txxzz, tzzxy, tzzzx, tyyzz, tzzzy, tzzzz
-#     )).T.reshape(-1, 10, 10)
-#     eData = torch.bmm(iTensor, mPolesScaled.unsqueeze(2))
-#     return eData
-
-
-# def computePermElectEnergyDamped(
-#     mPoles_i: torch.Tensor, mPoles_j: torch.Tensor, 
-#     Z_i: torch.Tensor, Z_j: torch.Tensor, 
-#     b_i: torch.Tensor, b_j: torch.Tensor, 
-#     drVec: torch.Tensor
-# ):
-#     """
-#     Compute damped permanent electrostatic energy
-#     """
-#     b_ij = torch.sqrt(b_i * b_j)
-#     dr = torch.norm(drVec, dim=1)
-#     drInv = 1 / dr
-#     oneCenterDamps_i = computeOneCenterDampFactorsSlater(dr, b_i)
-#     oneCenterDamps_j = computeOneCenterDampFactorsSlater(dr, b_j)
-#     twoCenterDamps = computeTwoCenterDampFactorsSlater(dr, b_ij)
-
-#     mPoles_j_scaled = mPoles_j * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
-#     # core-core interactions
-#     ccEnergies = Z_i * Z_j * drInv
-#     # shell-shell interactions
-#     eDataTwoCenter = computeEletrostaticData(drVec, mPoles_i, twoCenterDamps, drInv)
-#     ssEnergies = torch.bmm(mPoles_j_scaled.unsqueeze(1), eDataTwoCenter).flatten()
-#     # core-shell interactions
-#     ePot_i = computeEletrostaticData(drVec,  mPoles_i, oneCenterDamps_i, drInv)[:, 0].flatten() # elec potential caused by site i-s
-#     ePot_j = computeEletrostaticData(-drVec, mPoles_j, oneCenterDamps_j, drInv)[:, 0].flatten() # elec potential caused by site j-s
-#     scEnergies = ePot_i * Z_j + ePot_j * Z_i
-#     energies = ccEnergies + ssEnergies + scEnergies
-#     return energies, eDataTwoCenter
-
-    
-if __name__ == '__main__':
-    torch.manual_seed(42)
-    N = 10
-    # drVec = torch.rand(N, 3)
-    # mPoles = torch.rand(N, 10)
-    # print(mPoles.unsqueeze(1).shape)
-    # eData = computeEletrostaticData(drVec, mPoles)
-    # print(eData)
-    # print(eData[:, 0].flatten())
-    # enes = computePermElecEnergyNoDamp(mPoles, mPoles * 2, drVec)
-    # print(enes)
-    # coords = torch.rand(8, 3)
-    # print(computeLocal2GlobalRotationMatrix(
-    #     coords[:2, :],
-    #     coords[2:4, :],
-    #     coords[4:6, :],
-    #     coords[6:, :],
-    #     axisTypes=torch.LongTensor([0, 1])
-    # ))
-    # quad_s = torch.rand(N, 5)
-    # print(quad_s)
-    # print(computeCartesianQuadrupoles(quad_s))

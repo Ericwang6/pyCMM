@@ -1,7 +1,7 @@
 from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
-from .multipole import computeInteractionTensor
+from .multipole import computeInteractionTensor, computeUndampedInteractionTensorBlocks, formDampingFactorBlocks
 
 def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
@@ -197,7 +197,6 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
 
     # damping factors
     erfc_damps = computeDampFactorsErfc(dists_p, alpha)
-    #print(erfc_damps)
 
     # interaction tensors
     ss_tensor_ij = computeInteractionTensor(dist_vecs_p, erfc_damps, drInv)

@@ -1,10 +1,10 @@
 import torch, math
 from torch_scatter import segment_csr
-from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeLocal2GlobalRotationMatrix
-from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald
+from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocks
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald, computeDampFactorsErfc
 from .ewald import long_range_vectorized, self_interaction
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
-from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs
+from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors
 from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
 from .axis_types import AxisTypes
@@ -315,6 +315,7 @@ class CMM(ForceField):
             # elec
             "Z": self.Z,
             "q_shell": self.mono - self.Z,
+            "mono": self.mono,
             "dipo": self.dipo,
             "quad": computeCartesianQuadrupoles(self.quad_s),
             "b_elec": self.b_elec,
@@ -363,9 +364,9 @@ class CMM(ForceField):
             self.parameters_have_changed = True
 
     #@torch.compile
-    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
+    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_gradients: bool=True):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_gradients=True)
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_gradients=reset_gradients)
         
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
@@ -414,6 +415,7 @@ class CMM(ForceField):
         Z = params.get_atomic_parameters('Z')
         natoms = torch.tensor(Z.size(0), device=pairs.device)
         q_shell = params.get_atomic_parameters('q_shell')
+        mono = params.get_atomic_parameters('mono')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
         axis_types = params.get_atomic_parameters("axistypes")
@@ -452,6 +454,65 @@ class CMM(ForceField):
         b_ct = params.get_atomic_parameters('b_ct')
         eta = params.get_atomic_parameters('eta')
 
+        # Get width parameters in appropriate pair spaces #
+        b_i_elec_p = b_elec[pairs_sr_i_a]
+        b_j_elec_p = b_elec[pairs_sr_j_a]
+        b_i_pauli_p = b_pauli[pairs_sr_i_a]
+        b_j_pauli_p = b_pauli[pairs_sr_j_a]
+        b_i_xpol_p = b_xpol[pairs_sr_i_a]
+        b_j_xpol_p = b_xpol[pairs_sr_j_a]
+        b_i_ct_p = b_ct[pairs_sr_i_a]
+        b_j_ct_p = b_ct[pairs_sr_j_a]
+        b_i_disp_p = b_disp[pairs_lr_i_a]
+        b_j_disp_p = b_disp[pairs_lr_j_a]
+        
+        b_ij_cp_sr_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
+        b_ij_pauli_sr_p = torch.sqrt(b_i_pauli_p * b_j_pauli_p)
+        b_ij_xpol_sr_p = torch.sqrt(b_i_xpol_p * b_j_xpol_p)
+        b_ij_ct_sr_p = torch.sqrt(b_i_ct_p * b_j_ct_p)
+        b_ij_disp_lr_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
+
+        # Find appropraiate ewald parameters. This should really be done by the CM.
+        if self.use_ewald:
+            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+            self.k_max = 50
+            for i in range(2, 50):
+                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                if error_estimate < self.ewald_tolerance:
+                    self.k_max = i
+                    break
+            erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
+        else:
+            erfc_damps = torch.ones_like(dists_lr)
+        
+        cp_damps_sr_1c_i = computeShortRangeOneCenterDampFactors(dists_sr, b_i_elec_p)
+        cp_damps_sr_1c_j = computeShortRangeOneCenterDampFactors(dists_sr, b_j_elec_p)
+        cp_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_cp_sr_p)
+        pauli_damps_sr_2c = computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_pauli_sr_p)
+        xpol_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_xpol_sr_p)
+        ct_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_ct_sr_p)
+
+        # Get all undamped and damped interactions needed for multipolar interactions #
+        undamped_tensor_1_lr, undamped_tensor_2_lr, undamped_tensor_3_lr = computeUndampedInteractionTensorBlocks(dist_vecs_lr, dists_lr)
+        undamped_tensor_1_sr, undamped_tensor_2_sr, undamped_tensor_3_sr = computeUndampedInteractionTensorBlocks(dist_vecs_sr, dists_sr)
+        cc_tensor_lr = undamped_tensor_1_lr + undamped_tensor_2_lr + undamped_tensor_3_lr
+
+        ewald_damps_lr_1, ewald_damps_lr_2, ewald_damps_lr_3 = formDampingFactorBlocks(erfc_damps)
+        cp_damps_sr_1c_1_i, cp_damps_sr_1c_2_i, cp_damps_sr_1c_3_i = formDampingFactorBlocks(cp_damps_sr_1c_i)
+        cp_damps_sr_1c_1_j, cp_damps_sr_1c_2_j, cp_damps_sr_1c_3_j = formDampingFactorBlocks(cp_damps_sr_1c_j)
+        cp_damps_sr_2c_1, cp_damps_sr_2c_2, cp_damps_sr_2c_3 = formDampingFactorBlocks(cp_damps_sr_2c)
+        pauli_damps_sr_2c_1, pauli_damps_sr_2c_2, pauli_damps_sr_2c_3 = formDampingFactorBlocks(pauli_damps_sr_2c)
+        xpol_damps_sr_2c_1, xpol_damps_sr_2c_2, xpol_damps_sr_2c_3 = formDampingFactorBlocks(xpol_damps_sr_2c)
+        ct_damps_sr_2c_1, ct_damps_sr_2c_2, ct_damps_sr_2c_3 = formDampingFactorBlocks(ct_damps_sr_2c)
+
+        ewald_tensor_lr = torch.mul(undamped_tensor_1_lr, ewald_damps_lr_1) + torch.mul(undamped_tensor_2_lr, ewald_damps_lr_2) + torch.mul(undamped_tensor_3_lr, ewald_damps_lr_3)
+        cp_field_tensor_sr_i = torch.mul(undamped_tensor_1_sr, cp_damps_sr_1c_1_i) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_1c_2_i) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_1c_3_i)
+        cp_field_tensor_sr_j = torch.mul(undamped_tensor_1_sr, cp_damps_sr_1c_1_j) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_1c_2_j) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_1c_3_j)
+        cp_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, cp_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_2c_3)
+        pauli_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, pauli_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, pauli_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, pauli_damps_sr_2c_3)
+        xpol_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, xpol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, xpol_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, xpol_damps_sr_2c_3)
+        ct_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, ct_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, ct_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, ct_damps_sr_2c_3)
+
         eps = params.get_pair_parameters('eps', all_intermolecular_pairs_sr)
 
         if topology.bonded_pairs.size(0) > 0:
@@ -489,16 +550,6 @@ class CMM(ForceField):
         # Rotation Matrices #
         rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         if self.use_ewald:
-            # Find appropraiate ewald parameters. This should really be done by the CM.
-            if self.use_ewald:
-                self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-                self.k_max = 50
-                for i in range(2, 50):
-                    error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-                    if error_estimate < self.ewald_tolerance:
-                        self.k_max = i
-                        break
-
             monopoles = (q_shell + Z).detach().clone()
             dipo_2 = dipo.detach().clone()
             quad_2 = quad.detach().clone()
@@ -530,6 +581,17 @@ class CMM(ForceField):
                 r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
             )
 
+            # NOTE(JOE): I am changing the code to re-use a bunch of data and strictly separate
+            # the short-range and long-range contributions to fields so that ewald will be
+            # technically exact since I can just switch off the short-range parts smoothly.
+            # This will eliminate the q_shell variable but in the meantime I am leaving it in.
+            evaluate_bond_and_angle_charge_flux(
+                pairs, dists, angles,
+                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+                mono, r_eq, theta_eq, j_cf, j_cf_angle,
+                r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
+            )
+
             # Hardness change #
             evaluate_hardness_change(
                 pairs, dists, angles,
@@ -544,21 +606,109 @@ class CMM(ForceField):
             q_shell, dipo, quad, rotation_matrices
         ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
 
+        multipoles_real = rotateMultipoles(
+            mono, dipo, quad, rotation_matrices
+        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
+        multipoles_cp = multipoles_real.clone()
+        multipoles_cp[:, 0] = mono - Z
+        Z_mpoles = torch.zeros_like(multipoles)
+        Z_mpoles[:, 0] += Z
         multipoles_ct_acc = scaleMultipoles(multipoles, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
         multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
         multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
         multipoles_xpol = scaleMultipoles(multipoles, q_xpol, Kdipo_xpol, Kquad_xpol)
 
-        ct_direct_pairwise, dq_pairwise = computePairwiseChargeTransfer(
-            dist_vecs_sr,
-            multipoles_ct_acc[pairs_sr_i_a], multipoles_ct_acc[pairs_sr_j_a],
-            multipoles_ct_don[pairs_sr_i_a], multipoles_ct_don[pairs_sr_j_a],
-            b_ct[pairs_sr_i_a], b_ct[pairs_sr_j_a],
-            eps, switch_sr
-        )
-        ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
+        multipoles_ct_acc_i_p = multipoles_ct_acc[pairs_sr_i_a]
+        multipoles_ct_acc_j_p = multipoles_ct_acc[pairs_sr_j_a]
+        multipoles_ct_don_i_p = multipoles_ct_don[pairs_sr_i_a]
+        multipoles_ct_don_j_p = multipoles_ct_don[pairs_sr_j_a]
+        multipoles_pauli_i_p = multipoles_pauli[pairs_sr_i_a]
+        multipoles_pauli_j_p = multipoles_pauli[pairs_sr_j_a]
+        multipoles_xpol_i_p = multipoles_xpol[pairs_sr_i_a]
+        multipoles_xpol_j_p = multipoles_xpol[pairs_sr_j_a]
+        multipoles_cp_i_p = multipoles_cp[pairs_sr_i_a]
+        multipoles_cp_j_p = multipoles_cp[pairs_sr_j_a]
+        multipoles_real_i_p = multipoles_real[pairs_lr_i_a]
+        multipoles_real_j_p = multipoles_real[pairs_lr_j_a]
+        Z_mpoles_i_p = Z_mpoles[pairs_sr_i_a]
+        Z_mpoles_j_p = Z_mpoles[pairs_sr_j_a]
+
+        ct_pairwise_ij = torch.bmm(multipoles_ct_don_j_p.unsqueeze(1), torch.bmm(ct_interaction_tensor_sr, multipoles_ct_acc_i_p.unsqueeze(2))).flatten()
+        ct_pairwise_ji = torch.bmm(multipoles_ct_acc_j_p.unsqueeze(1), torch.bmm(ct_interaction_tensor_sr, multipoles_ct_don_i_p.unsqueeze(2))).flatten()
+        pauli_pairwise = torch.bmm(multipoles_pauli_j_p.unsqueeze(1), torch.bmm(pauli_interaction_tensor_sr, multipoles_pauli_i_p.unsqueeze(2))).flatten()
+        xpol_pairwise = torch.bmm(multipoles_xpol_j_p.unsqueeze(1), torch.bmm(xpol_interaction_tensor_sr, multipoles_xpol_i_p.unsqueeze(2))).flatten()
         
+        elec_ss_pairwise = torch.bmm(multipoles_cp_j_p.unsqueeze(1), torch.bmm(cp_interaction_tensor_sr, multipoles_cp_i_p.unsqueeze(2))).flatten()
+        elec_cs_pairwise_ij = torch.bmm(Z_mpoles_j_p.unsqueeze(1), torch.bmm(cp_field_tensor_sr_j, multipoles_cp_i_p.unsqueeze(2))).flatten()
+        elec_cs_pairwise_ji = torch.bmm(multipoles_cp_i_p.unsqueeze(1), torch.bmm(cp_field_tensor_sr_i, Z_mpoles_i_p.unsqueeze(2))).flatten()
+        elec_point_pairwise = torch.bmm(multipoles_real_j_p.unsqueeze(1), torch.bmm(cc_tensor_lr, multipoles_real_i_p.unsqueeze(2))).flatten()
+
+        edata_point_pairwise = torch.bmm(cc_tensor_lr, multipoles_real_i_p.unsqueeze(2))
+        edata_cs_pairwise_ij = torch.bmm(cp_field_tensor_sr_i, multipoles_cp_i_p.unsqueeze(2))
+        edata_cs_pairwise_ji = torch.bmm(cp_field_tensor_sr_j, multipoles_cp_j_p.unsqueeze(2))
+        edata_ss_pairwise = torch.bmm(cp_interaction_tensor_sr, multipoles_cp_i_p.unsqueeze(2))
+        #print(torch.sum(edata_point_pairwise[:, 0].flatten()))
+        #print(torch.sum(edata_cs_pairwise_ij[:, 0].flatten()))
+        #print(torch.sum(edata_cs_pairwise_ji[:, 0].flatten()))
+        #print(torch.sum(edata_ss_pairwise[:, 0].flatten()))
+
+
+        # Accumulate the total potentials, fields, and field gradients.
+        # One contribution is accumulated over all long-range pairs, while the other
+        # accumulates just the penetration contribution.
+        # We are now in a position to use a switching function for the short-range
+        # contribution and split the permanent contribution into an erfc damped
+        # contribution which is itself split between the direct-space, reciprocal space,
+        # and long-range contributions. That's for next week.
+        E_potentials = torch.zeros(natoms) # N
+        E_fields = torch.zeros(natoms, 3) # Nx3
+        E_field_grads = torch.zeros(natoms, 6) # Nx6 because only store upper triangle
+
+        e_field_point_pairwise = edata_point_pairwise[:, 1:4].reshape(-1, 3)
+        e_field_grad_point_pairwise = edata_point_pairwise[:, 4:].reshape(-1, 6)
+        e_field_cs = edata_cs_pairwise_ij[:, 1:4].reshape(-1, 3)
+        e_field_grad_cs = edata_cs_pairwise_ij[:, 4:].reshape(-1, 6)
+        
+        E_potentials.scatter_add_(0, pairs_lr_j_a, edata_point_pairwise[:, 0].flatten())
+        E_potentials.scatter_add_(0, pairs_sr_j_a, -edata_cs_pairwise_ij[:, 0].flatten())
+        E_fields[:, 0].scatter_add_(0, pairs_lr_j_a, -e_field_point_pairwise[:, 0])
+        E_fields[:, 1].scatter_add_(0, pairs_lr_j_a, -e_field_point_pairwise[:, 1])
+        E_fields[:, 2].scatter_add_(0, pairs_lr_j_a, -e_field_point_pairwise[:, 2])
+        
+        E_fields[:, 0].scatter_add_(0, pairs_sr_j_a, e_field_cs[:, 0])
+        E_fields[:, 1].scatter_add_(0, pairs_sr_j_a, e_field_cs[:, 1])
+        E_fields[:, 2].scatter_add_(0, pairs_sr_j_a, e_field_cs[:, 2])
+        # Yes, I am doing it like this. Please help.
+        E_field_grads[:, 0].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 0])
+        E_field_grads[:, 1].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 1])
+        E_field_grads[:, 2].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 2])
+        E_field_grads[:, 3].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 3])
+        E_field_grads[:, 4].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 4])
+        E_field_grads[:, 5].scatter_add_(0, pairs_lr_j_a, -e_field_grad_point_pairwise[:, 5])
+
+        E_field_grads[:, 0].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 0])
+        E_field_grads[:, 1].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 1])
+        E_field_grads[:, 2].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 2])
+        E_field_grads[:, 3].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 3])
+        E_field_grads[:, 4].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 4])
+        E_field_grads[:, 5].scatter_add_(0, pairs_sr_j_a, e_field_grad_cs[:, 5])
+
+        ene_ct_direct = torch.sum((ct_pairwise_ij + ct_pairwise_ji) * switch_sr) / 2
+        ene_pauli = torch.sum(pauli_pairwise * switch_sr) / 2
+        ene_xpol = torch.sum(xpol_pairwise * switch_sr) / 2
+        ene_cp_ss = torch.sum(elec_ss_pairwise * switch_sr) / 2
+
+        #print(0.5 * torch.sum(elec_point_pairwise) * 627.51)
+        #print(0.5 * torch.sum(elec_cs_pairwise_ij) * 627.51)
+        #print(0.5 * torch.sum(elec_cs_pairwise_ji) * 627.51)
+        #print(0.5 * torch.sum(elec_ss_pairwise) * 627.51)
+        #print(0.5 * (torch.sum(elec_point_pairwise) + torch.sum(elec_cs_pairwise_ij) + torch.sum(elec_cs_pairwise_ji) + torch.sum(elec_ss_pairwise)) * 627.51)
+
         # Find total charges in each polarization group to use as constraints
+        drInvDamp_ct = ct_interaction_tensor_sr[:, 0, 0].flatten()
+        dq_forward = multipoles_ct_don_i_p[:, 0] * multipoles_ct_acc_j_p[:, 0] * drInvDamp_ct * eps
+        dq_backward = multipoles_ct_acc_i_p[:, 0] * multipoles_ct_don_j_p[:, 0] * drInvDamp_ct * eps
+        dq_pairwise = (dq_forward - dq_backward) * switch_sr
         dq_a = torch.zeros(natoms, device=pairs.device)
         dq_groups = torch.zeros(topology.n_pol_groups, device=pairs.device)
         dq_a = dq_a.scatter_add(0, pairs_sr_j_a, dq_pairwise)
@@ -576,41 +726,44 @@ class CMM(ForceField):
             b_i_elec_p, b_ij_elec_p,
             multipoles, Z
         )
+        #print(E_potentials - elec_potential)
+        #print(E_fields - elec_field)
+        #print(E_field_grads - elec_field_grad)
 
         polarizabilities = rotateQuadrupoles(alpha, rotation_matrices)
         polarizabilities = get_field_dependent_polarizabilities(polarizabilities, elec_field, alpha_damp_exponent, alpha_damp_max)
         inverse_polarizabilities = torch.linalg.inv(polarizabilities)
 
-        #b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        #with torch.no_grad():
-        #    guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
-        #
-        #    induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
-        #        guess_solution,
-        #        b_vec,
-        #        natoms,
-        #        pairs_lr_i_a,
-        #        pairs_lr_j_a,
-        #        dists_lr, dist_vecs_lr,
-        #        b_ij_elec_p,
-        #        eta_times_2,
-        #        inverse_polarizabilities,
-        #        topology.pol_group_indices_a,
-        #        topology.pol_group_segment_indices,
-        #        topology.pol_group_lengths_g
-        #    )
-        #
-        #TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
-        #    induced_multipoles_and_lagrange_muls_out, natoms,
-        #    pairs_lr_i_a, pairs_lr_j_a,
-        #    dists_lr, dist_vecs_lr,
-        #    b_ij_elec_p, eta_times_2, inverse_polarizabilities,
-        #    topology.pol_group_indices_a,
-        #    topology.pol_group_segment_indices,
-        #    topology.pol_group_lengths_g
-        #)
-        #ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
-        ene_pol = torch.tensor(0.0)
+        b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
+        with torch.no_grad():
+            guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
+        
+            induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
+                guess_solution,
+                b_vec,
+                natoms,
+                pairs_lr_i_a,
+                pairs_lr_j_a,
+                dists_lr, dist_vecs_lr,
+                b_ij_elec_p,
+                eta_times_2,
+                inverse_polarizabilities,
+                topology.pol_group_indices_a,
+                topology.pol_group_segment_indices,
+                topology.pol_group_lengths_g
+            )
+        
+        TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
+            induced_multipoles_and_lagrange_muls_out, natoms,
+            pairs_lr_i_a, pairs_lr_j_a,
+            dists_lr, dist_vecs_lr,
+            b_ij_elec_p, eta_times_2, inverse_polarizabilities,
+            topology.pol_group_indices_a,
+            topology.pol_group_segment_indices,
+            topology.pol_group_lengths_g
+        )
+        ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
+        #ene_pol = torch.tensor(0.0)
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
@@ -663,15 +816,6 @@ class CMM(ForceField):
             )
             ene_bas = torch.sum(ene_bas_list)
 
-        ## Pauli repulsion
-        pauli_pairwise = computeShortRangeEnergyFromPairs(
-            dists_sr, dist_vecs_sr,
-            multipoles_pauli[pairs_sr_i_a], multipoles_pauli[pairs_sr_j_a],
-            torch.sqrt(b_pauli[pairs_sr_i_a] * b_pauli[pairs_sr_j_a]),
-            switch_sr
-        )
-        ene_pauli = torch.sum(pauli_pairwise) / 2
-
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
             dists_lr,
@@ -680,15 +824,6 @@ class CMM(ForceField):
             switch_lr
         )
         ene_disp = torch.sum(disp_pairwise) / 2
-
-        # exchange-polarization
-        xpol_pairwise = computeShortRangeEnergyFromPairs(
-            dists_sr, dist_vecs_sr,
-            multipoles_xpol[pairs_sr_i_a], multipoles_xpol[pairs_sr_j_a],
-            torch.sqrt(b_xpol[pairs_sr_i_a] * b_xpol[pairs_sr_j_a]),
-            switch_sr, False
-        )
-        ene_xpol = torch.sum(xpol_pairwise) / 2
 
         ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
         energies = {

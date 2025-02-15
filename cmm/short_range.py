@@ -2,8 +2,22 @@ import torch
 from .multipole import computeInteractionTensor
 from typing import Optional
 
+def computeShortRangeOneCenterDampFactors(dr: torch.Tensor, b: torch.Tensor):
+    u = b * dr
+    u2 = u * u
+    u3 = u2 * u
+    u4 = u3 * u
+    u5 = u4 * u
+    exp_u = torch.exp(-u)
+    p1 = 1 + u / 2
+    p3 = 1 + u + u2 / 2
+    p5 = p3 + u3 / 6
+    p7 = p5 + u4 / 30
+    p9 = p5 + u4 * 4 / 105 + u5 / 210
 
-def computeShortRangeDampFactors(dr, bij):
+    return torch.stack([p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
+
+def computeShortRangeTwoCenterDampFactors(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
     u3 = u2 * u
@@ -20,7 +34,7 @@ def computeShortRangeDampFactors(dr, bij):
     p7 = tmp + u5 / 120 + u6 / 720
     p9 = p7 + u7 / 5040
 
-    return [p * exp_u for p in [p1, p3, p5, p7, p9]]
+    return torch.stack([p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
 
 def scaleMultipoles(
@@ -47,7 +61,7 @@ def computeShortRangeEnergy(
     drInv = 1 / dr
 
     b_ij = torch.sqrt(b_i * b_j)
-    damps = computeShortRangeDampFactors(dr, b_ij)
+    damps = computeShortRangeTwoCenterDampFactors(dr, b_ij)
     if not positive:
         damps = [-d for d in damps]
 
@@ -64,7 +78,7 @@ def computeShortRangeEnergyFromPairs(
 
     drInv_p = 1 / dists_p
 
-    damps = computeShortRangeDampFactors(dists_p, b_ij_p)
+    damps = computeShortRangeTwoCenterDampFactors(dists_p, b_ij_p)
     if not positive:
         damps = [-d for d in damps]
 
@@ -84,7 +98,7 @@ def computePairwiseChargeTransfer(
     drInv = 1 / dr
 
     b_ij = torch.sqrt(b_i * b_j)
-    damps = computeShortRangeDampFactors(dr, b_ij)
+    damps = computeShortRangeTwoCenterDampFactors(dr, b_ij)
     damps = [-d for d in damps]
 
     iTensor = computeInteractionTensor(drVec, damps, drInv, 2)
