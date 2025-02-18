@@ -671,8 +671,9 @@ class CMM(ForceField):
         ene_ct_direct = 0.5 * torch.sum((ct_pairwise_ij + ct_pairwise_ji) * switch_sr)
         ene_pauli = 0.5 * torch.sum(pauli_pairwise * switch_sr)
         ene_xpol = 0.5 * torch.sum(xpol_pairwise * switch_sr)
-        ene_perm_elec = 0.5 * torch.sum(elec_point_pairwise +
-            (elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr
+        ene_perm_elec = 0.5 * (
+            torch.sum(elec_point_pairwise) +
+            torch.sum((elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr)
         )
 
         # Find total charges in each polarization group to use as constraints
