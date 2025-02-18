@@ -336,7 +336,29 @@ def computeUndampedInteractionTensorBlocks(dist_vecs: torch.Tensor, dists: torch
     
     return interaction_tensor_13579, interaction_tensor_00357, interaction_tensor_00005
 
-def formDampingFactorBlocks(damp_factors: torch.Tensor):
+def formDampingFactorBlocksRank1(damp_factors: torch.Tensor):
+    f1 = damp_factors[0]
+    f3 = damp_factors[1]
+    f5 = damp_factors[2]
+    XX = torch.zeros_like(f1)
+
+    damp_135 = torch.vstack((
+        f1, f3, f3, f3,
+        f3, f5, f5, f5,
+        f3, f5, f5, f5,
+        f3, f5, f5, f5,
+    )).T.reshape(-1, 4, 4)
+
+    damp_003 = torch.vstack((
+        XX, XX, XX, XX,
+        XX, f3, XX, XX,
+        XX, XX, f3, XX,
+        XX, XX, XX, f3,
+    )).T.reshape(-1, 4, 4)
+    
+    return damp_135, damp_003
+
+def formDampingFactorBlocksRank2(damp_factors: torch.Tensor):
     f1 = damp_factors[0]
     f3 = damp_factors[1]
     f5 = damp_factors[2]
@@ -384,7 +406,6 @@ def formDampingFactorBlocks(damp_factors: torch.Tensor):
     )).T.reshape(-1, 10, 10)
     
     return damp_13579, damp_00357, damp_00005
-
 
 def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Tensor, mPoles_j: torch.Tensor, rank: int = 2):
     """

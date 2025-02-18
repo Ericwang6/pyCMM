@@ -29,11 +29,12 @@ def solvePolarizationByCG(
     guess_vector: torch.Tensor,
     b_vector: torch.Tensor,
     n_charges: torch.NumberType,
-    pairs_i_a: torch.Tensor,
-    pairs_j_a: torch.Tensor,
-    dists_p: torch.Tensor,
-    dist_vecs_p: torch.Tensor,
-    b_ij_p: torch.Tensor,
+    pairs_lr_i_a: torch.Tensor,
+    pairs_lr_j_a: torch.Tensor,
+    pairs_sr_i_a: torch.Tensor,
+    pairs_sr_j_a: torch.Tensor,
+    cc_tensor_lr: torch.Tensor,
+    pol_interaction_tensor_sr: torch.Tensor,
     eta: torch.Tensor,
     inverse_polarizabilities: torch.Tensor,
     pol_group_indices_a: torch.Tensor,
@@ -49,11 +50,12 @@ def solvePolarizationByCG(
     # to interact with user setting though so will want to discuss with Eric.
     
     # Precondition using whatever was put in the guess_vector
-    TM0, _, _ = computeProductWithPolarizationMatrix(
+    TM0, _, _  = computeProductWithPolarizationMatrix(
         guess_vector, n_charges,
-        pairs_i_a, pairs_j_a,
-        dists_p, dist_vecs_p,
-        b_ij_p, eta, inverse_polarizabilities,
+        pairs_lr_i_a, pairs_lr_j_a,
+        pairs_sr_i_a, pairs_sr_j_a,
+        cc_tensor_lr, pol_interaction_tensor_sr,
+        eta, inverse_polarizabilities,
         pol_group_indices_a,
         pol_group_segment_indices,
         pol_group_lengths_g
@@ -63,9 +65,10 @@ def solvePolarizationByCG(
     for _ in range(max_iter):
         TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
-            pairs_i_a, pairs_j_a,
-            dists_p, dist_vecs_p,
-            b_ij_p, eta, inverse_polarizabilities,
+            pairs_lr_i_a, pairs_lr_j_a,
+            pairs_sr_i_a, pairs_sr_j_a,
+            cc_tensor_lr, pol_interaction_tensor_sr,
+            eta, inverse_polarizabilities,
             pol_group_indices_a,
             pol_group_segment_indices,
             pol_group_lengths_g
@@ -78,25 +81,23 @@ def solvePolarizationByCG(
         # nothing and we can just use the guess vector as the solution
         # vector since it gets updated in place.
         guess_vector += gamma * P
-        #guess_vector = guess_vector + gamma * P
         beta = 1.0 / torch.dot(residual, residual)
         residual -= gamma * TP
         if torch.norm(residual) < residual_threshold:
             return guess_vector
-        #residual = residual - gamma * TP
         beta *= torch.dot(residual, residual)
-        #beta = beta * torch.dot(residual, residual)
         P = residual + beta * P
     return guess_vector
 
 def computeProductWithPolarizationMatrix(
     vec_in: torch.Tensor,
     n_charges: torch.NumberType,
-    pairs_i_a: torch.Tensor,
-    pairs_j_a: torch.Tensor,
-    dists_p: torch.Tensor,
-    dist_vecs_p: torch.Tensor,
-    b_ij_p: torch.Tensor,
+    pairs_lr_i_a: torch.Tensor,
+    pairs_lr_j_a: torch.Tensor,
+    pairs_sr_i_a: torch.Tensor,
+    pairs_sr_j_a: torch.Tensor,
+    cc_tensor_lr: torch.Tensor,
+    pol_interaction_tensor_sr: torch.Tensor,
     eta: torch.Tensor,
     alpha_inv: torch.Tensor,
     pol_group_indices_a: torch.Tensor,
@@ -107,11 +108,22 @@ def computeProductWithPolarizationMatrix(
     induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
     lagrange_muls = vec_in[(4 * n_charges):]
     induced_multipoles_a = torch.hstack((induced_charges.unsqueeze(1), induced_dipoles))
+    induced_multipoles_i_lr_p = induced_multipoles_a[pairs_lr_i_a]
+    induced_multipoles_i_sr_p = induced_multipoles_a[pairs_sr_i_a]
 
-    induced_electric_potential, induced_electric_field = computeInducedElectricPotentialAndFieldsFromPairs(
-        n_charges, pairs_i_a, pairs_j_a,
-        dists_p, dist_vecs_p, b_ij_p, induced_multipoles_a
-    )
+    # Get real field data #
+    edata_point_pairwise = torch.bmm(cc_tensor_lr, induced_multipoles_i_lr_p.unsqueeze(2))
+    edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
+    
+    # Accumulate the total potentials, fields, and field gradients.
+    # One contribution is accumulated over all long-range pairs, while the other
+    # accumulates just the penetration contribution.
+    induced_field_data = torch.zeros(n_charges, 4)
+    induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
+    induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+    induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
+    induced_electric_potential = induced_field_data[:, 0]
+    induced_electric_field = induced_field_data[:, 1:4]
 
     # Get sum of induced charges in every polarization group
     constraints = segment_csr(induced_charges[pol_group_indices_a], pol_group_segment_indices, reduce='sum')
@@ -123,6 +135,5 @@ def computeProductWithPolarizationMatrix(
     lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device)
     lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
 
-    #lagrange_muls_a = lagrange_muls[group_scatter]
     res = torch.concat((eta * induced_charges + lagrange_muls_a + induced_electric_potential, torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(), constraints))
     return res, induced_electric_potential, induced_electric_field

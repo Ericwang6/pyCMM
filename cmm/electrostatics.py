@@ -1,7 +1,7 @@
 from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
-from .multipole import computeInteractionTensor, computeUndampedInteractionTensorBlocks, formDampingFactorBlocks
+from .multipole import computeInteractionTensor
 
 def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr

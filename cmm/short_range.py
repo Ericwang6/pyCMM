@@ -36,6 +36,18 @@ def computeShortRangeTwoCenterDampFactors(dr: torch.Tensor, bij: torch.Tensor):
 
     return torch.stack([p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
+def computeShortRangePolarizationDampFactors(dr: torch.Tensor, bij: torch.Tensor):
+    u = bij * dr
+    u2 = u * u
+    u3 = u2 * u
+    u4 = u3 * u
+    u5 = u4 * u
+    u6 = u5 * u
+    exp_u = torch.exp(-u)
+    p1 = 1 + 1/9 * u + 1/11 * u2 + 1/13 * u3 + 1/15 * u4
+    p3 = 1 + u + 2/99 * u2 - 9/143 * u3 - 8/65 * u4 + 1/15 * u5
+    p5 = 1 + u + 101/297 * u2 + 2/297 * u3 + 43/2145 * u4 - 10/117 * u5 + 1/45 * u6
+    return torch.stack([p * exp_u for p in [p1, p3, p5]], dim=0)
 
 def scaleMultipoles(
     mPoles: torch.Tensor, 
