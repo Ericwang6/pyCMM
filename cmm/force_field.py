@@ -574,8 +574,8 @@ class CMM(ForceField):
                 self.alpha_ewald, multipoles_2
             )
             ene_ewald_long_range = long_range_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
-            #long_range_potential_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
-            
+            long_range_potential_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
+            print(ene_ewald_long_range)
             ene_ewald_self = self_interaction(cm.coords, monopoles, dipo_2, quad_2, self.alpha_ewald)
             ene_ewald = ene_ewald_direct + ene_ewald_long_range + ene_ewald_self
 

@@ -310,19 +310,25 @@ def long_range_potential_vectorized(coords: torch.Tensor, q: torch.Tensor, p: to
     hkl_range = torch.arange(-max_hkl, max_hkl + 1)
     all_hkl = torch.cartesian_prod(hkl_range, hkl_range, hkl_range).to(torch.float64)
     all_hkl = all_hkl[torch.norm(all_hkl, dim=1) != 0.0]
-    kvectors = torch.matmul(all_hkl, reciprocal_box) # Can also be expressed with torch.bmm if faster
+    kvectors = torch.matmul(all_hkl, reciprocal_box)
     
     # Precalculating gaussian factors
-    k_squared = torch.einsum('ij,ij->i', kvectors, kvectors) # @SPEED: This is a row-wise dot product and can likely be done more efficiently.
-    
+    k_squared = torch.einsum('ij,ij->i', kvectors, kvectors)
     gaussian_factors = torch.exp(-torch.pi * torch.pi * k_squared / (alpha * alpha)) / k_squared
 
     # Calculating all structure factors
     k_dot_r = torch.matmul(kvectors, coords.T)
     cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
     sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
+
+    # NOTE(JOE): I am confident that the potential, field, and field gradient expressions here are correct for charges.
+    # So, the only unchecked source of errors would be in the fourier transform of the multipoles below.
+    # If we run into problems with multipoles, the below two lines are the first place to look.
+    # See: A coherent derivation of the Ewald summation for arbitrary orders of multipoles
+    # for relevant expressions.
     F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi)
     F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
+    
     exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
     exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
     F_2 = torch.complex(F_l_real, F_l_imag)
@@ -333,7 +339,12 @@ def long_range_potential_vectorized(coords: torch.Tensor, q: torch.Tensor, p: to
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
 
-    return phi, field
+    k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
+    field_grad = 4 * torch.pi  * (
+        torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
+    ) / V
+
+    return phi, field, field_grad
 
 def self_interaction(coords, q , p, t, alpha):
     #Self interaction energy. Subtracted from total Ewald energy.
