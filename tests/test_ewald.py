@@ -79,7 +79,6 @@ def test_ewald_exact():
 def test_ewald_with_polarization():
     torch.set_default_dtype(torch.float64)
 
-    # Use a NaCl crystal to compare the calculated and Madelung energies
     numParticles = 894
     boxSize = 3.00646
 
@@ -132,7 +131,7 @@ def test_ewald_with_polarization():
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15), use_ewald=True)
+    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-7), use_ewald=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params

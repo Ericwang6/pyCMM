@@ -2,7 +2,7 @@ import torch, math
 from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald, computeDampFactorsErfc
-from .ewald import long_range_vectorized, self_interaction
+from .ewald import long_range_vectorized, long_range_potential_vectorized, self_interaction
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
 from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs
@@ -574,6 +574,8 @@ class CMM(ForceField):
                 self.alpha_ewald, multipoles_2
             )
             ene_ewald_long_range = long_range_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
+            #long_range_potential_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
+            
             ene_ewald_self = self_interaction(cm.coords, monopoles, dipo_2, quad_2, self.alpha_ewald)
             ene_ewald = ene_ewald_direct + ene_ewald_long_range + ene_ewald_self
 
