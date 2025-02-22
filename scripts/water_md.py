@@ -296,7 +296,12 @@ class CMMWater(nn.Module):
         pairs = self.all_pairs[:, mask]
         drVecs = drVecs[mask]
         return pairs, drVecs
-
+    def computeElectricFieldandPotential(self,coords:torch.Tensor,box:torch.tensor,kappa=1.41,kcutoff=1.5):
+        q = self.nb_params['mono']  
+        p = self.nb_params['dipo']   
+        t = self.nb_params['quad']  
+        electric_field = cmm.get_electric_field(coords,q,p,t,box,kappa,kcutoff)
+        return electric_field
 
 if __name__ == '__main__':
     model = CMMWater(2, do_polarization=True)
@@ -317,7 +322,9 @@ if __name__ == '__main__':
     for key in energies:
         energies[key] *= cmm.HARTREE2KCAL
     pprint(energies)
-
+    field = model.computeElectricFieldandPotential(coords,box,kappa=1.41,kcutoff=1.5)
+    print("ELECTRIC FIELD")
+    print(field)
     with torch.no_grad():
         grad_numerical = np.zeros_like(coords.detach().numpy())
         for i in range(coords.shape[0]):
