@@ -1,6 +1,6 @@
 import torch, math
 from torch_scatter import segment_csr
-from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
+from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald, computeDampFactorsErfc
 from .ewald import long_range_vectorized, long_range_potential_vectorized, self_interaction
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
@@ -559,12 +559,20 @@ class CMM(ForceField):
         # Rotation Matrices #
         rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         if self.use_ewald:
+            # TODO: Clean up the electric multipoles and separate out what multipole tensors need to be constructed
+            # by putting this in an electrostatic term which can be modified by how damping is computed, what long-range
+            # method, etc. Start by simply getting rid of the redundant copies of multipoles and separating the formation
+            # of the polytensor (N,10) from the separately rotated multipoles (N,1), (N,3), and (N,3,3). The latter are used
+            # in the long-range with little loss of speed while the former is used in direct space.
             monopoles = (q_shell + Z).detach().clone()
             dipo_2 = dipo.detach().clone()
             quad_2 = quad.detach().clone()
             multipoles_2 = rotateMultipoles(
                 monopoles, dipo_2, quad_2, rotation_matrices
             ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
+            mono_lr = monopoles
+            dipo_lr = rotateDipoles(dipo_2, rotation_matrices).squeeze(1)
+            quad_lr = rotateQuadrupoles(quad_2, rotation_matrices)
 
             ene_ewald_direct, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
                 natoms,
@@ -573,11 +581,28 @@ class CMM(ForceField):
                 dists_lr, dist_vecs_lr,
                 self.alpha_ewald, multipoles_2
             )
-            ene_ewald_long_range = long_range_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
-            long_range_potential_vectorized(cm.coords, monopoles, dipo_2, quad_2, cm.box, self.alpha_ewald, self.k_max)
-            print(ene_ewald_long_range)
-            ene_ewald_self = self_interaction(cm.coords, monopoles, dipo_2, quad_2, self.alpha_ewald)
+            ene_ewald_long_range = long_range_vectorized(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
+            ene_ewald_self = self_interaction(cm.coords, mono_lr, dipo_lr, quad_lr, self.alpha_ewald)
+            
+            ewald_potential, ewald_field, ewald_field_gradient = long_range_potential_vectorized(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
+            
             ene_ewald = ene_ewald_direct + ene_ewald_long_range + ene_ewald_self
+            ene_ewald_2 = 0.5 * (
+                torch.einsum("n,n->", mono_lr, ewald_potential) +
+                torch.einsum("ni,ni->", dipo_lr, ewald_field) +
+                torch.einsum("nij,nij->", quad_lr, ewald_field_gradient)
+            )
+
+            # HERE: Can successfully get the long-range energy in terms of the potential expansion.
+            # Now, refactor the electrostatics code into short-range (totally separate code-path),
+            # direct space (either uses erfc damping or no damping factors), and reciprocal space
+            # which includes the self-contributions. The equations in papers basically put the
+            # self contributions into the interaction tensors and polarizability blocks of the
+            # polarization matrix. What we are going to do is mathematically identical to that
+            # but since we solve with PCG, we just need to include the self-contributions to
+            # the potential and field in our iterations. So, the only thing that needs to change
+            # is when we compute the matrix-vector product we make a call to this ewald kernel
+            # with the updated values of the multipoles.
 
         # Pauli charge flux #
         if topology.bonded_pairs.size(0):

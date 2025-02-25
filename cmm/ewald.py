@@ -334,7 +334,7 @@ def long_range_potential_vectorized(coords: torch.Tensor, q: torch.Tensor, p: to
     F_2 = torch.complex(F_l_real, F_l_imag)
     structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
     phi_expanded = (gaussian_factors * structure_factors).unsqueeze(1) * exp_minus_k_dot_r
-    phi = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V) # can take .real inside sum since .imag sums to zero.
+    potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V) # can take .real inside sum since .imag sums to zero.
     field = 2 * (
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
@@ -344,7 +344,17 @@ def long_range_potential_vectorized(coords: torch.Tensor, q: torch.Tensor, p: to
         torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
     ) / V
 
-    return phi, field, field_grad
+    # Now get the self contributions to potential, field, and field gradient #
+    alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
+    potential = potential - 2 * alpha_over_root_pi * q
+    field = field + alpha_over_root_pi * (4 * alpha / 3) * p
+    field_grad = field_grad + alpha_over_root_pi * (8 * alpha * alpha / 5) * t
+
+    #potential = -2 * alpha_over_root_pi * q
+    #field = alpha_over_root_pi * (4 * alpha / 3) * p
+    #field_grad = alpha_over_root_pi * (8 * alpha * alpha / 5) * t
+
+    return potential, field, field_grad
 
 def self_interaction(coords, q , p, t, alpha):
     #Self interaction energy. Subtracted from total Ewald energy.
