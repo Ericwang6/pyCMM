@@ -72,6 +72,27 @@ def rotateMultipoles(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor,
     quad = rotateQuadrupoles(quad, rotMatrix)[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]]
     return torch.hstack((mono, dipo, quad))
 
+def convertMultipolesToPolytensor(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor):
+    """
+    Takes already-rotated multipoles and flattens to (N, 10) polytensor with quadrupole
+    entries appropriately scaled so that symmetry-equivalent operations are avoided.
+
+    Parameters
+    ----------
+    mono: torch.Tensor
+        Monopoles, shape (N,)
+    dipo: torch.Tensor
+        Dipoles, shape (N, 3)
+    quad: torch.Tensor
+        Quadrupoles, shape (N, 3, 3)
+    
+    Returns
+    -------
+    mPoles: torch.Tensor
+        Multipoles [q, ux, uy, uz, Qxx, Qxy, Qxz, Qyy, Qyz, Qzz], shape (N, 10)
+    """
+    return torch.hstack((mono.unsqueeze(1), dipo, quad[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]])) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=mono.device)
+
 
 def computeCartesianQuadrupoles(quad_s: torch.Tensor):
     """

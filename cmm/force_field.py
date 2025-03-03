@@ -1,10 +1,10 @@
 import torch, math
 from torch_scatter import segment_csr
-from .multipole import computeCartesianQuadrupoles, rotateMultipoles, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
-from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairs, computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald, computeDampFactorsErfc
-from .ewald import long_range_vectorized, long_range_potential_vectorized, self_interaction
+from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
+from .electrostatics import computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald, computeDampFactorsErfc
+from .ewald import long_range_potential_vectorized
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
-from .short_range import scaleMultipoles, computePairwiseChargeTransfer, computeShortRangeEnergyFromPairs, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
+from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
 from .axis_types import AxisTypes
@@ -446,6 +446,44 @@ class CMM(ForceField):
         # Dispersion Multipoles #
         C6_disp = params.get_atomic_parameters('C6_disp')
 
+        # Electric Multipoles #
+        rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
+        mono_lr = mono
+        dipo_lr = rotateDipoles(dipo, rotation_matrices).squeeze(1)
+        quad_lr = rotateQuadrupoles(quad, rotation_matrices)
+
+        multipoles_real = convertMultipolesToPolytensor(
+            mono_lr, dipo_lr, quad_lr
+        )
+        multipoles_cp = multipoles_real.clone()
+        multipoles_cp[:, 0] = mono - Z
+        
+        # @SPEED: Z_mpoles is all zeros besides the charge. Can certainly avoid allocating the
+        # multipolar array entries and thereby eliminate the multiplications by zero.
+        # Happens in the short-range index space so will not be a particularly large optimization.
+        Z_mpoles = torch.zeros_like(multipoles_real)
+        Z_mpoles[:, 0] += Z
+        multipoles_ct_acc = scaleMultipoles(multipoles_real, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
+        multipoles_ct_don = scaleMultipoles(multipoles_real, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
+        multipoles_pauli = scaleMultipoles(multipoles_real, q_pauli, Kdipo_pauli, Kquad_pauli)
+        multipoles_xpol = scaleMultipoles(multipoles_real, q_xpol, Kdipo_xpol, Kquad_xpol)
+
+        # Distribute multipoles over appropriate interaction pairs #
+        multipoles_ct_acc_i_p = multipoles_ct_acc[pairs_sr_i_a]
+        multipoles_ct_acc_j_p = multipoles_ct_acc[pairs_sr_j_a]
+        multipoles_ct_don_i_p = multipoles_ct_don[pairs_sr_i_a]
+        multipoles_ct_don_j_p = multipoles_ct_don[pairs_sr_j_a]
+        multipoles_pauli_i_p = multipoles_pauli[pairs_sr_i_a]
+        multipoles_pauli_j_p = multipoles_pauli[pairs_sr_j_a]
+        multipoles_xpol_i_p = multipoles_xpol[pairs_sr_i_a]
+        multipoles_xpol_j_p = multipoles_xpol[pairs_sr_j_a]
+        multipoles_cp_i_p = multipoles_cp[pairs_sr_i_a]
+        multipoles_cp_j_p = multipoles_cp[pairs_sr_j_a]
+        multipoles_real_i_p = multipoles_real[pairs_lr_i_a]
+        multipoles_real_j_p = multipoles_real[pairs_lr_j_a]
+        Z_mpoles_i_p = Z_mpoles[pairs_sr_i_a]
+        Z_mpoles_j_p = Z_mpoles[pairs_sr_j_a]
+
         # Atomic widths #
         b_elec = params.get_atomic_parameters('b_elec')
         b_pauli = params.get_atomic_parameters('b_pauli')
@@ -556,53 +594,22 @@ class CMM(ForceField):
             k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
             k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
-        # Rotation Matrices #
-        rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
         if self.use_ewald:
-            # TODO: Clean up the electric multipoles and separate out what multipole tensors need to be constructed
-            # by putting this in an electrostatic term which can be modified by how damping is computed, what long-range
-            # method, etc. Start by simply getting rid of the redundant copies of multipoles and separating the formation
-            # of the polytensor (N,10) from the separately rotated multipoles (N,1), (N,3), and (N,3,3). The latter are used
-            # in the long-range with little loss of speed while the former is used in direct space.
-            monopoles = (q_shell + Z).detach().clone()
-            dipo_2 = dipo.detach().clone()
-            quad_2 = quad.detach().clone()
-            multipoles_2 = rotateMultipoles(
-                monopoles, dipo_2, quad_2, rotation_matrices
-            ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
-            mono_lr = monopoles
-            dipo_lr = rotateDipoles(dipo_2, rotation_matrices).squeeze(1)
-            quad_lr = rotateQuadrupoles(quad_2, rotation_matrices)
-
             ene_ewald_direct, elec_potential, elec_field, elec_field_grad = computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
                 natoms,
-                pairs_lr_i_a,
                 pairs_lr_j_a,
                 dists_lr, dist_vecs_lr,
-                self.alpha_ewald, multipoles_2
+                multipoles_real_i_p, multipoles_real_j_p,
+                self.alpha_ewald
             )
-            ene_ewald_long_range = long_range_vectorized(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
-            ene_ewald_self = self_interaction(cm.coords, mono_lr, dipo_lr, quad_lr, self.alpha_ewald)
             
             ewald_potential, ewald_field, ewald_field_gradient = long_range_potential_vectorized(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
             
-            ene_ewald = ene_ewald_direct + ene_ewald_long_range + ene_ewald_self
-            ene_ewald_2 = 0.5 * (
+            ene_ewald = 0.5 * (
                 torch.einsum("n,n->", mono_lr, ewald_potential) +
                 torch.einsum("ni,ni->", dipo_lr, ewald_field) +
                 torch.einsum("nij,nij->", quad_lr, ewald_field_gradient)
-            )
-
-            # HERE: Can successfully get the long-range energy in terms of the potential expansion.
-            # Now, refactor the electrostatics code into short-range (totally separate code-path),
-            # direct space (either uses erfc damping or no damping factors), and reciprocal space
-            # which includes the self-contributions. The equations in papers basically put the
-            # self contributions into the interaction tensors and polarizability blocks of the
-            # polarization matrix. What we are going to do is mathematically identical to that
-            # but since we solve with PCG, we just need to include the self-contributions to
-            # the potential and field in our iterations. So, the only thing that needs to change
-            # is when we compute the matrix-vector product we make a call to this ewald kernel
-            # with the updated values of the multipoles.
+            ) + ene_ewald_direct
 
         # Pauli charge flux #
         if topology.bonded_pairs.size(0):
@@ -637,37 +644,6 @@ class CMM(ForceField):
             )
         
         eta_times_2 = 2 * eta
-        
-        multipoles = rotateMultipoles(
-            q_shell, dipo, quad, rotation_matrices
-        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
-
-        multipoles_real = rotateMultipoles(
-            mono, dipo, quad, rotation_matrices
-        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=pairs.device)
-        multipoles_cp = multipoles_real.clone()
-        multipoles_cp[:, 0] = mono - Z
-        Z_mpoles = torch.zeros_like(multipoles)
-        Z_mpoles[:, 0] += Z
-        multipoles_ct_acc = scaleMultipoles(multipoles, q_ct_acc, Kdipo_ct_acc, Kquad_ct_acc)
-        multipoles_ct_don = scaleMultipoles(multipoles, q_ct_don, Kdipo_ct_don, Kquad_ct_don)
-        multipoles_pauli = scaleMultipoles(multipoles, q_pauli, Kdipo_pauli, Kquad_pauli)
-        multipoles_xpol = scaleMultipoles(multipoles, q_xpol, Kdipo_xpol, Kquad_xpol)
-
-        multipoles_ct_acc_i_p = multipoles_ct_acc[pairs_sr_i_a]
-        multipoles_ct_acc_j_p = multipoles_ct_acc[pairs_sr_j_a]
-        multipoles_ct_don_i_p = multipoles_ct_don[pairs_sr_i_a]
-        multipoles_ct_don_j_p = multipoles_ct_don[pairs_sr_j_a]
-        multipoles_pauli_i_p = multipoles_pauli[pairs_sr_i_a]
-        multipoles_pauli_j_p = multipoles_pauli[pairs_sr_j_a]
-        multipoles_xpol_i_p = multipoles_xpol[pairs_sr_i_a]
-        multipoles_xpol_j_p = multipoles_xpol[pairs_sr_j_a]
-        multipoles_cp_i_p = multipoles_cp[pairs_sr_i_a]
-        multipoles_cp_j_p = multipoles_cp[pairs_sr_j_a]
-        multipoles_real_i_p = multipoles_real[pairs_lr_i_a]
-        multipoles_real_j_p = multipoles_real[pairs_lr_j_a]
-        Z_mpoles_i_p = Z_mpoles[pairs_sr_i_a]
-        Z_mpoles_j_p = Z_mpoles[pairs_sr_j_a]
 
         # All multipolar interaction contributions #
         ct_pairwise_ij = torch.bmm(multipoles_ct_don_j_p.unsqueeze(1), torch.bmm(ct_interaction_tensor_sr, multipoles_ct_acc_i_p.unsqueeze(2))).flatten()
@@ -825,8 +801,6 @@ class CMM(ForceField):
 
         if self.use_ewald:
             energies["ewald_direct"] = ene_ewald_direct
-            energies["ewald_long_range"] = ene_ewald_long_range
-            energies["ewald_self"] = ene_ewald_self
             energies["ewald"] = ene_ewald
             energies["tot"] = ene_tot + ene_ewald
 

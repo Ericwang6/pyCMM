@@ -179,19 +179,16 @@ def computePermanentElectricPotentialExpansion(
 
 def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
     natoms: torch.NumberType,
-    pairs_i_a: torch.Tensor,
     pairs_j_a: torch.Tensor,
     dists_p: torch.Tensor,
     dist_vecs_p: torch.Tensor,
-    alpha: torch.Tensor, mPoles_a: torch.Tensor
+    mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
+    alpha: torch.Tensor
 ):
     # NOTE(JOE): This is hard-coded for ewald erfc but we should really come up
     # with a generic solution. We can basically just take in the damping factors that are needed.
     # The force field can define the damping type (per-atom perhaps) and then we can just have
     # a utility function to get the damping factors outside of this function call.
-
-    mPoles_i_p = mPoles_a[pairs_i_a]
-    mPoles_j_p = mPoles_a[pairs_j_a]
 
     drInv = 1 / dists_p
 
@@ -209,9 +206,9 @@ def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
     eFieldGrad_i = ss_edata[:, 4:].reshape(-1, 6)
 
     # Accumulate fields #
-    E_potentials = torch.zeros(natoms, device=mPoles_a.device) # N
-    E_fields = torch.zeros(natoms, 3, device=mPoles_a.device) # Nx3
-    E_field_grads = torch.zeros(natoms, 6, device=mPoles_a.device) # Nx6 because only store upper triangle
+    E_potentials = torch.zeros(natoms, device=dists_p.device) # N
+    E_fields = torch.zeros(natoms, 3, device=dists_p.device) # Nx3
+    E_field_grads = torch.zeros(natoms, 6, device=dists_p.device) # Nx6 because only store upper triangle
 
     # How do I do this in a way that doesn't copy?
     E_potentials.scatter_add_(0, pairs_j_a, ePot_i)
