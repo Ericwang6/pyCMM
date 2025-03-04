@@ -344,15 +344,11 @@ def long_range_potential_vectorized(coords: torch.Tensor, q: torch.Tensor, p: to
         torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
     ) / V
 
-    # Now get the self contributions to potential, field, and field gradient #
+    # Now add in the self contributions to potential, field, and field gradient #
     alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
     potential = potential - 2 * alpha_over_root_pi * q
     field = field + alpha_over_root_pi * (4 * alpha / 3) * p
     field_grad = field_grad + alpha_over_root_pi * (8 * alpha * alpha / 5) * t
-
-    #potential = -2 * alpha_over_root_pi * q
-    #field = alpha_over_root_pi * (4 * alpha / 3) * p
-    #field_grad = alpha_over_root_pi * (8 * alpha * alpha / 5) * t
 
     return potential, field, field_grad
 

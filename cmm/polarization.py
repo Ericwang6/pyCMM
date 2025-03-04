@@ -74,12 +74,6 @@ def solvePolarizationByCG(
             pol_group_lengths_g
         )
         gamma = torch.dot(residual, residual) / torch.dot(P, TP)
-        # NOTE(JOE): When we switch to not using autodiff through
-        # the polarization solver, then we can uncomment the below
-        # line and remove the one after which is needed for autodiff
-        # tracking to work. After doing so, this function should return
-        # nothing and we can just use the guess vector as the solution
-        # vector since it gets updated in place.
         guess_vector += gamma * P
         beta = 1.0 / torch.dot(residual, residual)
         residual -= gamma * TP

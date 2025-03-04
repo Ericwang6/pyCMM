@@ -96,17 +96,19 @@ def test_ewald_with_polarization():
         nonbonded.addMultipole(
             1.0, np.zeros(3), np.zeros(9),
             nonbonded.NoAxisType, 0, 0, 0,
-            100000000.0, 0.0, 0.0
+            100000000.0, 0.0, 0.9542199 * (BOHR2NM * BOHR2NM * BOHR2NM)
         )
     for _ in range(numParticles // 2):
         nonbonded.addMultipole(
             -1.0, np.zeros(3), np.zeros(9),
             nonbonded.NoAxisType, 0, 0, 0,
-            100000000.0, 0.0, 0.0#32.2880907 * (BOHR2NM * BOHR2NM * BOHR2NM)
+            100000000.0, 0.0, 32.2880907 * (BOHR2NM * BOHR2NM * BOHR2NM)
         )
-    nonbonded.setPolarizationType(0)
-    nonbonded.setMutualInducedTargetEpsilon(1e-8)
-    nonbonded.setMutualInducedMaxIterations(120)
+    #nonbonded.setPolarizationType(0) # Mutual
+    nonbonded.setPolarizationType(1) # Direct
+    #nonbonded.setPolarizationType(2) # Extrapolated
+    #nonbonded.setMutualInducedTargetEpsilon(1e-8)
+    #nonbonded.setMutualInducedMaxIterations(120)
     system.setDefaultPeriodicBoxVectors(np.array([boxSize, 0, 0]), np.array([0, boxSize, 0]), np.array([0, 0, boxSize]))
     system.addForce(nonbonded)
     context = Context(system, integrator)
@@ -117,6 +119,7 @@ def test_ewald_with_polarization():
 
     energies_amoeba = context.getState(energy=True, forces=True).getPotentialEnergy()
     print(energies_amoeba)
+    print(nonbonded.getInducedDipoles(context))
 
     coords = torch.tensor(positions / BOHR2NM, dtype=torch.float64, requires_grad=True)
     bonds = np.array([], dtype=np.float64)
@@ -138,4 +141,4 @@ def test_ewald_with_polarization():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
-    print(energies["ewald"] * HARTREE2KJ)
+    print((energies["ewald"] + energies["perm_elec"]) * HARTREE2KJ)
