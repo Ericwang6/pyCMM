@@ -74,7 +74,7 @@ def test_ewald_exact():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
-    assert torch.isclose(torch.tensor(exactEnergy._value), energies["ewald"] * HARTREE2KJ)
+    assert torch.isclose(torch.tensor(exactEnergy._value), (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ)
 
 def test_ewald_with_polarization():
     torch.set_default_dtype(torch.float64)
