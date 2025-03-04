@@ -151,7 +151,7 @@ class Topology:
             groups = torch.sort(self.angle_atoms, dim=1).values
         else:
             groups = torch.empty_like(self.angle_atoms)
-        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(0)
+        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(1)
         
         if single_atom_groups.numel() > 0:
             self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind() + single_atom_groups.unbind()), device=self.device, requires_grad=False)
