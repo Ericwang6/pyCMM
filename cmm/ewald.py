@@ -39,7 +39,7 @@ def short_range(coords, q , p, t, box, kappa, rcutoff):
         f_6 = 2*(kappa2 + 1/r2) * f_4 + 4*f_2/r4
         #######|||||Multipole tensors are represented by T_. Also implemented are the D_ tensors|||||#######
         T_ = 1/r
-        T_a = -rhat/r3
+        T_a = -r_/r3
         T_ab = (3 * torch.outer(r_,r_) - r2 * delta)/r5
         #################################################################
         term1_abg = 15 * torch.einsum("i,j,k->ijk", r_,r_,r_)
@@ -145,6 +145,8 @@ def long_range(coords, q, p, t, box, kappa, kcutoff):
     sk_dipole_sin[i] = torch.sum(k_dot_p * torch.sin(k_dot_r))
     sk_quad_cos[i] = torch.sum(h_contract_theta * torch.cos(k_dot_r))
     sk_quad_sin[i] = torch.sum(h_contract_theta * torch.sin(k_dot_r))
+  print("EWALD COSINE SK: ", sk_cos)
+  print("LENGTH OF COSINE STRUCTURE FACTOR: ", len(sk_cos))
   ###Charge–charge### 
   cc_ene = (4*math.pi/ V)* torch.sum(gaussian_factor * (sk_cos**2 + sk_sin**2))
   ###Charge–dipole### 
