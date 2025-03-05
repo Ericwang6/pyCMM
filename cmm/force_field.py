@@ -393,7 +393,7 @@ class CMM(ForceField):
         switch_lr = switch_543(dists_lr, switch_start_lr, cutoff_lr)
 
         # Get pairs, dists, and vectors for short-range nonbonded potential #
-        indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long), torch.tensor(-1, dtype=torch.long))
+        indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long, device=dists_lr.device), torch.tensor(-1, dtype=torch.long, device=dists_lr.device))
         indices_lr_to_sr = indices_lr_to_sr[indices_lr_to_sr >= 0]
         all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_lr_to_sr]
 
@@ -660,8 +660,8 @@ class CMM(ForceField):
 
         # Accumulate the total potentials, fields, and field gradients.
         # One contribution is accumulated over all long-range pairs, while the other
-        # accumulates just the penetration contribution over short-range pairs.
-        all_field_data = torch.zeros(natoms, 10)
+        # accumulates just the penetration contribution.
+        all_field_data = torch.zeros(natoms, 10, device=dists.device, dtype=dists.dtype)
         all_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 10), edata_point_pairwise.squeeze(2))
         all_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 10), edata_cs_pairwise_ij.squeeze(2))
         all_field_data.mul_(torch.tensor([1, -1, -1, -1, -1, -1, -1, -1, -1, -1], device=pairs.device).reshape(1, -1))
@@ -695,7 +695,7 @@ class CMM(ForceField):
         inverse_polarizabilities = torch.linalg.inv(polarizabilities)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        induced_field_data = torch.zeros(natoms, 4)
+        induced_field_data = torch.zeros(natoms, 4, device=dists.device, dtype=dists.dtype)
         
         long_range_induced_potential_function = None
         if self.use_ewald:

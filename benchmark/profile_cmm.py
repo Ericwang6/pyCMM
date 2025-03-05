@@ -9,11 +9,12 @@ import cmm
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_xyz_tinker
-from cmm.cmm_water import CMMWater
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
+from cmm.interfaces import CMM_ASE
+from ase.optimize import LBFGS
 
 def get_water_box_coords(requires_grad=True, device="cpu"):
     labels, atom_types, coords, bonds = read_xyz_tinker(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"))
@@ -35,14 +36,15 @@ def profile_cmm_evaluation():
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+        ff = CMM()
 
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
 
     def run_model_forward_and_backward(ff, cm, topology, parameters):
         energies = ff.evaluate(cm, topology, parameters)
@@ -59,7 +61,6 @@ def profile_cmm_evaluation():
        #num_threads=num_threads,
        label="Average Inference Duration",
     )
-    #print(t.timeit(100))
     print(t.timeit(5))
 
     #with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=False) as prof:
@@ -68,6 +69,52 @@ def profile_cmm_evaluation():
     #        energies['tot'].backward()
     #print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
+def profile_optimization():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds = get_water_box_coords(requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=False)
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    ff_ase.calculate()
+    dyn = LBFGS(ff_ase.atoms)
+    dyn.run(fmax=1e-6)
+
+    #def run_model_forward_and_backward(ff, cm, topology, parameters):
+    #    energies = ff.evaluate(cm, topology, parameters)
+    #    energies['tot'].backward(retain_graph=True)
+    #    return energies
+    
+    #t = benchmark.Timer(
+    #   stmt = 'run_model_forward_and_backward(ff, cm, topology, parameters)',
+    #   globals={
+    #       'run_model_forward_and_backward': run_model_forward_and_backward,
+    #       'ff': ff, 'cm': cm, 'topology': topology, 'parameters': parameters
+    #    },
+    #   label="Average Inference Duration",
+    #)
+
+    #with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=False) as prof:
+    #    with record_function("CMM_evaluate_water_box_216"):
+    #        energies = ff.evaluate(cm, topology, parameters)
+    #        energies['tot'].backward()
+    #print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+
 if __name__ == "__main__":
-    profile_cmm_evaluation()
+    #profile_cmm_evaluation()
+    profile_optimization()
+    #profile_md()
     

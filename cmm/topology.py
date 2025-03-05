@@ -50,9 +50,9 @@ class Topology:
         return bonded_pairs_i, angle_pairs_i
 
     def _find_atoms_for_building_local_axes(self):
-        self.xatoms = torch.full((self.natoms,), -1)
-        self.yatoms = torch.full((self.natoms,), -1)
-        self.zatoms = torch.full((self.natoms,), -1)
+        self.xatoms = torch.full((self.natoms,), -1, device=self.device)
+        self.yatoms = torch.full((self.natoms,), -1, device=self.device)
+        self.zatoms = torch.full((self.natoms,), -1, device=self.device)
 
         if self.bonded_atoms.size(0) == 0:
             return
