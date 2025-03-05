@@ -42,7 +42,7 @@ def solvePolarizationByCG(
     pol_group_segment_indices: torch.Tensor,
     pol_group_lengths_g: torch.Tensor,
     long_range_potential_function=None,
-    residual_threshold: torch.Tensor = torch.tensor(1e-20),
+    residual_threshold: torch.Tensor = torch.tensor(1e-10),
     max_iter: torch.NumberType = 400,
 ):
     # TODO: This works well. We should always solve completely on the first step
@@ -66,7 +66,7 @@ def solvePolarizationByCG(
     )
     residual = b_vector - TM0
     P = residual.detach().clone()
-    for _ in range(max_iter):
+    for i_iter in range(max_iter):
         TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
             pairs_lr_i_a, pairs_lr_j_a,
@@ -84,6 +84,7 @@ def solvePolarizationByCG(
         beta = 1.0 / torch.dot(residual, residual)
         residual -= gamma * TP
         if torch.norm(residual) < residual_threshold:
+            print(i_iter, " steps to converge")
             return guess_vector
         beta *= torch.dot(residual, residual)
         P = residual + beta * P
@@ -128,13 +129,13 @@ def computeProductWithPolarizationMatrix(
     induced_electric_potential = induced_field_data[:, 0]
     induced_electric_field = induced_field_data[:, 1:4]
 
-    # Get reiprocal space field data (ewald + self contribution) #
-    if long_range_potential_function is not None:
-        # Get reciprocal space and self contributions to field variables
-        # and corresponding electrostatic interactions.
-        ewald_potential, ewald_field = long_range_potential_function(induced_charges, induced_dipoles)
-        induced_electric_potential = induced_electric_potential + ewald_potential
-        induced_electric_field = induced_electric_field + ewald_field
+    # Get reciprocal space field data (ewald + self contribution) #
+    #if long_range_potential_function is not None:
+    #    # Get reciprocal space and self contributions to field variables
+    #    # and corresponding electrostatic interactions.
+    #    ewald_potential, ewald_field = long_range_potential_function(induced_charges, induced_dipoles)
+    #    induced_electric_potential = induced_electric_potential + ewald_potential
+    #    induced_electric_field = induced_electric_field + ewald_field
 
     # Get sum of induced charges in every polarization group
     constraints = segment_csr(induced_charges[pol_group_indices_a], pol_group_segment_indices, reduce='sum')

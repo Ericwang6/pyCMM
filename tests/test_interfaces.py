@@ -44,7 +44,6 @@ def test_ase():
     assert torch.isclose(energies['tot'], torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(grad_1, torch.from_numpy(ff_ase.results['forces']))
 
-
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)
 

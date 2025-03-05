@@ -42,6 +42,8 @@ class CMM(ForceField):
         self.cutoff_ewald = cutoff_ewald
         self.ewald_tolerance = ewald_tolerance
 
+        self.last_induced_multipoles = None
+
         self._build()
     
     def _build(self):
@@ -701,12 +703,11 @@ class CMM(ForceField):
         if self.use_ewald:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
         with torch.no_grad():
-            guess_solution = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
-            # HERE: Improve the guess to incorporate the induced charges and a guess of the bias potential.
-            #print(guess_solution[natoms:4*natoms][-6:] * BOHR2NM)
+            if self.last_induced_multipoles is None:
+                self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
 
             induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
-                guess_solution,
+                self.last_induced_multipoles,
                 b_vec,
                 natoms,
                 pairs_lr_i_a, pairs_lr_j_a,
@@ -719,6 +720,7 @@ class CMM(ForceField):
                 topology.pol_group_lengths_g,
                 long_range_induced_potential_function
             )
+            self.last_induced_multipoles = induced_multipoles_and_lagrange_muls_out
 
         TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
             induced_multipoles_and_lagrange_muls_out, natoms,

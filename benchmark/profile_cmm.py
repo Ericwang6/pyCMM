@@ -81,7 +81,7 @@ def profile_optimization():
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=False)
+    ff = CMM(use_ewald=True)
     with torch.no_grad():
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
