@@ -177,55 +177,6 @@ def computePermanentElectricPotentialExpansion(
 
     return E_potentials, E_fields, E_field_grads
 
-def computePermanentElectricPotentialExpansionAndEnergyFromPairsEwald(
-    natoms: torch.NumberType,
-    pairs_j_a: torch.Tensor,
-    dists_p: torch.Tensor,
-    dist_vecs_p: torch.Tensor,
-    mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
-    alpha: torch.Tensor
-):
-    # NOTE(JOE): This is hard-coded for ewald erfc but we should really come up
-    # with a generic solution. We can basically just take in the damping factors that are needed.
-    # The force field can define the damping type (per-atom perhaps) and then we can just have
-    # a utility function to get the damping factors outside of this function call.
-
-    drInv = 1 / dists_p
-
-    # damping factors
-    erfc_damps = computeDampFactorsErfc(dists_p, alpha)
-
-    # interaction tensors
-    ss_tensor_ij = computeInteractionTensor(dist_vecs_p, erfc_damps, drInv)
-
-    # shell-shell interactions
-    ss_edata = torch.bmm(ss_tensor_ij, mPoles_i_p.unsqueeze(2))
-    ssPairwiseEnergies = torch.bmm(mPoles_j_p.unsqueeze(1), ss_edata).flatten()
-    ePot_i = ss_edata[:, 0].flatten()
-    eField_i = ss_edata[:, 1:4].reshape(-1, 3)
-    eFieldGrad_i = ss_edata[:, 4:].reshape(-1, 6)
-
-    # Accumulate fields #
-    E_potentials = torch.zeros(natoms, device=dists_p.device) # N
-    E_fields = torch.zeros(natoms, 3, device=dists_p.device) # Nx3
-    E_field_grads = torch.zeros(natoms, 6, device=dists_p.device) # Nx6 because only store upper triangle
-
-    # How do I do this in a way that doesn't copy?
-    E_potentials.scatter_add_(0, pairs_j_a, ePot_i)
-    E_fields[:, 0].scatter_add_(0, pairs_j_a, -eField_i[:, 0])
-    E_fields[:, 1].scatter_add_(0, pairs_j_a, -eField_i[:, 1])
-    E_fields[:, 2].scatter_add_(0, pairs_j_a, -eField_i[:, 2])
-    # Yes, I am doing it like this. Please help.
-    E_field_grads[:, 0].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 0])
-    E_field_grads[:, 1].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 1])
-    E_field_grads[:, 2].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 2])
-    E_field_grads[:, 3].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 3])
-    E_field_grads[:, 4].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 4])
-    E_field_grads[:, 5].scatter_add_(0, pairs_j_a, -eFieldGrad_i[:, 5])
-
-    ene_elec = 0.5 * torch.sum(ssPairwiseEnergies)
-    return ene_elec, E_potentials, E_fields, E_field_grads
-
 def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
     natoms: torch.NumberType,
     pairs_i_a: torch.Tensor,

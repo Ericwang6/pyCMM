@@ -282,8 +282,11 @@ def test_total_energy_and_total_gradients():
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters, reset_gradients=False)
-    total_ref = torch.tensor([-4.768231511534177 / HARTREE2KCAL])
-    assert torch.allclose(energies_ff['tot'], total_ref)
+    total_ref = torch.tensor([-4.768231511534177])
+    #for key in energies_ff.keys():
+    #    print(key, " ", energies_ff[key] * HARTREE2KCAL)
+    total_ff = energies_ff['tot'] * HARTREE2KCAL
+    assert torch.allclose(total_ff, total_ref)
 
     energies_ff['tot'].backward()
     grads_ad_1 = coords.grad.clone()
