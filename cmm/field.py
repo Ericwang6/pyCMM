@@ -90,20 +90,15 @@ def get_reciprocal_space_field(coords, q, p , t ,box, kappa,kcutoff,kvectors):
   E_c *= -constant
   E_d *= constant
   E_t *= -constant/3
-  print("FIELD DUE TO CHARGES: ", E_c)
-  print("FIELDS DUE TO DIPOLES: ", E_d)
-  print("FIELDS DUE TO QUADRUPOLES: ", E_t)
+  print("REC FIELD DUE TO CHARGES: ", E_c)
+  print("REC FIELD DUE TO DIPOLES: ", E_d)
+  print("REC FIELD DUE TO QUADRUPOLES: ", E_t)
   E_recip = E_c + E_d + E_t
   return E_recip
 
-def get_self_interaction_field(coords, q, p , t, box, kappa):
-  N = len(coords)
-  E_self = torch.zeros((N, 3)) 
-  for i in range(N):
-    E_dd = p[i]
-    E_self[i] = E_dd 
-  E_self *= -(4 * kappa**3) / (3 * math.sqrt(math.pi))
-  return E_self
+def get_self_interaction_field_vectorized(coords,q,p,t,box,kappa):
+    E_self = p * (-4*kappa**3)/(3*math.sqrt(torch.pi))
+    return E_self
 def get_real_space_potential(coords,q,p,t,box,kappa):
   N = len(coords)
   P_qq, P_qp, P_qt = torch.zeros(N), torch.zeros(N), torch.zeros(N) 
@@ -168,7 +163,6 @@ def get_reciprocal_space_potential(coords, q, p , t ,box, kappa,kcutoff,kvectors
   #Compute sin and cosine terms for unique particles. Then compute their potentials
   for j in range(len(coords)):
     sin_term = torch.sum(torch.sin(torch.einsum("ki,i->k", kvectors, coords[j])))  # Sum over k
-    print(f"SIN TERM for {j}th atom is {sin_term}")
     cos_term = torch.sum(torch.cos(torch.einsum("ki,i->k", kvectors, coords[j]))) 
     P_qq[j] = torch.sum(gaussian_factor * (cos_term*torch.sum(sk_cos) +sin_term*torch.sum(sk_sin)))
     P_qu[j] = torch.sum(gaussian_factor * (sin_term*torch.sum(sk_dipole_cos)-cos_term*torch.sum(sk_dipole_sin)))
@@ -176,23 +170,86 @@ def get_reciprocal_space_potential(coords, q, p , t ,box, kappa,kcutoff,kvectors
   P_qq *= constant
   P_qu *= constant
   P_qt*= -constant/3
-  print("CHARGE-CHARGE POTENTIAL: ", P_qq)
-  print("CHARGE-DIPOLE POTENTIAL: \n", P_qu)
-  print("CHARGE-QUADRUPOLE POTENTIAL: \n", P_qt)
+  print("REC CHARGE-CHARGE POTENTIAL: ", P_qq)
+  print("REC CHARGE-DIPOLE POTENTIAL: \n", P_qu)
+  print("REC CHARGE-QUADRUPOLE POTENTIAL: \n", P_qt)
   P_recip = P_qq + P_qu + P_qt
   return P_recip
-def get_self_interaction_potential(coords,q,t,kappa):
-  N = len(coords)
-  P_qq, P_qt = torch.zeros(N), torch.zeros(N)
-  constant1 = 2*kappa/math.pi
-  constant2 = (-4*kappa**3)/(9*math.sqrt(math.pi))
-  for i in range(N):
-    P_qq[i] = q[i]
-    P_qt[i] = torch.trace(t[i])
-  P_qq *= constant1
-  P_qt *= constant2
-  P_self = P_qq + P_qt
-  return P_self
+def get_reciprocal_space_potential_vectorized(coords, q, p, t, box, kappa, kcutoff, kvectors):
+    #WARNING THIS IS NOT CORRECT. NEED TO FINISH
+    """
+    Compute the reciprocal space potential in PME.
+
+    Inputs:
+        coords: (N,3) tensor - Atomic coordinates.
+        q: (N,) tensor - Monopoles (charges).
+        p: (N,3) tensor - Dipoles.
+        t: (N,3,3) tensor - Quadrupoles.
+        box: (3,3) tensor - Simulation box.
+        kappa: float - Ewald parameter.
+        kcutoff: float - Reciprocal space cutoff.
+        kvectors: (N_k,3) tensor - Reciprocal lattice vectors.
+
+    Output:
+        P_recip: (N,) tensor - The reciprocal space potential at each atomic site.
+    """
+    # Compute volume of the box
+    V = torch.abs(torch.dot(box[2], torch.linalg.cross(box[0], box[1])))
+    constant = (8 * math.pi) / V
+    # Compute squared k-values and Gaussian damping factors
+    k_squared = torch.einsum("ij,ij->i", kvectors, kvectors)  # Shape: (N_k,)
+    gaussian_factor = torch.exp(-k_squared / (4 * kappa**2)) / k_squared  # Shape: (N_k,)
+    # Compute k⋅r for all atoms at once (Shape: (N_k, N))
+    k_dot_r = torch.matmul(kvectors, coords.T)  # (N_k, N)
+    # Compute cos and sin terms for all atoms & k-vectors
+    cos_k_dot_r = torch.cos(k_dot_r)  # (N_k, N)
+    sin_k_dot_r = torch.sin(k_dot_r)  # (N_k, N)
+    # Compute structure factors in a vectorized way
+    sk_cos = torch.sum(q * cos_k_dot_r, dim=1)  # (N_k,)
+    sk_sin = torch.sum(q * sin_k_dot_r, dim=1)  # (N_k,)
+    # Compute k⋅p (Shape: (N_k, N))
+    k_dot_p = torch.sum(p[:, None, :] * kvectors[None, :, :], dim=2)  # (N, N_k)
+    sk_dipole_cos = torch.sum(k_dot_p.T * cos_k_dot_r, dim=1)  # (N_k,)
+    sk_dipole_sin = torch.sum(k_dot_p.T * sin_k_dot_r, dim=1)  # (N_k,)
+    # Compute k_a k_b (outer product) and contract with theta
+    k_outer = kvectors[:, :, None] * kvectors[:, None, :]  # (N_k, 3, 3)
+    h_contract_theta = torch.sum(k_outer[:, None, :, :] * t[None, :, :, :], dim=(2, 3))  # (N_k, N)
+    sk_quad_cos = torch.sum(h_contract_theta * cos_k_dot_r, dim=1)  # (N_k,)
+    sk_quad_sin = torch.sum(h_contract_theta * sin_k_dot_r, dim=1)  # (N_k,)
+    # Compute sin and cosine terms for all unique particles at once
+    #sin_term = torch.sum(sin_k_dot_r, dim=0)  # (N,)
+    #cos_term = torch.sum(cos_k_dot_r, dim=0)  # (N,)
+    # Compute potentials for all atoms at once
+    #P_qq = torch.sum(gaussian_factor[:, None] * (cos_term * sk_cos + sin_term * sk_sin), dim=0)  # (N,)
+    #P_qu = torch.sum(gaussian_factor[:, None] * (sin_term * sk_dipole_cos - cos_term * sk_dipole_sin), dim=0)  # (N,)
+    #P_qt = torch.sum(gaussian_factor[:, None] * (cos_term * sk_quad_cos + sin_term * sk_quad_sin), dim=0)  # (N,)
+    # Compute sin and cosine terms for all unique particles at once
+    sin_term = torch.sum(sin_k_dot_r, dim=0)  # (N,)
+    cos_term = torch.sum(cos_k_dot_r, dim=0)  # (N,)
+
+    # Fix broadcasting issue
+    P_qq = torch.sum(gaussian_factor[:, None] * (cos_term[None, :] * sk_cos[:, None] + sin_term[None, :] * sk_sin[:, None]), dim=0)  # ✅ Fixed
+    P_qu = torch.sum(gaussian_factor[:, None] * (sin_term[None, :] * sk_dipole_cos[:, None] - cos_term[None, :] * sk_dipole_sin[:, None]), dim=0)  # ✅ Fixed
+    P_qt = torch.sum(gaussian_factor[:, None] * (cos_term[None, :] * sk_quad_cos[:, None] + sin_term[None, :] * sk_quad_sin[:, None]), dim=0)  # ✅ Fixed
+
+    # Apply final scaling factors
+    P_qq *= constant
+    P_qu *= constant
+    P_qt *= -constant / 3
+
+    print("CHARGE-CHARGE POTENTIAL: ", P_qq)
+    print("CHARGE-DIPOLE POTENTIAL: \n", P_qu)
+    print("CHARGE-QUADRUPOLE POTENTIAL: \n", P_qt)
+
+    # Total reciprocal space potential
+    P_recip = P_qq + P_qu + P_qt
+    return P_recip
+
+def get_self_interaction_potential_vectorized(coords,q,t,kappa):
+    P_qq = q * (2*kappa/math.pi)
+    P_qt = torch.einsum("bii->b",t) * (-4*kappa**3)/(9*math.sqrt(torch.pi))
+    P_self = P_qq + P_qt
+    return P_self
     
 def get_kvectors(box,kcutoff):
   V = torch.abs(torch.dot(box[2],torch.linalg.cross(box[0],box[1]))) #compute volume of box
@@ -216,24 +273,34 @@ def get_kvectors(box,kcutoff):
 def get_electric_field(coords, q , p , t,box, kappa,kcutoff):
     kvectors = get_kvectors(box,kcutoff)
     E_real = get_real_space_field(coords,q,p,t,box,kappa)
-    print("CHARGES: ", q)
-    print("DIPOLES: ", p)
-    print("QUADRUPOLES: ", t)
+    #print("CHARGES: ", q)
+    #print("DIPOLES: ", p)
+    #print("QUADRUPOLES: ", t)
     print("FIELD REAL")
     print(E_real)
     E_reciprocal = get_reciprocal_space_field(coords,q,p,t,box,kappa,kcutoff,kvectors)
     print("FIELD RECIPROCAL")
     print(E_reciprocal)
-    E_self = get_self_interaction_field(coords,q,p,t,box,kappa)
-    print("FIELD SELF")
-    print(E_self)
-    E = E_real + E_reciprocal - E_self
+    #E_self = get_self_interaction_field(coords,q,p,t,box,kappa)
+    E_self_vectorized = get_self_interaction_field_vectorized(coords,q,p,t,box,kappa)
+    #print("FIELD SELF")
+    #print(E_self)
+    print("FIELD SELF VECTORIZED OUTPUT")
+    print(E_self_vectorized)
+    E = E_real + E_reciprocal - E_self_vectorized
     P_real = get_real_space_potential(coords,q,p,t,box,kappa)
     print("REAL SPACE POTENTIAL")
     print(P_real)
-    P_self = get_self_interaction_potential(coords,q,t,kappa)
-    print("SELF INTERACTION POTENTIAL")
-    print(P_self)
+    #P_self = get_self_interaction_potential(coords,q,t,kappa)
+    P_self_vectorized = get_self_interaction_potential_vectorized(coords,q,t,kappa)
+    #print("SELF INTERACTION POTENTIAL")
+    #print(P_self)
+    print("SELF INTERACTION VECTORIZED OUTPUT:")
+    print(P_self_vectorized)
     P_reciprocal = get_reciprocal_space_potential(coords, q, p , t ,box, kappa,kcutoff,kvectors)
+    print("POTENTIAL RECIP")
     print(P_reciprocal)
+    P_reciprocal_vectorized = get_reciprocal_space_potential_vectorized(coords, q, p , t ,box, kappa,kcutoff,kvectors)
+    #print("POTENTIAL RECIP VECTOIZED")
+    #print(P_reciprocal_vectorized)
     return E
