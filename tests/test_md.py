@@ -67,18 +67,6 @@ def test_md():
     energies['tot'].backward()
     print(energies['tot'])
     print(coords.grad)
-    
-    #coords = coords.detach().clone()
-    #coords[0] = coords[0] + torch.tensor([0.01, 0.01, 0.01])
-    #cm.update_coordinates(coords)
-    #energies = ff.evaluate(cm, topology, parameters)
-    #energies['tot'].backward()
-    #print(coords.grad)
-
-    #num_waters = coords.size(0) // 3
-    #model = CMMWater(num_waters, do_polarization=True)
-    #energies_ref = model.computeEnergy(coords, box)
-    #assert torch.isclose(energies['tot'], energies_ref['tot'])
 
 def test_optimize_nacl():
     torch.set_default_dtype(torch.float64)

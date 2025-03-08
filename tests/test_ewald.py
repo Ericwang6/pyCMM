@@ -12,6 +12,7 @@ from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
+from cmm.multipole import computeSphericalQuadrupoles
 
 from openmm.openmm import System, VerletIntegrator, NonbondedForce, Context, State, AmoebaMultipoleForce
 from openmm.unit import nanometer, picosecond, picoseconds, kelvin
@@ -142,3 +143,36 @@ def test_ewald_with_polarization():
 
     energies = ff.evaluate(cm, topology, parameters)
     print((energies["ewald"] + energies["perm_elec"]) * HARTREE2KJ)
+
+def test_multipolar_ewald_water_mchem_reference():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True, cutoff_ewald=torch.tensor(7.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    ff._raw_atomic_params['b_elec'][0] = 10000000000.0
+    ff._raw_atomic_params['b_elec'][1] = 10000000000.0
+    ff.mono[0] = -0.51966
+    ff.mono[1] = 0.25983
+    ff.dipo[0] = torch.tensor([0.0, 0.0, 0.14279])
+    ff.dipo[1] = torch.tensor([-0.03859, 0.0, -0.05818])
+    quad_O = torch.tensor([[0.56803, 0.0, 0.0], [0.0, -0.65906, 0.0], [0.0, 0.0, 0.09103]])
+    quad_H = torch.tensor([[-0.01730, 0.0, 0.00007], [0.0, -0.07631, 0.0], [0.00007, 0.0, 0.09361]])
+    ff.quad_s[0] = computeSphericalQuadrupoles(quad_O.unsqueeze(0))
+    ff.quad_s[1] = computeSphericalQuadrupoles(quad_H.unsqueeze(0))
+    ff.rebuild_atomic_params()
+    
+    energies = ff.evaluate(cm, topology, parameters)
+    #energies['tot'].backward()

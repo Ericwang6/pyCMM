@@ -1,7 +1,7 @@
 import torch, math
 from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
-from .electrostatics import computeDampFactorsErfc
+from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
 from .polarization import direct_field_induced_dipole_guess, solvePolarizationByCG, computeProductWithPolarizationMatrix, get_field_dependent_polarizabilities
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
@@ -381,6 +381,13 @@ class CMM(ForceField):
             params.rebuild(self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
             self.parameters_have_changed = False
         
+        # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
+        pairs_excl = pairs[topology.all_intramolecular_pairs, :]
+        pairs_excl_i_a = pairs_excl[:, 0]
+        pairs_excl_j_a = pairs_excl[:, 1]
+        dists_excl = dists[topology.all_intramolecular_pairs]
+        dist_vecs_excl = dist_vecs[topology.all_intramolecular_pairs]
+
         # Get pairs, dists, and vectors for long-range nonbonded potential #
         pairs_lr = pairs[topology.all_intermolecular_pairs, :]
         pairs_lr_i_a = pairs_lr[:, 0]
@@ -419,7 +426,6 @@ class CMM(ForceField):
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
         natoms = torch.tensor(Z.size(0), device=pairs.device)
-        q_shell = params.get_atomic_parameters('q_shell')
         mono = params.get_atomic_parameters('mono')
         dipo = params.get_atomic_parameters('dipo')
         quad = params.get_atomic_parameters('quad')
@@ -483,16 +489,22 @@ class CMM(ForceField):
 
         # Find appropraiate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
-            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            self.k_max = 50
-            for i in range(2, 50):
-                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-                if error_estimate < self.ewald_tolerance:
-                    self.k_max = i
-                    break
-            erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
+            #self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+            self.alpha_ewald = 0.544590516336201 * BOHR2ANG * 100000000.0
+            #self.k_max = 50
+            self.k_max = 15
+            #for i in range(2, 50):
+            #    error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+            #    if error_estimate < self.ewald_tolerance:
+            #        self.k_max = i
+            #        break
+            erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
+            erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
+            # ^^^ for removing excluded interactions that are implicitly included in long-range summation
+            # The reciprocal space calculation uses an erf(alpha*r) damping so the above is -erf(alpha*r)
         else:
             erfc_damps = torch.ones_like(dists_lr)
+            erf_damps = torch.zeros_like(dists_excl)
         
         cp_damps_sr_1c_i = -computeShortRangeOneCenterDampFactors(dists_sr, b_i_elec_p)
         cp_damps_sr_1c_j = -computeShortRangeOneCenterDampFactors(dists_sr, b_j_elec_p)
@@ -505,10 +517,12 @@ class CMM(ForceField):
         # Get all undamped and damped interactions needed for multipolar interactions #
         undamped_tensor_1_lr, undamped_tensor_2_lr, undamped_tensor_3_lr = computeUndampedInteractionTensorBlocks(dist_vecs_lr, dists_lr)
         undamped_tensor_1_sr, undamped_tensor_2_sr, undamped_tensor_3_sr = computeUndampedInteractionTensorBlocks(dist_vecs_sr, dists_sr)
+        undamped_tensor_1_excl, undamped_tensor_2_excl, undamped_tensor_3_excl = computeUndampedInteractionTensorBlocks(dist_vecs_excl, dists_excl)
         undamped_tensor_1_pol_sr = undamped_tensor_1_sr[:, :4, :4]
         undamped_tensor_2_pol_sr = undamped_tensor_2_sr[:, :4, :4]
 
         ewald_damps_lr_1, ewald_damps_lr_2, ewald_damps_lr_3 = formDampingFactorBlocksRank2(erfc_damps)
+        ewald_damps_excl_1, ewald_damps_excl_2, ewald_damps_excl_3 = formDampingFactorBlocksRank2(erf_damps)
         cp_damps_sr_1c_1_i, cp_damps_sr_1c_2_i, cp_damps_sr_1c_3_i = formDampingFactorBlocksRank2(cp_damps_sr_1c_i)
         cp_damps_sr_1c_1_j, cp_damps_sr_1c_2_j, cp_damps_sr_1c_3_j = formDampingFactorBlocksRank2(cp_damps_sr_1c_j)
         cp_damps_sr_2c_1, cp_damps_sr_2c_2, cp_damps_sr_2c_3 = formDampingFactorBlocksRank2(cp_damps_sr_2c)
@@ -518,7 +532,9 @@ class CMM(ForceField):
         pol_damps_sr_2c_1, pol_damps_sr_2c_2 = formDampingFactorBlocksRank1(pol_damps_sr_2c)
 
         direct_field_tensor_lr = torch.mul(undamped_tensor_1_lr, ewald_damps_lr_1) + torch.mul(undamped_tensor_2_lr, ewald_damps_lr_2) + torch.mul(undamped_tensor_3_lr, ewald_damps_lr_3)
+        direct_field_tensor_excl = torch.mul(undamped_tensor_1_excl, ewald_damps_excl_1) + torch.mul(undamped_tensor_2_excl, ewald_damps_excl_2) + torch.mul(undamped_tensor_3_excl, ewald_damps_excl_3)
         direct_field_tensor_rank_1_lr = direct_field_tensor_lr[:, :4, :4]
+        direct_field_tensor_excl_rank_1 = direct_field_tensor_excl[:, :4, :4]
         # ^^^^ Gets just the entries needed for charges and dipoles (for polarization)
         
         cp_field_tensor_sr_i = torch.mul(undamped_tensor_1_sr, cp_damps_sr_1c_1_i) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_1c_2_i) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_1c_3_i)
@@ -568,28 +584,21 @@ class CMM(ForceField):
             evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
-        if topology.angle_pairs.size(0) > 0:
-            evaluate_bond_and_angle_charge_flux(
-                pairs, dists, angles,
-                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-                q_shell, r_eq, theta_eq, j_cf, j_cf_angle,
-                r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
-            )
-
-            evaluate_bond_and_angle_charge_flux(
-                pairs, dists, angles,
-                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-                mono, r_eq, theta_eq, j_cf, j_cf_angle,
-                r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
-            )
-
-            # Hardness change #
-            evaluate_hardness_change(
-                pairs, dists, angles,
-                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-                eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
-                r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
-            )
+        #if topology.angle_pairs.size(0) > 0:
+        #    evaluate_bond_and_angle_charge_flux(
+        #        pairs, dists, angles,
+        #        topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+        #        mono, r_eq, theta_eq, j_cf, j_cf_angle,
+        #        r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
+        #    )
+#
+        #    # Hardness change #
+        #    evaluate_hardness_change(
+        #        pairs, dists, angles,
+        #        topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
+        #        eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
+        #        r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
+        #    )
         
         eta_times_2 = 2 * eta
 
@@ -626,6 +635,8 @@ class CMM(ForceField):
         multipoles_cp_j_p = multipoles_cp[pairs_sr_j_a]
         multipoles_real_i_p = multipoles_real[pairs_lr_i_a]
         multipoles_real_j_p = multipoles_real[pairs_lr_j_a]
+        multipoles_excl_i_p = multipoles_real[pairs_excl_i_a]
+        multipoles_excl_j_p = multipoles_real[pairs_excl_j_a]
         Z_mpoles_i_p = Z_mpoles[pairs_sr_i_a]
         Z_mpoles_j_p = Z_mpoles[pairs_sr_j_a]
 
@@ -654,10 +665,12 @@ class CMM(ForceField):
         
         # Get real space field data #
         edata_point_pairwise = torch.bmm(direct_field_tensor_lr, multipoles_real_i_p.unsqueeze(2))
+        edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, multipoles_excl_i_p.unsqueeze(2))
         edata_cs_pairwise_ij = torch.bmm(cp_field_tensor_sr_i, multipoles_cp_i_p.unsqueeze(2))
         
         # Real Space Electrostatic Interactions #
         elec_point_pairwise = torch.bmm(multipoles_real_j_p.unsqueeze(1), edata_point_pairwise).flatten()
+        elec_point_excl_pairwise = torch.bmm(multipoles_excl_j_p.unsqueeze(1), edata_point_excl_pairwise).flatten()
         elec_cs_pairwise_ij = torch.bmm(Z_mpoles_j_p.unsqueeze(1), edata_cs_pairwise_ij).flatten()
 
         # Accumulate the total potentials, fields, and field gradients.
@@ -666,6 +679,7 @@ class CMM(ForceField):
         all_field_data = torch.zeros(natoms, 10, device=dists.device, dtype=dists.dtype)
         all_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 10), edata_point_pairwise.squeeze(2))
         all_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 10), edata_cs_pairwise_ij.squeeze(2))
+        all_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 10), edata_point_excl_pairwise.squeeze(2))
         all_field_data.mul_(torch.tensor([1, -1, -1, -1, -1, -1, -1, -1, -1, -1], device=pairs.device).reshape(1, -1))
         
         elec_potential = all_field_data[:, 0]
@@ -678,10 +692,14 @@ class CMM(ForceField):
         ene_pauli = 0.5 * torch.sum(pauli_pairwise * switch_sr)
         ene_xpol = 0.5 * torch.sum(xpol_pairwise * switch_sr)
         ene_perm_elec = 0.5 * (
-            torch.sum(elec_point_pairwise) +
+            torch.sum(elec_point_pairwise) + torch.sum(elec_point_excl_pairwise) +
             torch.sum((elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr)
         )
 
+        print("Perm Elec: ", ene_perm_elec * HARTREE2KCAL)
+        print("Ewald: ", ene_ewald * HARTREE2KCAL)
+        print("Total Elec: ", (ene_perm_elec + ene_ewald) * HARTREE2KCAL)
+        return
         # Find total charges in each polarization group to use as constraints
         drInvDamp_ct = ct_interaction_tensor_sr[:, 0, 0].flatten()
         dq_forward = multipoles_ct_don_i_p[:, 0] * multipoles_ct_acc_j_p[:, 0] * drInvDamp_ct * eps
