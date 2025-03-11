@@ -1,6 +1,8 @@
 import torch
 from abc import ABC, abstractmethod
 
+__all__ = ['NeighborList', 'NSquaredList', 'CellList']
+
 """
 This file defines the interface and concrete types of NeighborList.
 Any NeighborList should define three methods.
@@ -93,7 +95,7 @@ class NSquaredList(NeighborList):
 
 
 class CellList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=2048):
+    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=512):
         """
         Initialize cell list structure.
         
@@ -122,10 +124,19 @@ class CellList(NeighborList):
         self.n_atoms = positions.shape[0]
         
         # Initialize neighbor list storage
+        self.n_pairs = torch.zeros(1, dtype=torch.long)
         self.neighbor_list = torch.full((self.n_atoms, max_neighbors), -1, 
                                       dtype=torch.long, device=positions.device)
+        
+        # @SPEED: I think this might be faster if it were Nx2 rather than 2xN?
+        self.pairs = torch.full((2, self.n_atoms * max_neighbors), -1,
+                                dtype=torch.long, device=positions.device)
         self.n_neighbors = torch.zeros(self.n_atoms, dtype=torch.long, 
                                      device=positions.device)
+        self.distance_vectors = torch.zeros((self.n_atoms, max_neighbors, 3),
+                                            dtype=positions.dtype, device=positions.device)
+        self.distances = torch.zeros((self.n_atoms, max_neighbors),
+                                     dtype=positions.dtype, device=positions.device)
         
         # Build cell structure
         self._build(positions)
@@ -160,7 +171,7 @@ class CellList(NeighborList):
             neighbors = self._get_cell_neighbors(i)
             if len(neighbors) == 0:
                 continue
-                
+            
             # Calculate distances to all potential neighbors
             pos_i = positions[i]
             pos_j = positions[neighbors]
@@ -170,15 +181,21 @@ class CellList(NeighborList):
             dr = dr - torch.round(dr / self.box_lengths) * self.box_lengths
             dist2 = torch.sum(dr * dr, dim=1)
             
-            # Select neighbors within cutoff ignoring atoms on top of this atom (likely the atom itself).
+            # Select neighbors within cutoff ignoring the atom itself.
             mask = (dist2 < self.cutoff * self.cutoff) & (dist2 > 0)
             valid_neighbors = neighbors[mask]
-            
+
             # Store up to max_neighbors closest neighbors
             n_valid = min(len(valid_neighbors), self.max_neighbors)
             if n_valid > 0:
+                # @SPEED This results in a whole lot of copying.
                 self.n_neighbors[i] = n_valid
                 self.neighbor_list[i, :n_valid] = valid_neighbors[:n_valid]
+                self.pairs[0][self.n_pairs:(self.n_pairs+n_valid)] = torch.full((n_valid,), i)
+                self.pairs[1][self.n_pairs:(self.n_pairs+n_valid)] = valid_neighbors
+                self.n_pairs = self.n_pairs + n_valid
+                self.distance_vectors[i, :n_valid, :] = dr[:n_valid]
+                self.distances[i, :n_valid] = torch.sqrt(dist2[:n_valid])
     
     def _get_cell_neighbors(self, atom_idx: int):
         """
@@ -267,18 +284,24 @@ class CellList(NeighborList):
         self.last_positions = positions.detach().clone()
         self.num_updates_since_last_build += 1
         return
-    
+
+    def get_pairs(self) -> torch.Tensor:
+        return self.pairs[:, :self.n_pairs].t().contiguous()
+
     def get_neighbors(self, atom_idx: int):
         """
         Get neighbors for a given atom from the pre-computed neighbor list.
         
         Args:
             atom_idx (int): Index of atom to get neighbors for
-            
+        
         Returns:
             torch.Tensor: Array of neighbor indices (padded with -1)
         """
         return self.neighbor_list[atom_idx, :self.n_neighbors[atom_idx]]
+    
+    def get_n_neighbors(self):
+        return self.n_neighbors
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)
