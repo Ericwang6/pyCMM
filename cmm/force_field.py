@@ -490,7 +490,7 @@ class CMM(ForceField):
         # Find appropraiate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
             #self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            self.alpha_ewald = 0.544590516336201 * BOHR2ANG * 100000000.0
+            self.alpha_ewald = 0.544590516336201 * BOHR2ANG
             #self.k_max = 50
             self.k_max = 15
             #for i in range(2, 50):
@@ -650,9 +650,9 @@ class CMM(ForceField):
             ewald_potential, ewald_field, ewald_field_gradient = long_range_potential(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
             
             ene_ewald = 0.5 * (
-                torch.einsum("n,n->", mono_lr, ewald_potential) +
-                torch.einsum("ni,ni->", dipo_lr, ewald_field) +
-                torch.einsum("nij,nij->", quad_lr, ewald_field_gradient)
+                torch.einsum("n,n->", mono_lr, ewald_potential) #-
+                #torch.einsum("ni,ni->", dipo_lr, ewald_field) #+
+                #torch.einsum("nij,nij->", quad_lr, ewald_field_gradient) / 3
             )
 
         # All multipolar interaction contributions #
@@ -695,6 +695,11 @@ class CMM(ForceField):
             torch.sum(elec_point_pairwise) + torch.sum(elec_point_excl_pairwise) +
             torch.sum((elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr)
         )
+
+        # HERE: Self enregy contributions are correct.
+        # I still can't figure out if there is a bug here or in mchem when
+        # it comes to computing the damping factors for ewald.
+        # Get to the bottom of this ASAP.
 
         print("Perm Elec: ", ene_perm_elec * HARTREE2KCAL)
         print("Ewald: ", ene_ewald * HARTREE2KCAL)
