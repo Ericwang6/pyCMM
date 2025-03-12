@@ -45,11 +45,12 @@ class NSquaredList(NeighborList):
             positions (torch.Tensor): (N, 3) array of atomic positions
             box_lengths (torch.Tensor): (3,) array of periodic box lengths
         """
+        self.device = positions.device
         self.cutoff = cutoff
         self.box_lengths = box_lengths
         self.natoms = positions.shape[0]
-        self.neighbor_list = torch.full((self.natoms, self.natoms), -1, dtype=torch.long, device=positions.device)
-        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=positions.device)
+        self.neighbor_list = torch.full((self.natoms, self.natoms), -1, dtype=torch.long, device=self.device)
+        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
 
         self._build(positions)
 
@@ -95,7 +96,7 @@ class NSquaredList(NeighborList):
 
 
 class CellList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=512):
+    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: torch.Tensor, max_neighbors: int=512):
         """
         Initialize cell list structure.
         
@@ -105,6 +106,7 @@ class CellList(NeighborList):
             cutoff (float): Interaction cutoff distance
             max_neighbors (int): Maximum number of neighbors per atom
         """
+        self.device = positions.device
         self.minimum_vector, _ = torch.min(positions, dim=0)
         self.cutoff = cutoff
         self.box_lengths = box_lengths
@@ -117,26 +119,26 @@ class CellList(NeighborList):
             assert False, "You requested a cutoff that is larger than the smallest box direction. We can't handle this currently. Set the cutoff to the smallest box direction or smaller."
         
         # Find number of cells in each direction then compute all valid cells.
-        self.n_cells = torch.floor(box_lengths / cutoff).long()
-        self.cell_size = box_lengths / self.n_cells
+        self.n_cells = torch.floor(self.box_lengths / cutoff).long()
+        self.cell_size = self.box_lengths / self.n_cells
         
         # Initialize cell assignments
         self.n_atoms = positions.shape[0]
         
         # Initialize neighbor list storage
-        self.n_pairs = torch.zeros(1, dtype=torch.long)
+        self.n_pairs = torch.zeros(1, dtype=torch.long, device=self.device)
         self.neighbor_list = torch.full((self.n_atoms, max_neighbors), -1, 
-                                      dtype=torch.long, device=positions.device)
+                                      dtype=torch.long, device=self.device)
         
         # @SPEED: I think this might be faster if it were Nx2 rather than 2xN?
         self.pairs = torch.full((2, self.n_atoms * max_neighbors), -1,
-                                dtype=torch.long, device=positions.device)
+                                dtype=torch.long, device=self.device)
         self.n_neighbors = torch.zeros(self.n_atoms, dtype=torch.long, 
-                                     device=positions.device)
+                                     device=self.device)
         self.distance_vectors = torch.zeros((self.n_atoms, max_neighbors, 3),
-                                            dtype=positions.dtype, device=positions.device)
+                                            dtype=positions.dtype, device=self.device)
         self.distances = torch.zeros((self.n_atoms, max_neighbors),
-                                     dtype=positions.dtype, device=positions.device)
+                                     dtype=positions.dtype, device=self.device)
         
         # Build cell structure
         self._build(positions)
@@ -226,7 +228,7 @@ class CellList(NeighborList):
                     nx = (cell_x + dx) % self.n_cells[0]
                     ny = (cell_y + dy) % self.n_cells[1]
                     nz = (cell_z + dz) % self.n_cells[2]
-                    test_cell = torch.Tensor([nx, ny, nz]).expand(self.cell_indices.size(0), 3)
+                    test_cell = torch.tensor([nx, ny, nz], device=self.device).expand(self.cell_indices.size(0), 3)
 
                     neighbor_indices = torch.nonzero(torch.all(torch.eq(test_cell, self.cell_indices), 1)).flatten()
                     if neighbor_indices.numel() != 0:
@@ -258,7 +260,7 @@ class CellList(NeighborList):
         max_displacement = torch.max(torch.abs(positions - self.last_positions))
         return max_displacement > 0.5 * torch.min(self.cell_size)
 
-    def update(self, positions: torch.Tensor) -> None:
+    def update(self, positions: torch.Tensor, box_lengths: torch.Tensor) -> None:
         """
         Update cell list with new positions if needed.
         Increments a counter that keeps track of how many updates
@@ -267,21 +269,17 @@ class CellList(NeighborList):
         
         Args:
             positions (torch.Tensor): (N, 3) array of new positions
+            box_lengths (torch.Tensor): (3) array of box lengths
         """
         # Check if a rebuild of the cells is needed
         if self._needs_rebuild(positions):
+            self.box_lengths = box_lengths
+            self.minimum_vector = torch.min(positions, dim=0)[0]
             self._build(positions)
             self.last_positions = positions.detach().clone()
             self.num_updates_since_last_build = 0
             return
         
-        # Update cell assignments
-        self._positions_to_cell_indices(positions)
-        
-        # Update neighbor lists with new positions
-        self._update_neighbor_lists(positions)
-        
-        self.last_positions = positions.detach().clone()
         self.num_updates_since_last_build += 1
         return
 

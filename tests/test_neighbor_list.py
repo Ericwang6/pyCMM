@@ -71,13 +71,13 @@ def test_cell_list_update():
     cell_list = CellList(positions, box_vectors, cutoff, max_neighbors=max_neighbors)
     
     # Make small random displacements
-    displacements = (torch.rand_like(positions) - 0.5 * cutoff) * 0.1
+    displacements = (torch.rand_like(positions) - cutoff)
     new_positions = positions + displacements
     
     nsq_list = NSquaredList(new_positions, box_vectors, cutoff)
 
     # Update cell list
-    cell_list.update(new_positions)
+    cell_list.update(new_positions, box_vectors)
     
     # Check new neighbor lists
     check_neighbor_lists_match(cell_list, nsq_list, nsq_list.natoms)

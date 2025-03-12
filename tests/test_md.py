@@ -3,47 +3,101 @@ import torch
 import numpy as np
 import os
 
-from cmm.units import HARTREE2KCAL, BOHR2ANG
-from cmm.misc_utils import read_xyz_tinker
+from cmm.units import HARTREE2KCAL, BOHR2ANG, BOHR2NM
+from cmm.misc_utils import read_from_tinker_xyz
 from cmm.cmm_water import CMMWater
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
+from cmm.interfaces import CMM_ASE
 
-def get_water_box_coords(requires_grad=True):
-    labels, atom_types, coords, bonds = read_xyz_tinker(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"))
-    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
-    bonds[0] = bonds[0][permutation]
-    bonds[1] = bonds[1][permutation]
-    atom_types = torch.tensor(atom_types, dtype=torch.long) - 1
-    coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
-    return coords, atom_types, bonds
+from ase.optimize import FIRE2, BFGS
 
-def test_md():
+def test_virial_tensor():
     torch.set_default_dtype(torch.float64)
 
-    coords, atom_types, bonds = get_water_box_coords(requires_grad=True)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
-    cm = CoordinateManager(coords, box, 12.0)
+    box_volume = torch.det(box)
+
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
-    parameters = Parameterizer(atom_type_names, ff.atomic_params)
-    
-    #ff.evaluate(cm, topology, parameters)
-    
-    #print(pairs[topology.angle_pairs])
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
 
-    #pairs, dists, distance_vectors = cm.get_intermolecular_distances_vectors_and_pairs()
-    #print(dists)
-    #print(distance_vectors)
+    energies = ff.evaluate(cm, topology, parameters)
+    energies['tot'].backward()
 
-    #num_waters = coords.size(0) // 3
-    #model = CMMWater(num_waters, do_polarization=True)
-    #energies = model.computeEnergy(coords, box)
-    #print(energies)
+    # This equation for the virial stress is derived in the Appendix of: https://doi.org/10.1016/j.cpc.2019.107057
+    #right = torch.matmul(box.grad.T, box)
+    #left = torch.matmul(coords.grad.T, coords)
+    #virial = right + left
+    #stress = virial / box_volume
+    #print(virial)
+    #print(stress)
+
+def test_md():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies = ff.evaluate(cm, topology, parameters)
+    energies['tot'].backward()
+    print(energies['tot'])
+    print(coords.grad)
+
+def test_optimize_nacl():
+    torch.set_default_dtype(torch.float64)
+    torch.autograd.set_detect_anomaly(True)
+
+    positions = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/nacl_crystal.txt"), dtype=np.float64)
+    positions[0, 0] += 0.1 # move from equilibrium
+    coords = torch.tensor(positions / BOHR2NM, dtype=torch.float64, requires_grad=True)
+    bonds = np.array([], dtype=np.float64)
+    atom_type_names = ["" for i in range(coords.size(0))]
+    for i in range(coords.size(0) // 2):
+        atom_type_names[i] = "Na+"
+    for i in range(coords.size(0) // 2, coords.size(0)):
+        atom_type_names[i] = "Cl-"
+
+    box = torch.tensor(np.eye(3) * 28.2 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    with torch.no_grad():
+        ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-5), use_ewald=True)
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
+
+    ff.alpha_damp_exponent[3] = 0.0 # 3 corresponds to Cl-
+    ff.alpha_damp_max[3] = 0.0
+    ff.rebuild_atomic_params()
+
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    ff_ase.calculate()
+    dyn = BFGS(ff_ase.atoms, trajectory='nacl_opt.traj')
+    dyn.run(fmax=1e-6, steps=10)

@@ -1,6 +1,7 @@
 import torch
 from typing import List
 import numpy as np
+from .units import BOHR2ANG
 
 def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
     """
@@ -76,7 +77,14 @@ def read_xyz_tinker(infile: str):
     # Subtract 1 from bond arrays because tinker xyz specifies the first atom starting from 1.
     return atom_labels, np.array(atom_types, dtype=np.int64), np.vstack(coords), np.array([np.array(bonds_start_i_less_than_j) - 1, np.array(bonds_end_i_less_than_j) - 1])
 
-
+def read_from_tinker_xyz(xyz_file: str, requires_grad=True, device="cpu"):
+    labels, atom_types, coords, bonds = read_xyz_tinker(xyz_file)
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+    bonds[0] = bonds[0][permutation]
+    bonds[1] = bonds[1][permutation]
+    atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False, device=device) - 1
+    coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad, device=device)
+    return coords, atom_types, bonds
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)

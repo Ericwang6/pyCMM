@@ -11,7 +11,7 @@ import torch.nn as nn
 from torch_scatter import scatter
 
 import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../'))
 import cmm
 from cmm.misc_utils import read_from_tinker_xyz
 
@@ -285,7 +285,7 @@ class CMMWater(nn.Module):
         mono = self.nb_params['mono']
         dipo = cmm.rotateDipoles(self.nb_params['dipo'], rotMatrix).squeeze(1)
         quad = cmm.rotateQuadrupoles(self.nb_params['quad'], rotMatrix)
-        ene_ewald = cmm.compute_pme(coords, mono, dipo, quad, box, kappa=0.1930453722791694, rcutoff=8.0, kcutoff=1.5)
+        ene_ewald = cmm.compute_pme(coords, mono, dipo, quad, box, rcutoff=5,thresh =0.0001)
 
         #Total energy
         #ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ewald
@@ -317,7 +317,7 @@ class CMMWater(nn.Module):
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
     model = CMMWater(216, rcut=8.0, do_polarization=True)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../../tests/data/water_216.xyz"), requires_grad=True)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
     box = torch.tensor(np.eye(3) * 18.643 / cmm.BOHR2ANG, dtype=torch.float64, requires_grad=True)
     energies = model.computeEnergy(coords, box)
     #energies['tot'].backward()
