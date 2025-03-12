@@ -166,10 +166,10 @@ def test_multipolar_ewald_water_mchem_reference():
     ff._raw_atomic_params['b_elec'][1] = 10000000000.0
     ff.mono[0] = -0.51966
     ff.mono[1] = 0.25983
-    ff.dipo[0] = ff.dipo[0] = torch.tensor([0.0, 0.0, 0.14279])
-    ff.dipo[1] = ff.dipo[1] = torch.tensor([-0.03859, 0.0, -0.05818])
-    quad_O = torch.zeros(3, 3) #quad_O = torch.tensor([[0.56803, 0.0, 0.0], [0.0, -0.65906, 0.0], [0.0, 0.0, 0.09103]])
-    quad_H = torch.zeros(3, 3) #quad_H = torch.tensor([[-0.01730, 0.0, 0.00007], [0.0, -0.07631, 0.0], [0.00007, 0.0, 0.09361]])
+    ff.dipo[0] = torch.tensor([0.0, 0.0, 0.14279])
+    ff.dipo[1] = torch.tensor([-0.03859, 0.0, -0.05818])
+    quad_O = torch.tensor([[0.56803, 0.0, 0.0], [0.0, -0.65906, 0.0], [0.0, 0.0, 0.09103]])
+    quad_H = torch.tensor([[-0.01730, 0.0, 0.00007], [0.0, -0.07631, 0.0], [0.00007, 0.0, 0.09361]])
     ff.quad_s[0] = computeSphericalQuadrupoles(quad_O.unsqueeze(0))
     ff.quad_s[1] = computeSphericalQuadrupoles(quad_H.unsqueeze(0))
     ff.rebuild_atomic_params()

@@ -23,8 +23,9 @@ def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
     p5  = (3*u + 2*u3) / m5
     p7  = (15*u + 10*u3 + 4*u5) / m7
     p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
+    prefactor = 2 / torch.sqrt(torch.tensor(torch.pi))
 
-    return torch.stack([erf_u - p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
+    return torch.stack([erf_u - prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
 def computeDampFactorsErfc(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
@@ -46,8 +47,9 @@ def computeDampFactorsErfc(dr: torch.Tensor, b: torch.Tensor):
     p5  = (3*u + 2*u3) / m5
     p7  = (15*u + 10*u3 + 4*u5) / m7
     p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
+    prefactor = 2 / torch.sqrt(torch.tensor(torch.pi))
 
-    return torch.stack([erfc_u + p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
+    return torch.stack([erfc_u + prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
 def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr

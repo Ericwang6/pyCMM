@@ -505,7 +505,7 @@ class CMM(ForceField):
         else:
             erfc_damps = torch.ones_like(dists_lr)
             erf_damps = torch.zeros_like(dists_excl)
-        
+
         cp_damps_sr_1c_i = -computeShortRangeOneCenterDampFactors(dists_sr, b_i_elec_p)
         cp_damps_sr_1c_j = -computeShortRangeOneCenterDampFactors(dists_sr, b_j_elec_p)
         cp_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_cp_sr_p)
