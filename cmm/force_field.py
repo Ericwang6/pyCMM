@@ -648,11 +648,11 @@ class CMM(ForceField):
             # Get reciprocal space and self contributions to field variables
             # and corresponding electrostatic interactions.
             ewald_potential, ewald_field, ewald_field_gradient = long_range_potential(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
-            
+
             ene_ewald = 0.5 * (
-                torch.einsum("n,n->", mono_lr, ewald_potential) #-
-                #torch.einsum("ni,ni->", dipo_lr, ewald_field) #+
-                #torch.einsum("nij,nij->", quad_lr, ewald_field_gradient) / 3
+                torch.einsum("n,n->", mono_lr, ewald_potential) -
+                torch.einsum("ni,ni->", dipo_lr, ewald_field) -
+                torch.einsum("nij,nij->", quad_lr, ewald_field_gradient) / 3
             )
 
         # All multipolar interaction contributions #
@@ -688,6 +688,8 @@ class CMM(ForceField):
             elec_potential = elec_potential + ewald_potential
             elec_field = elec_field + ewald_field
 
+        #print(elec_field / BOHR2ANG / BOHR2ANG)
+        
         ene_ct_direct = 0.5 * torch.sum((ct_pairwise_ij + ct_pairwise_ji) * switch_sr)
         ene_pauli = 0.5 * torch.sum(pauli_pairwise * switch_sr)
         ene_xpol = 0.5 * torch.sum(xpol_pairwise * switch_sr)
@@ -695,11 +697,6 @@ class CMM(ForceField):
             torch.sum(elec_point_pairwise) + torch.sum(elec_point_excl_pairwise) +
             torch.sum((elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr)
         )
-
-        # HERE: Self enregy contributions are correct.
-        # I still can't figure out if there is a bug here or in mchem when
-        # it comes to computing the damping factors for ewald.
-        # Get to the bottom of this ASAP.
 
         print("Perm Elec: ", ene_perm_elec * HARTREE2KCAL)
         print("Ewald: ", ene_ewald * HARTREE2KCAL)

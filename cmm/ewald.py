@@ -146,12 +146,7 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
     cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
     sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
 
-    # NOTE(JOE): I am confident that the potential, field, and field gradient expressions here are correct for charges.
-    # So, the only unchecked source of errors would be in the fourier transform of the multipoles below.
-    # If we run into problems with multipoles, the below two lines are the first place to look.
-    # See: A coherent derivation of the Ewald summation for arbitrary orders of multipoles
-    # for relevant expressions.
-    F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi)
+    F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi) / 3
     F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
     
     exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
@@ -165,7 +160,7 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
     k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
-    field_grad = 4 * torch.pi  * (
+    field_grad = 4 * torch.pi * (
         torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
     ) / V
 
@@ -204,12 +199,7 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
     sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
 
-    # NOTE(JOE): I am confident that the potential, field, and field gradient expressions here are correct for charges.
-    # So, the only unchecked source of errors would be in the fourier transform of the multipoles below.
-    # If we run into problems with multipoles, the below two lines are the first place to look.
-    # See: A coherent derivation of the Ewald summation for arbitrary orders of multipoles
-    # for relevant expressions.
-    F_l_real = q.expand(kvectors.size(0), -1)
+    F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi)
     F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
     
     exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
@@ -217,11 +207,13 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     F_2 = torch.complex(F_l_real, F_l_imag)
     structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
     phi_expanded = (gaussian_factors * structure_factors).unsqueeze(1) * exp_minus_k_dot_r
+    
     potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V) # can take .real inside sum since .imag sums to zero.
     field = 2 * (
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
-
+    k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
+    
     # Now add in the self contributions to potential, field, and field gradient #
     alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
     potential = potential - 2 * alpha_over_root_pi * q
