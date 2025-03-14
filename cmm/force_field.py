@@ -487,17 +487,17 @@ class CMM(ForceField):
         b_ij_disp_lr_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
         C6_ij_disp_lr_p = torch.sqrt(C6_disp[pairs_lr_i_a] * C6_disp[pairs_lr_j_a])
 
-        # Find appropraiate ewald parameters. This should really be done by the CM.
+        # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
-            #self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            self.alpha_ewald = 0.544590516336201 * BOHR2ANG
-            #self.k_max = 50
-            self.k_max = 15
-            #for i in range(2, 50):
-            #    error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-            #    if error_estimate < self.ewald_tolerance:
-            #        self.k_max = i
-            #        break
+            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+            #self.alpha_ewald = 0.544590516336201 * BOHR2ANG
+            self.k_max = 50
+            #self.k_max = 15
+            for i in range(2, 50):
+                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                if error_estimate < self.ewald_tolerance:
+                    self.k_max = i
+                    break
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
             erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
             # ^^^ for removing excluded interactions that are implicitly included in long-range summation
@@ -687,8 +687,6 @@ class CMM(ForceField):
         if self.use_ewald:
             elec_potential = elec_potential + ewald_potential
             elec_field = elec_field + ewald_field
-
-        #print(elec_field / BOHR2ANG / BOHR2ANG)
         
         ene_ct_direct = 0.5 * torch.sum((ct_pairwise_ij + ct_pairwise_ji) * switch_sr)
         ene_pauli = 0.5 * torch.sum(pauli_pairwise * switch_sr)
@@ -698,10 +696,10 @@ class CMM(ForceField):
             torch.sum((elec_cs_pairwise_ij + elec_cs_pairwise_ji + elec_ss_pairwise) * switch_sr)
         )
 
-        print("Perm Elec: ", ene_perm_elec * HARTREE2KCAL)
-        print("Ewald: ", ene_ewald * HARTREE2KCAL)
-        print("Total Elec: ", (ene_perm_elec + ene_ewald) * HARTREE2KCAL)
-        return
+        return {
+            "perm_elec": ene_perm_elec,
+            "ewald": ene_ewald
+        }
         # Find total charges in each polarization group to use as constraints
         drInvDamp_ct = ct_interaction_tensor_sr[:, 0, 0].flatten()
         dq_forward = multipoles_ct_don_i_p[:, 0] * multipoles_ct_acc_j_p[:, 0] * drInvDamp_ct * eps

@@ -175,4 +175,13 @@ def test_multipolar_ewald_water_mchem_reference():
     ff.rebuild_atomic_params()
     
     energies = ff.evaluate(cm, topology, parameters)
+
+    # Reference values from mchem
+    # perm_elec is the actual real space plus the negative of the
+    # masked interactions which are needed to cancel out their inclusion in reciprocal space.
+    # Ewald is the sum of self interactions and reciprocal space.
+    ene_elec = energies["perm_elec"] * HARTREE2KCAL
+    ene_ewald = energies["ewald"] * HARTREE2KCAL
+    assert torch.isclose(ene_elec + ene_ewald, torch.tensor(-2416.42428445285), 1e-3)
+
     #energies['tot'].backward()
