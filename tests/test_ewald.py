@@ -77,74 +77,50 @@ def test_ewald_exact():
     energies = ff.evaluate(cm, topology, parameters)
     assert torch.isclose(torch.tensor(exactEnergy._value), (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ)
 
-def test_ewald_with_polarization():
+def test_multipolar_ewald_water_mchem_reference():
     torch.set_default_dtype(torch.float64)
 
-    numParticles = 894
-    boxSize = 3.00646
-
-    system = System()
-    for _ in range(numParticles // 2):
-        system.addParticle(22.99)
-    for _ in range(numParticles // 2):
-        system.addParticle(35.45)
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
     
-    integrator = VerletIntegrator(0.01)
-    nonbonded = AmoebaMultipoleForce()
-    nonbonded.setNonbondedMethod(1)
-    nonbonded.setEwaldErrorTolerance(1e-6)
-    for _ in range(numParticles // 2):
-        nonbonded.addMultipole(
-            1.0, np.zeros(3), np.zeros(9),
-            nonbonded.NoAxisType, 0, 0, 0,
-            100000000.0, 0.0, 0.9542199 * (BOHR2NM * BOHR2NM * BOHR2NM)
-        )
-    for _ in range(numParticles // 2):
-        nonbonded.addMultipole(
-            -1.0, np.zeros(3), np.zeros(9),
-            nonbonded.NoAxisType, 0, 0, 0,
-            100000000.0, 0.0, 32.2880907 * (BOHR2NM * BOHR2NM * BOHR2NM)
-        )
-    #nonbonded.setPolarizationType(0) # Mutual
-    nonbonded.setPolarizationType(1) # Direct
-    #nonbonded.setPolarizationType(2) # Extrapolated
-    #nonbonded.setMutualInducedTargetEpsilon(1e-8)
-    #nonbonded.setMutualInducedMaxIterations(120)
-    system.setDefaultPeriodicBoxVectors(np.array([boxSize, 0, 0]), np.array([0, boxSize, 0]), np.array([0, 0, boxSize]))
-    system.addForce(nonbonded)
-    context = Context(system, integrator)
-
-    # Loaded positions are in nm
-    positions = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/nacl_amorph.txt"), dtype=np.float64)
-    context.setPositions(positions)
-
-    energies_amoeba = context.getState(energy=True, forces=True).getPotentialEnergy()
-    print(energies_amoeba)
-    print(nonbonded.getInducedDipoles(context))
-
-    coords = torch.tensor(positions / BOHR2NM, dtype=torch.float64, requires_grad=True)
-    bonds = np.array([], dtype=np.float64)
-    atom_type_names = ["" for i in range(coords.size(0))]
-    for i in range(coords.size(0) // 2):
-        atom_type_names[i] = "Na+"
-    for i in range(coords.size(0) // 2, coords.size(0)):
-        atom_type_names[i] = "Cl-"
-
-    box = torch.tensor(np.eye(3) * boxSize / BOHR2NM, dtype=torch.float64, requires_grad=True)
-
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-7), use_ewald=True)
+    ff = CMM(use_ewald=True, use_polarization=False, cutoff_ewald=torch.tensor(7.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
+    ff._raw_atomic_params['b_elec'][0] = 10000000000.0
+    ff._raw_atomic_params['b_elec'][1] = 10000000000.0
+    ff.mono[0] = -0.51966
+    ff.mono[1] = 0.25983
+    ff.dipo[0] = torch.tensor([0.0, 0.0, 0.14279])
+    ff.dipo[1] = torch.tensor([-0.03859, 0.0, -0.05818])
+    quad_O = torch.tensor([[0.56803, 0.0, 0.0], [0.0, -0.65906, 0.0], [0.0, 0.0, 0.09103]])
+    quad_H = torch.tensor([[-0.01730, 0.0, 0.00007], [0.0, -0.07631, 0.0], [0.00007, 0.0, 0.09361]])
+    ff.quad_s[0] = computeSphericalQuadrupoles(quad_O.unsqueeze(0))
+    ff.quad_s[1] = computeSphericalQuadrupoles(quad_H.unsqueeze(0))
+    ff.pair_params[("O_water", "H_water")]["j_cf"] = torch.tensor([0.0])
+    ff.pair_pair_params[(("O_water", "H_water"), ("O_water", "H_water"),)]["j_cf_bb"] = torch.tensor([0.0])
+    ff.angle_params[("H_water", "O_water", "H_water")]["j_cf_angle"] = torch.tensor([0.0])
+    ff.rebuild_atomic_params()
+    
     energies = ff.evaluate(cm, topology, parameters)
-    print((energies["ewald"] + energies["perm_elec"]) * HARTREE2KJ)
 
-def test_multipolar_ewald_water_mchem_reference():
+    # Reference values from mchem
+    # perm_elec is the actual real space plus the negative of the
+    # masked interactions which are needed to cancel out their inclusion in reciprocal space.
+    # Ewald is the sum of self interactions and reciprocal space.
+    ene_elec = energies["perm_elec"] * HARTREE2KCAL
+    ene_ewald = energies["ewald"] * HARTREE2KCAL
+    assert torch.isclose(ene_elec + ene_ewald, torch.tensor(-2416.42428445285), 1e-3)
+
+def test_polarization_with_ewald_mchem_reference_water():
     torch.set_default_dtype(torch.float64)
 
     coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
@@ -162,26 +138,5 @@ def test_multipolar_ewald_water_mchem_reference():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
-    ff._raw_atomic_params['b_elec'][0] = 10000000000.0
-    ff._raw_atomic_params['b_elec'][1] = 10000000000.0
-    ff.mono[0] = -0.51966
-    ff.mono[1] = 0.25983
-    ff.dipo[0] = torch.tensor([0.0, 0.0, 0.14279])
-    ff.dipo[1] = torch.tensor([-0.03859, 0.0, -0.05818])
-    quad_O = torch.tensor([[0.56803, 0.0, 0.0], [0.0, -0.65906, 0.0], [0.0, 0.0, 0.09103]])
-    quad_H = torch.tensor([[-0.01730, 0.0, 0.00007], [0.0, -0.07631, 0.0], [0.00007, 0.0, 0.09361]])
-    ff.quad_s[0] = computeSphericalQuadrupoles(quad_O.unsqueeze(0))
-    ff.quad_s[1] = computeSphericalQuadrupoles(quad_H.unsqueeze(0))
-    ff.rebuild_atomic_params()
-    
     energies = ff.evaluate(cm, topology, parameters)
-
-    # Reference values from mchem
-    # perm_elec is the actual real space plus the negative of the
-    # masked interactions which are needed to cancel out their inclusion in reciprocal space.
-    # Ewald is the sum of self interactions and reciprocal space.
-    ene_elec = energies["perm_elec"] * HARTREE2KCAL
-    ene_ewald = energies["ewald"] * HARTREE2KCAL
-    assert torch.isclose(ene_elec + ene_ewald, torch.tensor(-2416.42428445285), 1e-3)
-
-    #energies['tot'].backward()
+    print(energies)

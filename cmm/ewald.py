@@ -199,7 +199,7 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
     sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
 
-    F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi)
+    F_l_real = q.expand(kvectors.size(0), -1)
     F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
     
     exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
@@ -212,7 +212,6 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     field = 2 * (
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
-    k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
     
     # Now add in the self contributions to potential, field, and field gradient #
     alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))

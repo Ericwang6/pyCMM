@@ -29,12 +29,12 @@ def solvePolarizationByCG(
     guess_vector: torch.Tensor,
     b_vector: torch.Tensor,
     n_charges: torch.NumberType,
-    pairs_lr_i_a: torch.Tensor,
-    pairs_lr_j_a: torch.Tensor,
-    pairs_sr_i_a: torch.Tensor,
-    pairs_sr_j_a: torch.Tensor,
+    pairs_lr_i_a: torch.Tensor, pairs_lr_j_a: torch.Tensor,
+    pairs_sr_i_a: torch.Tensor, pairs_sr_j_a: torch.Tensor,
+    pairs_excl_i_a: torch.Tensor, pairs_excl_j_a: torch.Tensor,
     direct_field_tensor_lr: torch.Tensor,
     pol_interaction_tensor_sr: torch.Tensor,
+    direct_field_tensor_excl: torch.Tensor,
     induced_field_data: torch.Tensor,
     eta: torch.Tensor,
     inverse_polarizabilities: torch.Tensor,
@@ -56,7 +56,8 @@ def solvePolarizationByCG(
         guess_vector, n_charges,
         pairs_lr_i_a, pairs_lr_j_a,
         pairs_sr_i_a, pairs_sr_j_a,
-        direct_field_tensor_lr, pol_interaction_tensor_sr,
+        pairs_excl_i_a, pairs_excl_j_a,
+        direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
         induced_field_data,
         eta, inverse_polarizabilities,
         pol_group_indices_a,
@@ -71,7 +72,8 @@ def solvePolarizationByCG(
             P, n_charges,
             pairs_lr_i_a, pairs_lr_j_a,
             pairs_sr_i_a, pairs_sr_j_a,
-            direct_field_tensor_lr, pol_interaction_tensor_sr,
+            pairs_excl_i_a, pairs_excl_j_a,
+            direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
             induced_field_data,
             eta, inverse_polarizabilities,
             pol_group_indices_a,
@@ -93,12 +95,12 @@ def solvePolarizationByCG(
 def computeProductWithPolarizationMatrix(
     vec_in: torch.Tensor,
     n_charges: torch.NumberType,
-    pairs_lr_i_a: torch.Tensor,
-    pairs_lr_j_a: torch.Tensor,
-    pairs_sr_i_a: torch.Tensor,
-    pairs_sr_j_a: torch.Tensor,
+    pairs_lr_i_a: torch.Tensor, pairs_lr_j_a: torch.Tensor,
+    pairs_sr_i_a: torch.Tensor, pairs_sr_j_a: torch.Tensor,
+    pairs_excl_i_a: torch.Tensor, pairs_excl_j_a: torch.Tensor,
     direct_field_tensor_lr: torch.Tensor,
     pol_interaction_tensor_sr: torch.Tensor,
+    direct_field_tensor_excl: torch.Tensor,
     induced_field_data: torch.Tensor,
     eta: torch.Tensor,
     alpha_inv: torch.Tensor,
@@ -125,17 +127,22 @@ def computeProductWithPolarizationMatrix(
     induced_field_data = torch.zeros_like(induced_field_data) # <-- I think this avoids the allocation
     induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
     induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+    
+    if long_range_potential_function:
+        induced_multipoles_i_excl_p = induced_multipoles_a[pairs_excl_i_a]
+        edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, induced_multipoles_i_excl_p.unsqueeze(2))
+        induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
+    
     induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
     induced_electric_potential = induced_field_data[:, 0]
     induced_electric_field = induced_field_data[:, 1:4]
-
     # Get reciprocal space field data (ewald + self contribution) #
-    #if long_range_potential_function is not None:
-    #    # Get reciprocal space and self contributions to field variables
-    #    # and corresponding electrostatic interactions.
-    #    ewald_potential, ewald_field = long_range_potential_function(induced_charges, induced_dipoles)
-    #    induced_electric_potential = induced_electric_potential + ewald_potential
-    #    induced_electric_field = induced_electric_field + ewald_field
+    if long_range_potential_function:
+        # Get reciprocal space and self contributions to field variables
+        # and corresponding electrostatic interactions.
+        ewald_potential, ewald_field = long_range_potential_function(induced_charges, induced_dipoles)
+        induced_electric_potential = induced_electric_potential + ewald_potential
+        induced_electric_field = induced_electric_field + ewald_field
 
     # Get sum of induced charges in every polarization group
     constraints = segment_csr(induced_charges[pol_group_indices_a], pol_group_segment_indices, reduce='sum')
