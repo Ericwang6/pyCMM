@@ -16,5 +16,12 @@ HARTREE2KCAL = HARTREE2KJ / 4.184
 
 EPSILON0 = constants.epsilon_0
 
+# The atomic unit of mass is such that an electron has mass 1.0.
+# The (confusingly named) atomic mass units are way smaller than this.
+# The mass in units of electron masses is what we need to be internally consistent.
+AMU2ELECTRON_MASS = 1.0 / (constants.value("atomic unit of mass") * AVOGADRO * 1000)
+FS2AU = 1.0 / (constants.value("atomic unit of time") * 1e15)
+KB_EhPerK = constants.value("Boltzmann constant") / constants.value("atomic unit of energy")
+
 if __name__ == '__main__':
     print(HARTREE2KCAL, HARTREE2KJ)

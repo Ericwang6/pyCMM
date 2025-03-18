@@ -86,7 +86,7 @@ def solvePolarizationByCG(
         beta = 1.0 / torch.dot(residual, residual)
         residual -= gamma * TP
         if torch.norm(residual) < residual_threshold:
-            print(i_iter, " steps to converge")
+            #print(i_iter, " steps to converge")
             return guess_vector
         beta *= torch.dot(residual, residual)
         P = residual + beta * P
