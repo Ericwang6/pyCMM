@@ -83,7 +83,7 @@ def profile_optimization():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds = get_water_box_coords(requires_grad=True, device=device)
+    labels, coords, atom_types, bonds = get_water_box_coords(requires_grad=True, device=device)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}

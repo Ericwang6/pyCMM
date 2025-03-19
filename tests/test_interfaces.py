@@ -85,22 +85,26 @@ def test_optimize_dimers_via_ase():
 def test_optimize_water_box_via_ase():
     torch.set_default_dtype(torch.float64)
 
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device)
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+    bonds[0] = bonds[0][permutation]
+    bonds[1] = bonds[1][permutation]
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=coords.dtype, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
-    
+    ff = CMM(use_ewald=True)
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     ff_ase.calculate()
-    dyn = FIRE2(ff_ase.atoms)
+    dyn = LBFGS(ff_ase.atoms, trajectory='water216_opt.traj')
     dyn.run(fmax=1e-3)
