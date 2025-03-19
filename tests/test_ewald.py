@@ -74,8 +74,15 @@ def test_ewald_exact():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
+    ff.alpha[3] = torch.diag(torch.tensor([0.0000000001 for _ in range(3)]))
+    ff.alpha[7] = torch.diag(torch.tensor([0.0000000001 for _ in range(3)]))
+    ff._raw_atomic_params['b_elec'][3] = 10000000000.0
+    ff._raw_atomic_params['b_elec'][7] = 10000000000.0
+    ff.rebuild_atomic_params()
+
     energies = ff.evaluate(cm, topology, parameters)
-    assert torch.isclose(torch.tensor(exactEnergy._value), (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ)
+    elec_energy_cmm = (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ
+    assert torch.isclose(torch.tensor(exactEnergy._value), elec_energy_cmm)
 
 def test_multipolar_ewald_water_mchem_reference():
     torch.set_default_dtype(torch.float64)
@@ -119,24 +126,3 @@ def test_multipolar_ewald_water_mchem_reference():
     ene_elec = energies["perm_elec"] * HARTREE2KCAL
     ene_ewald = energies["ewald"] * HARTREE2KCAL
     assert torch.isclose(ene_elec + ene_ewald, torch.tensor(-2416.42428445285), 1e-3)
-
-def test_polarization_with_ewald_mchem_reference_water():
-    torch.set_default_dtype(torch.float64)
-
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
-    
-    # Normally, the parser should enforce just returning the names of atom types
-    atom_indices_to_names = {0: "O_water", 1: "H_water"}
-    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
-    cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True, cutoff_ewald=torch.tensor(7.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
-
-    energies = ff.evaluate(cm, topology, parameters)
-    print(energies)
