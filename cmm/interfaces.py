@@ -1,3 +1,4 @@
+import ase
 from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.units import Bohr, Hartree
@@ -6,6 +7,7 @@ from cmm.parameters import Parameterizer
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.force_field import CMM
+from cmm.units import BOHR2ANG
 import numpy as np
 import torch
 
@@ -38,11 +40,15 @@ class CMM_ASE(Calculator):
                 'magmoms': np.zeros(len(self.atoms))}
     
     @classmethod
-    def from_atoms(cls, atoms):
+    def from_atoms(cls, atoms: ase.Atoms, torch_dtype=torch.float64, requires_grad=True, device: str="cpu"):
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         atomic_numbers_to_names = {8: "O_water", 1: "H_water"}
         atom_type_names = [atomic_numbers_to_names[atomic_number] for atomic_number in atoms.get_atomic_numbers()]
-        #box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
-        #cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+        box = torch.tensor(np.asarray(atoms.get_cell()) / BOHR2ANG, dtype=torch_dtype, requires_grad=True, device=device)
+        coords = torch.tensor(coords / BOHR2ANG, dtype=torch_dtype, requires_grad=requires_grad, device=device)
+        cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=atoms.get_chemical_symbols(), max_neighbors=1024)
+        # HERE: Write a method to guess the topology from the atom types and neighbor list.
+        
         #topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         #pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         #ff = CMM()

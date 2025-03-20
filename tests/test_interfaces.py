@@ -67,7 +67,7 @@ def test_construct_system_from_ase_atoms():
     atoms = ff_ase.atoms
     #atoms.get_forces()
 
-    print(atoms.get_cell())
+    
 
 
 

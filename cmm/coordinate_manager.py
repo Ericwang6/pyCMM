@@ -78,7 +78,6 @@ class CoordinateManager:
         xVec = torch.zeros_like(zVec)
         yVec = torch.zeros_like(zVec)
 
-
         # Z-Only
         filterZOnly = (axis_types == AxisTypes.ZOnly.value)
         if torch.any(filterZOnly):

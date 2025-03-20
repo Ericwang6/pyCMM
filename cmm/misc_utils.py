@@ -2,6 +2,7 @@ import torch
 from typing import List
 import numpy as np
 from .units import BOHR2ANG
+from .atom_types import get_expected_connectivities
 
 def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
     """
@@ -85,6 +86,10 @@ def read_from_tinker_xyz(xyz_file: str, requires_grad=True, device="cpu"):
     atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False, device=device) - 1
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad, device=device)
     return coords, atom_types, bonds, labels
+
+def guess_bond_graph(self, atom_types: List[str], dists: torch.Tensor, pairs: torch.Tensor):
+    expected_connectivities = get_expected_connectivities(atom_types)
+    
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)

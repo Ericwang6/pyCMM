@@ -94,7 +94,6 @@ class NSquaredList(NeighborList):
     def get_neighbors(self, atom_idx: int):
         return self.neighbor_list[atom_idx, :self.n_neighbors[atom_idx]]
 
-
 class CellList(NeighborList):
     def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: torch.Tensor, max_neighbors: int=512):
         """
