@@ -44,6 +44,33 @@ def test_ase():
     assert torch.isclose(energies['tot'], torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(grad_1, torch.from_numpy(ff_ase.results['forces']))
 
+def test_construct_system_from_ase_atoms():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    atoms = ff_ase.atoms
+    #atoms.get_forces()
+
+    print(atoms.get_cell())
+
+
+
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)
 

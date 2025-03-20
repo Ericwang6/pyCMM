@@ -37,6 +37,20 @@ class CMM_ASE(Calculator):
                 'magmom': 0.0,
                 'magmoms': np.zeros(len(self.atoms))}
     
+    @classmethod
+    def from_atoms(cls, atoms):
+        atomic_numbers_to_names = {8: "O_water", 1: "H_water"}
+        atom_type_names = [atomic_numbers_to_names[atomic_number] for atomic_number in atoms.get_atomic_numbers()]
+        #box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
+        #cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+        #topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        #pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+        #ff = CMM()
+        #parameters = Parameterizer(
+        #    atom_type_names, pairs, topology.angle_atoms,
+        #    ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        #)
+
     def _evaluate_ff(self):
             self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
             self._energies['tot'].backward()

@@ -8,10 +8,10 @@ setup(
         "openmm==8.2.0",
         "pytest==8.3.4",
         "scipy==1.15.1",
-        "torch==2.6.0",
+        "torch==2.5.1",
         "torch-scatter==2.1.2",
-        "torchaudio==2.6.0",
-        "torchvision==0.21.0"
+        "torchaudio",
+        "torchvision"
     ],
     author="Eric Wang, Joseph Heindel, Aalim Abdullah",
     author_email="ericwangyz@berkeley.edu,heindelj@lbl.gov,aalimabdullah@berkeley.edu",
