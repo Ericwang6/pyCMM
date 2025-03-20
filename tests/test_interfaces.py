@@ -2,7 +2,9 @@ import torch
 import os
 import numpy as np
 
-from ase.optimize import FIRE2, LBFGS
+from ase.optimize import LBFGS
+from ase.md import VelocityVerlet
+from ase.units import fs
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
 from cmm.misc_utils import read_from_tinker_xyz
@@ -44,11 +46,11 @@ def test_ase():
     assert torch.isclose(energies['tot'], torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(grad_1, torch.from_numpy(ff_ase.results['forces']))
 
-def test_construct_system_from_ase_atoms():
+def test_cmm_ase_checkpointing():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True, device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True, device=device)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
@@ -63,13 +65,17 @@ def test_construct_system_from_ase_atoms():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
-    ff_ase = CMM_ASE(ff, cm, topology, parameters)
-    atoms = ff_ase.atoms
-    #atoms.get_forces()
+    calculator = CMM_ASE(ff, cm, topology, parameters)
+    calculator.atoms.calc = calculator
 
-    
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2.traj'))
+    dyn.attach(calculator.create_checkpoint, interval=5)  # Checkpoint every 5 steps
+    dyn.run(9)
+    final_checkpoint_file = calculator.create_checkpoint('final_state')
 
-
+    # To restart from a checkpoint
+    #calculator = CMM_ASE.load_state('checkpoint_20230320_120000.json')
+    #atoms = calculator.atoms
 
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)

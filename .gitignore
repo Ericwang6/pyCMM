@@ -2,6 +2,7 @@
 */temp.xyz
 *.traj
 *.xyz
+tests/scratch/*
 
 # Notebooks
 notebooks/
