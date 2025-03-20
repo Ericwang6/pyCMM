@@ -22,6 +22,8 @@ class CMM_ASE(Calculator):
             self.output_folder = "."
         else:
             self.output_folder = output_folder
+
+        self._checkpoint_counter = 0
         
         self.atoms = Atoms(
             positions=cm.coords.detach().cpu().numpy() * Bohr,
@@ -42,6 +44,8 @@ class CMM_ASE(Calculator):
                 'charges': np.zeros(len(self.atoms)),
                 'magmom': 0.0,
                 'magmoms': np.zeros(len(self.atoms))}
+        
+        self.calculate() # Calculate at beginning to seed forces
     
     def save_state(self, filename: str):
         """
@@ -50,7 +54,7 @@ class CMM_ASE(Calculator):
         Args:
             filename (str): The name of the file to save the state to.
         """
-        import json
+        import json, os
 
         # Create a dictionary with all the necessary information
         state = {
@@ -65,6 +69,9 @@ class CMM_ASE(Calculator):
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
         }
+
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
 
         # Save the dictionary to a JSON file
         with open(filename, 'w') as f:
@@ -165,11 +172,13 @@ class CMM_ASE(Calculator):
             str: Name of the checkpoint file.
         """
         import os
-        from datetime import datetime
+    
+        # Alternate between checkpoint_0 and checkpoint_1
+        suffix = self._checkpoint_counter % 2
+        self._checkpoint_counter += 1
 
-        # Create a timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{filename_prefix}_{timestamp}.json"
+        # Create filename
+        filename = os.path.join(self.output_folder, f"{filename_prefix}_{suffix}.json")
 
         # Save the state
         self.save_state(filename)
@@ -185,16 +194,23 @@ class CMM_ASE(Calculator):
             mode (str): Write mode, 'a' for append, 'w' for write.
             properties (list): Properties to include in the trajectory.
         """
+        import os
         from ase.io import write
 
+        # Create absolute path using output folder
+        full_path = os.path.join(self.output_folder, filename)
+
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(full_path)), exist_ok=True)
+
         # Write atomic configuration to trajectory
-        write(filename, self.atoms, mode=mode, properties=properties)
+        write(full_path, self.atoms, mode=mode, properties=properties)
 
         # Also save the topology info to enable proper restart
         # Only save this information if writing a new file or appending first frame
-        if mode == 'w' or (mode == 'a' and not os.path.exists(filename)):
+        if mode == 'w' or (mode == 'a' and not os.path.exists(full_path)):
             # Save topology file alongside trajectory
-            topo_filename = filename + '.topology.json'
+            topo_filename = full_path + '.topology.json'
             self.save_state(topo_filename)
 
     def _evaluate_ff(self):
@@ -202,6 +218,7 @@ class CMM_ASE(Calculator):
             self._energies['tot'].backward()
 
             self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
+            print(self.results['energy'])
             self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
 
     def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):

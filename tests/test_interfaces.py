@@ -4,6 +4,7 @@ import numpy as np
 
 from ase.optimize import LBFGS
 from ase.md import VelocityVerlet
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 from ase.units import fs
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG
@@ -50,28 +51,38 @@ def test_cmm_ase_checkpointing():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True, device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), device=device)
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+    bonds[0] = bonds[0][permutation]
+    bonds[1] = bonds[1][permutation]
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=False)
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
 
-    calculator = CMM_ASE(ff, cm, topology, parameters)
+    calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
     calculator.atoms.calc = calculator
 
-    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2.traj'))
+    temperature = 300.0  # K
+    MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature)
+    Stationary(calculator.atoms)
+    ZeroRotation(calculator.atoms)
+
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
     dyn.attach(calculator.create_checkpoint, interval=5)  # Checkpoint every 5 steps
-    dyn.run(9)
-    final_checkpoint_file = calculator.create_checkpoint('final_state')
+    finished = dyn.run(4)
+    if finished:
+        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
 
     # To restart from a checkpoint
     #calculator = CMM_ASE.load_state('checkpoint_20230320_120000.json')
@@ -138,6 +149,5 @@ def test_optimize_water_box_via_ase():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
-    ff_ase.calculate()
     dyn = LBFGS(ff_ase.atoms, trajectory='water216_opt.traj')
     dyn.run(fmax=1e-3)
