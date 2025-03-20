@@ -84,7 +84,7 @@ def read_from_tinker_xyz(xyz_file: str, requires_grad=True, device="cpu"):
     bonds[1] = bonds[1][permutation]
     atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False, device=device) - 1
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad, device=device)
-    return coords, atom_types, bonds
+    return coords, atom_types, bonds, labels
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)

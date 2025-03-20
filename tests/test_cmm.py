@@ -149,7 +149,7 @@ def water_data(coords: torch.Tensor):
 def test_multiple_evaluations():
     torch.set_default_dtype(torch.float64)
 
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
 
@@ -176,8 +176,8 @@ def test_multiple_evaluations():
 def test_total_energy_and_total_gradients_ion_ion():
     torch.set_default_dtype(torch.float64)
 
-    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=False)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
+    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=False)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "Na+", 1: "Cl-"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
@@ -217,10 +217,10 @@ def test_total_energy_and_total_gradients_ion_ion():
 def test_total_energy_and_total_gradients_ion_water():
     torch.set_default_dtype(torch.float64)
 
-    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=False)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=True)
-    #coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=False)
-    #coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=True)
+    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=False)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/h2o_f.xyz"), requires_grad=True)
+    #coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=False)
+    #coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w5_f.xyz"), requires_grad=True)
     atom_indices_to_names = {
         0: "O_water", 1: "H_water",
         2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
@@ -266,8 +266,8 @@ def test_total_energy_and_total_gradients_ion_water():
 def test_total_energy_and_total_gradients():
     torch.set_default_dtype(torch.float64)
 
-    coords_no_grad, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
@@ -313,7 +313,7 @@ def test_total_energy_and_total_gradients():
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)
 
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)

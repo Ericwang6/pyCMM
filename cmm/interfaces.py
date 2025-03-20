@@ -19,8 +19,9 @@ class CMM_ASE(Calculator):
         
         self.atoms = Atoms(
             positions=cm.coords.detach().cpu().numpy() * Bohr,
-            cell=cm.box.detach().cpu().numpy() / Bohr,
+            cell=cm.box.detach().cpu().numpy() * Bohr,
             pbc=[1, 1, 1],
+            symbols=cm.labels,
             calculator=self
         )
 

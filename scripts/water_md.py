@@ -317,7 +317,7 @@ class CMMWater(nn.Module):
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
     model = CMMWater(216, rcut=8.0, do_polarization=True)
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
     box = torch.tensor(np.eye(3) * 18.643 / cmm.BOHR2ANG, dtype=torch.float64, requires_grad=True)
     energies = model.computeEnergy(coords, box)
     #energies['tot'].backward()

@@ -156,7 +156,7 @@ def test_ewald():
     quad = torch.tensor(np.array(quad), dtype=torch.float64).reshape(-1, 3, 3) / (BOHR2NM * BOHR2NM) * 3
     quad_s = computeSphericalQuadrupoles(quad)
 
-    coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
