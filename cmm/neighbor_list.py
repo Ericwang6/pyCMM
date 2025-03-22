@@ -272,7 +272,6 @@ class CellList(NeighborList):
         """
         # Check if a rebuild of the cells is needed
         if self._needs_rebuild(positions):
-            print("here")
             self.box_lengths = box_lengths
             self.minimum_vector = torch.min(positions, dim=0)[0]
             self._build(positions)

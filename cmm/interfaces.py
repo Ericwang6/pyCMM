@@ -45,7 +45,7 @@ class CMM_ASE(Calculator):
                 'magmom': 0.0,
                 'magmoms': np.zeros(len(self.atoms))}
         
-        #self.calculate(self.atoms) # Calculate at beginning to seed forces
+        self.calculate(self.atoms) # Calculate at beginning to seed forces
     
     def save_state(self, filename: str):
         """
@@ -212,34 +212,42 @@ class CMM_ASE(Calculator):
             # Save topology file alongside trajectory
             topo_filename = full_path + '.topology.json'
             self.save_state(topo_filename)
-
-    def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):
-        self.calculate(atoms=atoms)
-        return self.results['energy']
     
-    #def get_forces(self, atoms=None, apply_constraint=True, md=False):
-    #    return self.results['forces']
-
-    # TODO: ASE does not always populate these properties or system_changes arrays
-    # which makes it difficult to know how to respond to a call to calculate.
-    # Currently I have removed the get_forces method since having this present
-    # just seems to result in calculations happening twice. I should basically
-    # keep track of when we last updated the positions, last evaluated the force
-    # field and last back-propagated through so that I don't have to rely on ASE
-    # to figure out what needs to be calculated. Instead, I can just do the minimal
-    # work required for whatever function ASE is calling.
-    def calculate(self,
-        atoms=None,
-        properties=['energy', 'forces', 'stress', 'dipole'],
-        system_changes=[]
-    ):
-        if atoms:
-            # Update positions on GPU #
-            self.atoms = atoms
-        self._cm.update_coordinates(torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device))
-
+    def _evaluate_ff(self):
         self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
         self._energies['tot'].backward()
 
         self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
+        print(self.results['energy'])
         self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
+
+    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=[]):
+        if atoms:
+            # Update positions on GPU #
+            self.atoms = atoms
+            positions_tensor = torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device)
+            self._cm.update_coordinates(positions_tensor)
+
+        # Ensure coordinates have gradients enabled
+        if not self._cm.coords.requires_grad:
+            print("WARNING: Coordinates do not have gradients enabled!")
+            self._cm.coords.requires_grad_(True)
+
+        # Zero gradients if they exist
+        if self._cm.coords.grad is not None:
+            self._cm.coords.grad.zero_()
+
+        self._evaluate_ff()
+
+        # Debug force calculation
+        max_force = np.max(np.abs(self.results['forces']))
+        print(f"Max force: {max_force}")
+
+def get_forces(self, atoms=None):
+    """Get forces for current atomic configuration"""
+    self.calculate(atoms)
+    return self.results['forces']
+
+def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):
+    self.calculate(atoms=atoms)
+    return self.results['energy']

@@ -80,6 +80,10 @@ def test_cmm_ase_checkpointing():
 
     calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
     calculator.atoms.calc = calculator
+    
+    # Initial forces calculation
+    initial_forces = calculator.atoms.get_forces()
+    print(f"Initial max force: {np.max(np.abs(initial_forces))}")
 
     temperature = 150.0  # K
     MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)

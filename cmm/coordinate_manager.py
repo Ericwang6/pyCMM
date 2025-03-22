@@ -22,8 +22,11 @@ class CoordinateManager:
         """
         Update coordinates held by the coordinate manager and neighbor list.
         """
-        self.coords = new_coords.detach().clone().requires_grad_()
-        self._check_for_nl_update = True
+        # Ensure coordinates require gradients
+        if self._need_coordindate_grads:
+            self.coords = new_coords.clone().requires_grad_(True)
+        else:
+            self.coords = new_coords.detach().clone()
 
     def update_box(self, new_box: torch.Tensor):
         """
