@@ -45,7 +45,7 @@ class CMM_ASE(Calculator):
                 'magmom': 0.0,
                 'magmoms': np.zeros(len(self.atoms))}
         
-        self.calculate() # Calculate at beginning to seed forces
+        #self.calculate(self.atoms) # Calculate at beginning to seed forces
     
     def save_state(self, filename: str):
         """
@@ -213,14 +213,6 @@ class CMM_ASE(Calculator):
             topo_filename = full_path + '.topology.json'
             self.save_state(topo_filename)
 
-    def _evaluate_ff(self):
-            self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
-            self._energies['tot'].backward()
-
-            self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
-            print(self.results['energy'])
-            self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
-
     def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):
         self.calculate(atoms=atoms)
         return self.results['energy']
@@ -244,6 +236,10 @@ class CMM_ASE(Calculator):
         if atoms:
             # Update positions on GPU #
             self.atoms = atoms
-            self._cm.update_coordinates(torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device))
-        
-        self._evaluate_ff()
+        self._cm.update_coordinates(torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device))
+
+        self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
+        self._energies['tot'].backward()
+
+        self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
+        self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)

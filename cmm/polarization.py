@@ -16,14 +16,17 @@ def get_field_dependent_polarizabilities(
 
 def direct_field_induced_dipole_guess(
     n_charges: torch.NumberType,
-    n_dipoles: torch.NumberType,
     n_groups: torch.NumberType,
     polarizabilities: torch.Tensor,
     elec_field: torch.Tensor
 ):
-    guess_vector = torch.zeros(n_charges + 3 * n_dipoles + n_groups, device=elec_field.device)
-    guess_vector[n_charges:(n_charges + 3 * n_dipoles)] = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
-    return guess_vector
+    dipole_part = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
+
+    return torch.cat([
+        torch.zeros(n_charges, device=elec_field.device),
+        dipole_part,
+        torch.zeros(n_groups, device=elec_field.device)
+    ])
 
 def solvePolarizationByCG(
     guess_vector: torch.Tensor,
@@ -35,7 +38,7 @@ def solvePolarizationByCG(
     direct_field_tensor_lr: torch.Tensor,
     pol_interaction_tensor_sr: torch.Tensor,
     direct_field_tensor_excl: torch.Tensor,
-    induced_field_data: torch.Tensor,
+    #induced_field_data: torch.Tensor,
     eta: torch.Tensor,
     inverse_polarizabilities: torch.Tensor,
     pol_group_indices_a: torch.Tensor,
@@ -58,7 +61,7 @@ def solvePolarizationByCG(
         pairs_sr_i_a, pairs_sr_j_a,
         pairs_excl_i_a, pairs_excl_j_a,
         direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
-        induced_field_data,
+        #induced_field_data,
         eta, inverse_polarizabilities,
         pol_group_indices_a,
         pol_group_segment_indices,
@@ -66,7 +69,8 @@ def solvePolarizationByCG(
         long_range_potential_function
     )
     residual = b_vector - TM0
-    P = residual.detach().clone()
+    #P = residual.detach().clone()
+    P = residual.clone()
     for i_iter in range(max_iter):
         TP, _, _ = computeProductWithPolarizationMatrix(
             P, n_charges,
@@ -74,7 +78,7 @@ def solvePolarizationByCG(
             pairs_sr_i_a, pairs_sr_j_a,
             pairs_excl_i_a, pairs_excl_j_a,
             direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
-            induced_field_data,
+            #induced_field_data,
             eta, inverse_polarizabilities,
             pol_group_indices_a,
             pol_group_segment_indices,
@@ -82,13 +86,13 @@ def solvePolarizationByCG(
             long_range_potential_function
         )
         gamma = torch.dot(residual, residual) / torch.dot(P, TP)
-        guess_vector += gamma * P
+        guess_vector = guess_vector + gamma * P
         beta = 1.0 / torch.dot(residual, residual)
-        residual -= gamma * TP
+        residual = residual - gamma * TP
         if torch.norm(residual) < residual_threshold:
             #print(i_iter, " steps to converge")
             return guess_vector
-        beta *= torch.dot(residual, residual)
+        beta = beta * torch.dot(residual, residual)
         P = residual + beta * P
     return guess_vector
 
@@ -101,7 +105,7 @@ def computeProductWithPolarizationMatrix(
     direct_field_tensor_lr: torch.Tensor,
     pol_interaction_tensor_sr: torch.Tensor,
     direct_field_tensor_excl: torch.Tensor,
-    induced_field_data: torch.Tensor,
+    #induced_field_data: torch.Tensor,
     eta: torch.Tensor,
     alpha_inv: torch.Tensor,
     pol_group_indices_a: torch.Tensor,
@@ -124,16 +128,21 @@ def computeProductWithPolarizationMatrix(
     # Accumulate the total potentials, fields, and field gradients.
     # One contribution is accumulated over all long-range pairs, while the other
     # accumulates just the penetration contribution.
-    induced_field_data = torch.zeros_like(induced_field_data) # <-- I think this avoids the allocation
-    induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
-    induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+    #induced_field_data = torch.zeros_like(induced_field_data) # <-- I think this avoids the allocation
+    induced_field_data = torch.zeros(n_charges, 4, device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype, requires_grad=True)
+    #induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
+    induced_field_data = induced_field_data.scatter_add(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
+    #induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+    induced_field_data = induced_field_data.scatter_add(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
     
     if long_range_potential_function:
         induced_multipoles_i_excl_p = induced_multipoles_a[pairs_excl_i_a]
         edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, induced_multipoles_i_excl_p.unsqueeze(2))
-        induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
+        #induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
+        induced_field_data = induced_field_data.scatter_add(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
     
-    induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
+    #induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
+    induced_field_data = induced_field_data.mul(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
     induced_electric_potential = induced_field_data[:, 0]
     induced_electric_field = induced_field_data[:, 1:4]
     # Get reciprocal space field data (ewald + self contribution) #
@@ -151,8 +160,9 @@ def computeProductWithPolarizationMatrix(
     expanded_lagrange_muls = lagrange_muls.repeat_interleave(pol_group_lengths_g)
 
     # Now we need to scatter these values back to the atomic indices
-    lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device)
-    lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
+    lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device, requires_grad=True)
+    #lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
+    lagrange_muls_a = lagrange_muls_a.scatter_add(0, pol_group_indices_a, expanded_lagrange_muls)
 
     res = torch.concat((
         eta * induced_charges + lagrange_muls_a + induced_electric_potential,

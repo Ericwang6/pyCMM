@@ -5,7 +5,7 @@ from .pbc import applyPBC
 from .axis_types import AxisTypes
 
 class CoordinateManager:
-    def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: Optional[List[str]]=None, max_neighbors: int = 512) -> None:
+    def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 512) -> None:
         self._need_coordindate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
         self.coords = coords
@@ -35,7 +35,7 @@ class CoordinateManager:
         self.neighbor_list.box_lengths = self.box_lengths
         self._check_for_nl_update = True
 
-    def get_distances_vectors_and_pairs(self, reset_gradients: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs.
         """
@@ -44,13 +44,22 @@ class CoordinateManager:
         # but if I could avoid that, then that would be ideal. I guess I could
         # transpose the coordinate to solve this problem?
         
-        if reset_gradients:
+        # If we have nonzero grads, but we are here, then we are evaluating the force field
+        # again without having used the gradients. Currently, this can only because we
+        # did not actually do the backwards pass. In that case, we should just reset
+        # the gradients since accumulating into them will definitely be incorrect.
+        # In the future, we will a more sophisticated method than this since evaluating
+        # over batches of pairs would have us call this function multiple times with the
+        # intention of accumulating gradients to the coordinates multiple times before
+        # calling .backward().
+        if self.coords.grad is not None:
             self.update_coordinates(self.coords)
             self.update_box(self.box)
+
         # TODO: Something is broken about NL rebuilds!
         # Fix that!
-        #if self._check_for_nl_update:
-        #    self.neighbor_list.update(self.coords, self.box_lengths)
+        if self._check_for_nl_update:
+            self.neighbor_list.update(self.coords, self.box_lengths)
         with torch.no_grad():
             self.pairs = self.neighbor_list.get_pairs()
         distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
@@ -139,9 +148,9 @@ class CoordinateManager:
         # No axis
         filterNoAxis = (axis_types == AxisTypes.NoAxisType.value)
         if torch.any(filterNoAxis):
-            xVecNoAxis = torch.tensor([1.0, 0.0, 0.0])
-            yVecNoAxis = torch.tensor([0.0, 1.0, 0.0])
-            zVecNoAxis = torch.tensor([0.0, 0.0, 1.0])
+            xVecNoAxis = torch.tensor([1.0, 0.0, 0.0], device=zVec.device)
+            yVecNoAxis = torch.tensor([0.0, 1.0, 0.0], device=zVec.device)
+            zVecNoAxis = torch.tensor([0.0, 0.0, 1.0], device=zVec.device)
             xVec[filterNoAxis] = xVec[filterNoAxis] + xVecNoAxis
             yVec[filterNoAxis] = yVec[filterNoAxis] + yVecNoAxis
             zVec[filterNoAxis] = zVec[filterNoAxis] + zVecNoAxis

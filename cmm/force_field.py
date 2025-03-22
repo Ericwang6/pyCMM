@@ -367,9 +367,9 @@ class CMM(ForceField):
             self.parameters_have_changed = True
 
     #@torch.compile
-    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_gradients: bool=True):
+    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_gradients=reset_gradients)
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
         
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
@@ -607,8 +607,9 @@ class CMM(ForceField):
         multipoles_real = convertMultipolesToPolytensor(
             mono_lr, dipo_lr, quad_lr
         )
-        multipoles_cp = multipoles_real.clone()
-        multipoles_cp[:, 0] = mono - Z
+        multipoles_cp = convertMultipolesToPolytensor(
+            mono_lr - Z, dipo_lr, quad_lr
+        )
 
         # @SPEED: Z_mpoles is all zeros besides the charge. Can certainly avoid allocating the
         # multipolar array entries and thereby eliminate the multiplications by zero.
@@ -672,16 +673,16 @@ class CMM(ForceField):
         # Accumulate the total potentials, fields, and field gradients.
         # One contribution is accumulated over all long-range pairs, while the other
         # accumulates just the penetration contribution.
-        all_field_data = torch.zeros(natoms, 10, device=dists.device, dtype=dists.dtype)
-        all_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 10), edata_point_pairwise.squeeze(2))
-        all_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 10), edata_cs_pairwise_ij.squeeze(2))
+        all_field_data = torch.zeros(natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
+        all_field_data = all_field_data.scatter_add(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 10), edata_point_pairwise.squeeze(2))
+        all_field_data = all_field_data.scatter_add(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 10), edata_cs_pairwise_ij.squeeze(2))
 
         if self.use_ewald:
             edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, multipoles_excl_i_p.unsqueeze(2))
             elec_point_excl_pairwise = torch.bmm(multipoles_excl_j_p.unsqueeze(1), edata_point_excl_pairwise).flatten()
-            all_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 10), edata_point_excl_pairwise.squeeze(2))
+            all_field_data = all_field_data.scatter_add(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 10), edata_point_excl_pairwise.squeeze(2))
 
-        all_field_data.mul_(torch.tensor([1, -1, -1, -1, -1, -1, -1, -1, -1, -1], device=pairs.device).reshape(1, -1))
+        all_field_data = all_field_data.mul(torch.tensor([1, -1, -1, -1, -1, -1, -1, -1, -1, -1], device=pairs.device).reshape(1, -1))
         elec_potential = all_field_data[:, 0]
         elec_field = all_field_data[:, 1:4]
         if self.use_ewald:
@@ -703,8 +704,8 @@ class CMM(ForceField):
         dq_forward = multipoles_ct_don_i_p[:, 0] * multipoles_ct_acc_j_p[:, 0] * drInvDamp_ct * eps
         dq_backward = multipoles_ct_acc_i_p[:, 0] * multipoles_ct_don_j_p[:, 0] * drInvDamp_ct * eps
         dq_pairwise = (dq_forward - dq_backward) * switch_sr
-        dq_a = torch.zeros(natoms, device=pairs.device)
-        dq_groups = torch.zeros(topology.n_pol_groups, device=pairs.device)
+        dq_a = torch.zeros(natoms, device=pairs.device, requires_grad=True)
+        dq_groups = torch.zeros(topology.n_pol_groups, device=pairs.device, requires_grad=True)
         dq_a = dq_a.scatter_add(0, pairs_sr_j_a, dq_pairwise)
         dq_groups = segment_csr(dq_a[topology.pol_group_indices_a], topology.pol_group_segment_indices, reduce='sum')
 
@@ -713,15 +714,19 @@ class CMM(ForceField):
         inverse_polarizabilities = torch.linalg.inv(polarizabilities)
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        induced_field_data = torch.zeros(natoms, 4, device=dists.device, dtype=dists.dtype)
         
         long_range_induced_potential_function = None
         if self.use_polarization:
+            #induced_field_data = torch.zeros(natoms, 4, device=dists.device, dtype=dists.dtype, requires_grad=True)
             if self.use_ewald:
                 long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
+            
+            self.last_induced_multipoles = None
+            #self.last_induced_multipoles = torch.zeros(natoms + 3 * natoms + topology.n_pol_groups, device=elec_field.device, requires_grad=True)
             with torch.no_grad():
+            #with torch.enable_grad():
                 if self.last_induced_multipoles is None:
-                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, natoms, topology.n_pol_groups, polarizabilities, elec_field)
+                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
 
                 induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
                     self.last_induced_multipoles,
@@ -731,7 +736,7 @@ class CMM(ForceField):
                     pairs_sr_i_a, pairs_sr_j_a,
                     pairs_excl_i_a, pairs_excl_j_a,
                     direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                    induced_field_data,
+                    #induced_field_data,
                     eta_times_2, inverse_polarizabilities,
                     topology.pol_group_indices_a,
                     topology.pol_group_segment_indices,
@@ -741,19 +746,19 @@ class CMM(ForceField):
                 self.last_induced_multipoles = induced_multipoles_and_lagrange_muls_out
 
             TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
-                induced_multipoles_and_lagrange_muls_out, natoms,
+                self.last_induced_multipoles, natoms,
                 pairs_lr_i_a, pairs_lr_j_a,
                 pairs_sr_i_a, pairs_sr_j_a,
                 pairs_excl_i_a, pairs_excl_j_a,
                 direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                induced_field_data,
+                #induced_field_data,
                 eta_times_2, inverse_polarizabilities,
                 topology.pol_group_indices_a,
                 topology.pol_group_segment_indices,
                 topology.pol_group_lengths_g,
                 long_range_induced_potential_function
             )
-            ene_pol = torch.dot(induced_multipoles_and_lagrange_muls_out, (0.5 * TM - b_vec))
+            ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * TM - b_vec))
         else:
             ene_pol = torch.tensor(0.0)
 
