@@ -29,9 +29,11 @@ class CMM_ASE(Calculator):
             positions=cm.coords.detach().cpu().numpy() * Bohr,
             cell=cm.box.detach().cpu().numpy() * Bohr,
             pbc=[1, 1, 1],
-            symbols=cm.labels,
-            calculator=self
+            symbols=cm.labels
         )
+
+        # Set ourselves as the calculator
+        self.atoms.calc = self
 
         self.implemented_properties = ['energy', 'forces'] # TODO: add stress and dipole
     
@@ -44,8 +46,6 @@ class CMM_ASE(Calculator):
                 'charges': np.zeros(len(self.atoms)),
                 'magmom': 0.0,
                 'magmoms': np.zeros(len(self.atoms))}
-        
-        self.calculate(self.atoms) # Calculate at beginning to seed forces
     
     def save_state(self, filename: str):
         """
@@ -214,40 +214,52 @@ class CMM_ASE(Calculator):
             self.save_state(topo_filename)
     
     def _evaluate_ff(self):
-        self._energies = self._ff.evaluate(self._cm, self._topology, self._params)
+        self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
         self._energies['tot'].backward()
 
         self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
-        print(self.results['energy'])
         self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
 
-    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=[]):
-        if atoms:
-            # Update positions on GPU #
+    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions']):
+        # Call the parent implementation first 
+        Calculator.calculate(self, atoms, properties, system_changes)
+    
+        # If atoms is provided and it's different from our internal one,
+        # update our reference
+        if atoms is not None and atoms is not self.atoms:
             self.atoms = atoms
-            positions_tensor = torch.from_numpy(self.atoms.positions / Bohr).to(self._cm.coords.device)
+            self.atoms.calc = self
+
+        # Only update coordinates if positions have changed
+        if 'positions' in system_changes:
+            positions_tensor = torch.from_numpy(self.atoms.get_positions() / Bohr).to(self._cm.coords.device)
             self._cm.update_coordinates(positions_tensor)
+
+        # Only update box if cell has changed
+        if 'cell' in system_changes:
+            box_tensor = torch.from_numpy(self.atoms.get_cell().array / Bohr).to(self._cm.coords.device)
+            self._cm.update_box(box_tensor)
 
         # Ensure coordinates have gradients enabled
         if not self._cm.coords.requires_grad:
             print("WARNING: Coordinates do not have gradients enabled!")
             self._cm.coords.requires_grad_(True)
 
-        # Zero gradients if they exist
-        if self._cm.coords.grad is not None:
-            self._cm.coords.grad.zero_()
-
+        # Calculate forces and energy
         self._evaluate_ff()
 
-        # Debug force calculation
-        max_force = np.max(np.abs(self.results['forces']))
-        print(f"Max force: {max_force}")
-
-def get_forces(self, atoms=None):
-    """Get forces for current atomic configuration"""
-    self.calculate(atoms)
-    return self.results['forces']
-
-def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=True):
-    self.calculate(atoms=atoms)
-    return self.results['energy']
+    def get_potential_energy(self, atoms=None, force_consistent=False):
+        """Get potential energy for current atomic configuration"""
+        if atoms is not None:
+            self.calculate(atoms, ['energy'], ['positions', 'cell', 'numbers', 'pbc'])
+        else:
+            self.calculate(self.atoms, ['energy'], ['positions', 'cell', 'numbers', 'pbc'])
+        return self.results['energy']
+    
+    def get_forces(self, atoms=None):
+        """Get forces for current atomic configuration"""
+        if atoms is not None:
+            self.calculate(atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
+        else:
+            self.calculate(self.atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
+        return self.results['forces']

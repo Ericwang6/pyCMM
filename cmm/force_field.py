@@ -367,9 +367,9 @@ class CMM(ForceField):
             self.parameters_have_changed = True
 
     #@torch.compile
-    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer):
+    def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_grads=reset_grads)
         
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt

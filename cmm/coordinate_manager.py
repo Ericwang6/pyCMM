@@ -20,54 +20,83 @@ class CoordinateManager:
 
     def update_coordinates(self, new_coords: torch.Tensor):
         """
-        Update coordinates held by the coordinate manager and neighbor list.
+        Update coordinates held by the coordinate manager.
+
+        Parameters
+        ----------
+        new_coords : torch.Tensor
+            New coordinates to use
         """
-        # Ensure coordinates require gradients
         if self._need_coordindate_grads:
-            self.coords = new_coords.clone().requires_grad_(True)
+            # If we're passing in a tensor that already requires grad, use it directly
+            if new_coords.requires_grad:
+                self.coords = new_coords
+            else:
+                self.coords = new_coords.clone().requires_grad_(True)
         else:
             self.coords = new_coords.detach().clone()
 
-    def update_box(self, new_box: torch.Tensor):
-        """
-        Update coordinates held by the coordinate manager and neighbor list.
-        """
-        self.box = new_box.detach().clone().requires_grad_()
-        self.box_inv = torch.inverse(self.box)
-        self.box_lengths = torch.diagonal(self.box)
-        self.neighbor_list.box_lengths = self.box_lengths
         self._check_for_nl_update = True
 
-    def get_distances_vectors_and_pairs(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def update_box(self, new_box: torch.Tensor):
+        """
+        Update box vectors and related quantities.
+        
+        Parameters
+        ----------
+        new_box : torch.Tensor
+            New box vectors to use
+        """
+        if self._need_box_grads:
+            if new_box.requires_grad:
+                self.box = new_box
+            else:
+                self.box = new_box.clone().requires_grad_(True)
+        else:
+            self.box = new_box.detach().clone()
+            
+        # Update related quantities
+        self.box_inv = torch.inverse(self.box)
+        self.box_lengths = torch.diagonal(self.box)
+        
+        # Mark that the neighbor list needs to be updated
+        self._check_for_nl_update = True
+        
+    def get_distances_vectors_and_pairs(self, reset_grads=False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get all distances, distance vectors, and indices of atom pairs.
+        Parameters
+        ----------
+        reset_grads : bool, optional
+            If True, reset gradients by creating new tensors. Use this when you want
+            to start a fresh computation graph.
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            Pairs, distances, and distance vectors
         """
-        # @SPEED: It's unclear if I should deal with pairs in this manner or as its
-        # transpose. I suppose it probably doens't matter since I end up using both
-        # but if I could avoid that, then that would be ideal. I guess I could
-        # transpose the coordinate to solve this problem?
-        
-        # If we have nonzero grads, but we are here, then we are evaluating the force field
-        # again without having used the gradients. Currently, this can only because we
-        # did not actually do the backwards pass. In that case, we should just reset
-        # the gradients since accumulating into them will definitely be incorrect.
-        # In the future, we will a more sophisticated method than this since evaluating
-        # over batches of pairs would have us call this function multiple times with the
-        # intention of accumulating gradients to the coordinates multiple times before
-        # calling .backward().
-        if self.coords.grad is not None:
-            self.update_coordinates(self.coords)
-            self.update_box(self.box)
 
-        # TODO: Something is broken about NL rebuilds!
-        # Fix that!
+        # Only reset gradients if explicitly requested
+        if reset_grads and self.coords.grad is not None:
+            self.update_coordinates(self.coords.detach().clone())
+            if self._need_box_grads:
+                self.update_box(self.box.detach().clone())
+
+        # Check if neighbor list needs to be updated
         if self._check_for_nl_update:
-            self.neighbor_list.update(self.coords, self.box_lengths)
+            with torch.no_grad():
+                self.neighbor_list.update(self.coords, self.box_lengths)
+                self._check_for_nl_update = False
+
+        # Get pairs from neighbor list (no gradients needed)
         with torch.no_grad():
             self.pairs = self.neighbor_list.get_pairs()
+
+        # These operations are part of the computational graph and will track gradients
         distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
         self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
         self.dists = torch.linalg.vector_norm(self.distance_vecs, dim=1)
+
         return self.pairs, self.dists, self.distance_vecs
 
     def compute_rotation_matrices(self, z_atoms: torch.Tensor, x_atoms: torch.Tensor, y_atoms: torch.Tensor, axis_types: torch.Tensor):

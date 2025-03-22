@@ -79,7 +79,6 @@ def test_cmm_ase_checkpointing():
         )
 
     calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
-    calculator.atoms.calc = calculator
     
     # Initial forces calculation
     initial_forces = calculator.atoms.get_forces()
