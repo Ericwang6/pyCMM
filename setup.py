@@ -11,8 +11,7 @@ setup(
         "torch==2.5.1",
         "torch-scatter==2.1.2",
         "torchaudio",
-        "torchvision",
-        "torchopt"
+        "torchvision"
     ],
     author="Eric Wang, Joseph Heindel, Aalim Abdullah",
     author_email="ericwangyz@berkeley.edu,heindelj@lbl.gov,aalimabdullah@berkeley.edu",

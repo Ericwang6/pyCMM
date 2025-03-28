@@ -752,7 +752,7 @@ class CMM(ForceField):
         #        )
         #        self.last_induced_multipoles = induced_multipoles_and_lagrange_muls_out
 #
-        #    TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
+        #    TM, induced_potential, induced_field  = computeProductWithPolarizationMatrix(
         #        self.last_induced_multipoles, natoms,
         #        pairs_lr_i_a, pairs_lr_j_a,
         #        pairs_sr_i_a, pairs_sr_j_a,
@@ -772,8 +772,7 @@ class CMM(ForceField):
         long_range_induced_potential_function = None
         if self.use_ewald:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
-
-        induced_multipoles, induced_field_data = self.polarization_solver.solve(
+        induced_multipoles, TM, induced_potential, induced_field = self.polarization_solver.solve(
             b_vec, natoms,
             pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
             pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
@@ -783,11 +782,7 @@ class CMM(ForceField):
             polarizabilities=alpha, elec_field=elec_field,
             long_range_potential_function=long_range_induced_potential_function
         )
-        ene_pol = self.polarization_solver.compute_polarization_energy(induced_multipoles, b_vec)
-        induced_potential, induced_field = induced_field_data
-        print(induced_multipoles)
-        print(ene_pol * HARTREE2KCAL)
-
+        ene_pol = torch.dot(induced_multipoles, (0.5 * TM - b_vec))
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
