@@ -13,6 +13,7 @@ from .topology import Topology
 from .terms import *
 from .units import *
 from .switching_functions import switch_543
+from.polarization_solver import PolarizationSolver
 
 from copy import copy
 
@@ -27,7 +28,8 @@ class CMM(ForceField):
                  cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG),
                  cutoff_ewald: torch.Tensor=torch.tensor(10.0 / BOHR2ANG),
                  ewald_tolerance: torch.Tensor=torch.tensor(1e-6),
-                 use_ewald: bool=False, use_polarization: bool=True) -> None:
+                 use_ewald: bool=False, use_polarization: bool=True,
+                 pol_solver_type="conjugate_gradient", max_iterations=400, solve_tolerance=1e-10) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -43,7 +45,13 @@ class CMM(ForceField):
         self.ewald_tolerance = ewald_tolerance
         self.use_polarization = use_polarization
 
-        self.last_induced_multipoles = None
+        if self.use_polarization:
+            self.solver_type = pol_solver_type
+            self.max_iterations = max_iterations
+            self.solve_tolerance = solve_tolerance
+            self.polarization_solver = PolarizationSolver(
+                max_iter=self.max_iterations, tol=self.solve_tolerance, solver_type=self.solver_type
+            )
 
         self._build()
     
@@ -715,52 +723,71 @@ class CMM(ForceField):
 
         b_vec = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
         
+        #long_range_induced_potential_function = None
+        #if self.use_polarization:
+        #    #induced_field_data = torch.zeros(natoms, 4, device=dists.device, dtype=dists.dtype, requires_grad=True)
+        #    if self.use_ewald:
+        #        long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
+        #    
+        #    self.last_induced_multipoles = None
+        #    #self.last_induced_multipoles = torch.zeros(natoms + 3 * natoms + topology.n_pol_groups, device=elec_field.device, requires_grad=True)
+        #    with torch.no_grad():
+        #        if self.last_induced_multipoles is None:
+        #            self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+#
+        #        induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
+        #            self.last_induced_multipoles,
+        #            b_vec,
+        #            natoms,
+        #            pairs_lr_i_a, pairs_lr_j_a,
+        #            pairs_sr_i_a, pairs_sr_j_a,
+        #            pairs_excl_i_a, pairs_excl_j_a,
+        #            direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
+        #            #induced_field_data,
+        #            eta_times_2, inverse_polarizabilities,
+        #            topology.pol_group_indices_a,
+        #            topology.pol_group_segment_indices,
+        #            topology.pol_group_lengths_g,
+        #            long_range_induced_potential_function
+        #        )
+        #        self.last_induced_multipoles = induced_multipoles_and_lagrange_muls_out
+#
+        #    TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
+        #        self.last_induced_multipoles, natoms,
+        #        pairs_lr_i_a, pairs_lr_j_a,
+        #        pairs_sr_i_a, pairs_sr_j_a,
+        #        pairs_excl_i_a, pairs_excl_j_a,
+        #        direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
+        #        #induced_field_data,
+        #        eta_times_2, inverse_polarizabilities,
+        #        topology.pol_group_indices_a,
+        #        topology.pol_group_segment_indices,
+        #        topology.pol_group_lengths_g,
+        #        long_range_induced_potential_function
+        #    )
+        #    ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * TM - b_vec))
+        #else:
+        #    ene_pol = torch.tensor(0.0)
+
         long_range_induced_potential_function = None
-        if self.use_polarization:
-            #induced_field_data = torch.zeros(natoms, 4, device=dists.device, dtype=dists.dtype, requires_grad=True)
-            if self.use_ewald:
-                long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
-            
-            self.last_induced_multipoles = None
-            #self.last_induced_multipoles = torch.zeros(natoms + 3 * natoms + topology.n_pol_groups, device=elec_field.device, requires_grad=True)
-            with torch.no_grad():
-            #with torch.enable_grad():
-                if self.last_induced_multipoles is None:
-                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+        if self.use_ewald:
+            long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
 
-                induced_multipoles_and_lagrange_muls_out = solvePolarizationByCG(
-                    self.last_induced_multipoles,
-                    b_vec,
-                    natoms,
-                    pairs_lr_i_a, pairs_lr_j_a,
-                    pairs_sr_i_a, pairs_sr_j_a,
-                    pairs_excl_i_a, pairs_excl_j_a,
-                    direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                    #induced_field_data,
-                    eta_times_2, inverse_polarizabilities,
-                    topology.pol_group_indices_a,
-                    topology.pol_group_segment_indices,
-                    topology.pol_group_lengths_g,
-                    long_range_induced_potential_function
-                )
-                self.last_induced_multipoles = induced_multipoles_and_lagrange_muls_out
+        induced_multipoles, induced_field_data = self.polarization_solver.solve(
+            b_vec, natoms,
+            pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
+            pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
+            pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
+            eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
+            topology.pol_group_segment_indices, topology.pol_group_lengths_g,
+            polarizabilities=alpha, elec_field=elec_field,
+            long_range_potential_function=long_range_induced_potential_function
+        )
+        ene_pol = self.polarization_solver.compute_polarization_energy(induced_multipoles, b_vec)
+        induced_potential, induced_field = induced_field_data
+        print(induced_multipoles)
+        print(ene_pol * HARTREE2KCAL)
 
-            TM, elec_potential_induced, elec_field_induced  = computeProductWithPolarizationMatrix(
-                self.last_induced_multipoles, natoms,
-                pairs_lr_i_a, pairs_lr_j_a,
-                pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a,
-                direct_field_tensor_rank_1_lr, pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                #induced_field_data,
-                eta_times_2, inverse_polarizabilities,
-                topology.pol_group_indices_a,
-                topology.pol_group_segment_indices,
-                topology.pol_group_lengths_g,
-                long_range_induced_potential_function
-            )
-            ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * TM - b_vec))
-        else:
-            ene_pol = torch.tensor(0.0)
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
@@ -780,8 +807,8 @@ class CMM(ForceField):
                 dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
                 ct_slope_1_p, ct_slope_2_p,
-                #(elec_field + elec_field_induced)[topology.bonded_atoms[1]],
-                (elec_field)[topology.bonded_atoms[1]],
+                (elec_field + induced_field)[topology.bonded_atoms[1]],
+                #(elec_field)[topology.bonded_atoms[1]],
                 dq_a[topology.bonded_atoms[1]]
             )
 
