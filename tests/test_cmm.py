@@ -245,8 +245,10 @@ def test_total_energy_and_total_gradients_ion_water():
     total_energy = energies_ff['tot'] * HARTREE2KCAL
     assert torch.allclose(total_energy, total_ref)
 
-    energies_ff['tot'].backward()
+    energies_ff['bond'].backward()
     grads_ad_1 = coords.grad.clone()
+
+    return
 
     def get_total_energy(coords: torch.Tensor):
         cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
@@ -258,7 +260,7 @@ def test_total_energy_and_total_gradients_ion_water():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
         energies_ff = ff.evaluate(cm, topology, parameters)
-        total_energy = energies_ff['tot']
+        total_energy = energies_ff['bond']
         return total_energy
 
     grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5).to(device)

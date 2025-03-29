@@ -1,6 +1,4 @@
 import torch
-import torchopt.diff.implicit
-from torch_scatter import segment_csr
 from .polarization import compute_product_with_polarization_matrix
 
 class PolarizationSolver:
@@ -159,29 +157,26 @@ class PolarizationSolver:
             torch.zeros(n_groups, device=elec_field.device)
         ])
     
-    def solve(self, b_vector, n_charges, 
-             pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-             pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
-             pol_interaction_tensor_sr, direct_field_tensor_excl,
-             eta, inverse_polarizabilities, pol_group_indices_a,
-             pol_group_segment_indices, pol_group_lengths_g,
-             polarizabilities=None, elec_field=None, 
-             long_range_potential_function=None):
-        """
-        Solve the polarization equations with automatic differentiation
-        handled by TorchOpt.
-        """
+    def solve(self, elec_potential, elec_field, dq_groups, n_charges,
+            pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
+            pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
+            pol_interaction_tensor_sr, direct_field_tensor_excl,
+            eta, inverse_polarizabilities, pol_group_indices_a,
+            pol_group_segment_indices, pol_group_lengths_g,
+            polarizabilities=None,
+            long_range_potential_function=None):
         class ImplicitFunction(torch.autograd.Function):
             @staticmethod
-            def forward(ctx, b_vector, solution, n_charges, solver, 
+            def forward(ctx, elec_potential, elec_field, dq_groups, solution, n_charges, solver, 
                         pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
                         pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
                         pol_interaction_tensor_sr, direct_field_tensor_excl,
                         eta, inverse_polarizabilities, pol_group_indices_a,
                         pol_group_segment_indices, pol_group_lengths_g,
                         long_range_potential_function):
+                b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
                 ctx.solver = solver
-                ctx.save_for_backward(b_vector, solution, n_charges,
+                ctx.save_for_backward(elec_potential, elec_field, dq_groups, solution, n_charges,
                                       pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
                                       pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
                                       pol_interaction_tensor_sr, direct_field_tensor_excl,
@@ -192,11 +187,13 @@ class PolarizationSolver:
             
             @staticmethod
             def backward(ctx, grad_output):
-                b_vector, solution, n_charges, pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a, \
+                elec_potential, elec_field, dq_groups, solution, n_charges, pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a, \
                 pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr, \
                 pol_interaction_tensor_sr, direct_field_tensor_excl, \
                 eta, inverse_polarizabilities, pol_group_indices_a, \
                 pol_group_segment_indices, pol_group_lengths_g = ctx.saved_tensors
+
+                b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
 
                 solver = ctx.solver
                 long_range_potential_function = ctx.long_range_potential_function
@@ -230,7 +227,7 @@ class PolarizationSolver:
 
                 for i in range(max_iter):
                     Ap = J_x_T_mv(p)
-                    alpha = rsold / (torch.sum(p * Ap) + 1e-10)  # Add small epsilon for stability
+                    alpha = rsold / (torch.sum(p * Ap))  # Add small epsilon for stability
                     v = v + alpha * p
                     r = r - alpha * Ap
                     rsnew = torch.sum(r * r)
@@ -243,7 +240,9 @@ class PolarizationSolver:
 
                 # Compute gradient w.r.t b_vector using vjp
                 with torch.enable_grad():
-                    b_vector_temp = b_vector.detach().requires_grad_()
+                    # For elec_potential (note the negative sign in b_vector)
+                    elec_potential_temp = elec_potential.detach().requires_grad_()
+                    b_vector_temp = torch.hstack((-elec_potential_temp, elec_field.flatten(), dq_groups))
                     residual = solver.stationary_condition(
                         solution, b_vector_temp, n_charges,
                         pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
@@ -253,16 +252,49 @@ class PolarizationSolver:
                         pol_group_segment_indices, pol_group_lengths_g,
                         long_range_potential_function
                     )
-                    grad_b = -torch.autograd.grad(
-                        residual, b_vector_temp, v, retain_graph=False
+                    grad_elec_potential = -torch.autograd.grad(
+                        residual, elec_potential_temp, v, retain_graph=False
                     )[0]
-        
-                # Return gradients for all inputs (None for those that don't need gradients)
-                return (grad_b, None, None, None, 
-                        None, None, None, None, 
-                        None, None, None, None, 
-                        None, None, None, None, 
-                        None, None, None)
+
+                    # For elec_field
+                    elec_field_temp = elec_field.detach().requires_grad_()
+                    b_vector_temp = torch.hstack((-elec_potential, elec_field_temp.flatten(), dq_groups))
+                    residual = solver.stationary_condition(
+                        solution, b_vector_temp, n_charges,
+                        pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
+                        pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
+                        pol_interaction_tensor_sr, direct_field_tensor_excl,
+                        eta, inverse_polarizabilities, pol_group_indices_a,
+                        pol_group_segment_indices, pol_group_lengths_g,
+                        long_range_potential_function
+                    )
+                    grad_elec_field_flat = -torch.autograd.grad(
+                        residual, elec_field_temp, v, retain_graph=False
+                    )[0]
+                    # Reshape to match elec_field's shape
+
+                    # For dq_groups
+                    dq_groups_temp = dq_groups.detach().requires_grad_()
+                    b_vector_temp = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups_temp))
+                    residual = solver.stationary_condition(
+                        solution, b_vector_temp, n_charges,
+                        pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
+                        pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
+                        pol_interaction_tensor_sr, direct_field_tensor_excl,
+                        eta, inverse_polarizabilities, pol_group_indices_a,
+                        pol_group_segment_indices, pol_group_lengths_g,
+                        long_range_potential_function
+                    )
+                    grad_dq_groups = -torch.autograd.grad(
+                        residual, dq_groups_temp, v, retain_graph=False
+                    )[0]
+                
+                return (grad_elec_potential, grad_elec_field_flat, grad_dq_groups,
+                        None, None, None, None,
+                        None, None, None, None,
+                        None, None, None, None,
+                        None, None, None, None,
+                        None, None)
 
         # Generate initial guess if we don't have a previous solution
         if self.last_induced_multipoles is None and polarizabilities is not None and elec_field is not None:
@@ -274,6 +306,7 @@ class PolarizationSolver:
         
         # Solve the system using the selected method
         with torch.no_grad():
+            b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
             if self.solver_type == "conjugate_gradient":
                 solution = self.polarization_solve_cg(
                     initial_guess, b_vector, n_charges,
@@ -296,11 +329,11 @@ class PolarizationSolver:
                 )
 
         # Cache the solution for next time
-        self.last_induced_multipoles = solution.detach().clone()
+        self.last_induced_multipoles = solution.clone().detach()
         
         # Apply the implicit function for gradients
         differentiable_solution = ImplicitFunction.apply(
-            b_vector, solution, n_charges, self,
+            elec_potential, elec_field, dq_groups, solution, n_charges, self,
             pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
             pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
             pol_interaction_tensor_sr, direct_field_tensor_excl,

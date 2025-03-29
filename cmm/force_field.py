@@ -772,14 +772,17 @@ class CMM(ForceField):
         long_range_induced_potential_function = None
         if self.use_ewald:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
+        
         induced_multipoles, TM, induced_potential, induced_field = self.polarization_solver.solve(
-            b_vec, natoms,
+            #b_vec,
+            elec_potential, elec_field, dq_groups,
+            natoms,
             pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
             pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
             pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
             eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
             topology.pol_group_segment_indices, topology.pol_group_lengths_g,
-            polarizabilities=alpha, elec_field=elec_field,
+            polarizabilities=alpha,
             long_range_potential_function=long_range_induced_potential_function
         )
         ene_pol = torch.dot(induced_multipoles, (0.5 * TM - b_vec))
@@ -806,7 +809,17 @@ class CMM(ForceField):
                 #(elec_field)[topology.bonded_atoms[1]],
                 dq_a[topology.bonded_atoms[1]]
             )
+            morse_sum = torch.sum(re_fd_p) + torch.sum(beta_fd_p)
+    
+            # Backpropagate
+            morse_sum.backward()
 
+            # Check gradients
+            if induced_field.grad is not None:
+                print("induced_field grad exists, norm:", torch.norm(induced_field.grad))
+            else:
+                print("induced_field grad is None")
+            
             # morse-bond
             ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
             ene_bonds = torch.sum(ene_bond_list)

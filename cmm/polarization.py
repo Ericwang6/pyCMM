@@ -183,11 +183,12 @@ def compute_product_with_polarization_matrix(
     pol_group_segment_indices: torch.Tensor,
     pol_group_lengths_g: torch.Tensor,
     long_range_potential_function=None):
-        
-        induced_charges = vec_in[:n_charges]
-        induced_dipoles = vec_in[n_charges:(4 * n_charges)].view(-1, 3)
-        lagrange_muls = vec_in[(4 * n_charges):]
-        induced_multipoles_a = torch.hstack((induced_charges.unsqueeze(1), induced_dipoles))
+
+        induced_charges = torch.narrow(vec_in, 0, 0, n_charges)
+        induced_dipoles = torch.narrow(vec_in, 0, n_charges, 3 * n_charges).reshape(n_charges, 3)
+        lagrange_muls = torch.narrow(vec_in, 0, n_charges + 3 * n_charges, vec_in.size(0) - n_charges - 3 * n_charges)
+        induced_multipoles_a = torch.cat([induced_charges.unsqueeze(1), induced_dipoles], dim=1)
+
         induced_multipoles_i_lr_p = induced_multipoles_a[pairs_lr_i_a]
         induced_multipoles_i_sr_p = induced_multipoles_a[pairs_sr_i_a]
 
@@ -196,7 +197,7 @@ def compute_product_with_polarization_matrix(
         edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
 
         # Accumulate the total potentials and fields
-        induced_field_data = torch.zeros(n_charges, 4, device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype)
+        induced_field_data = torch.zeros(n_charges, 4, device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype, requires_grad=True)
         induced_field_data = induced_field_data.scatter_add(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
         induced_field_data = induced_field_data.scatter_add(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
         
@@ -208,7 +209,7 @@ def compute_product_with_polarization_matrix(
         induced_field_data = induced_field_data.mul(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
         induced_electric_potential = induced_field_data[:, 0]
         induced_electric_field = induced_field_data[:, 1:4]
-        
+
         # Get reciprocal space field data (ewald + self contribution)
         if long_range_potential_function:
             ewald_potential, ewald_field = long_range_potential_function(induced_charges, induced_dipoles)
