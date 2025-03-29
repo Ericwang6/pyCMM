@@ -248,8 +248,6 @@ def test_total_energy_and_total_gradients_ion_water():
     energies_ff['bond'].backward()
     grads_ad_1 = coords.grad.clone()
 
-    return
-
     def get_total_energy(coords: torch.Tensor):
         cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))

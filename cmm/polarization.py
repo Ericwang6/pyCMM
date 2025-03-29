@@ -223,7 +223,7 @@ def compute_product_with_polarization_matrix(
         expanded_lagrange_muls = lagrange_muls.repeat_interleave(pol_group_lengths_g)
 
         # Scatter these values back to the atomic indices
-        lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device)
+        lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device, requires_grad=True)
         lagrange_muls_a = lagrange_muls_a.scatter_add(0, pol_group_indices_a, expanded_lagrange_muls)
 
         res = torch.concat((
