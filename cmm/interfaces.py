@@ -10,6 +10,7 @@ from cmm.force_field import CMM
 from cmm.units import BOHR2ANG
 import numpy as np
 import torch
+import os
 
 class CMM_ASE(Calculator):
     def __init__(self, ff: CMM, cm: CoordinateManager, topology: Topology, params: Parameterizer, output_folder: str = "."):
@@ -22,6 +23,8 @@ class CMM_ASE(Calculator):
             self.output_folder = "."
         else:
             self.output_folder = output_folder
+
+        os.makedirs(os.path.abspath(self.output_folder), exist_ok=True)
 
         self._checkpoint_counter = 0
         
@@ -59,6 +62,7 @@ class CMM_ASE(Calculator):
         # Create a dictionary with all the necessary information
         state = {
             'positions': self._cm.coords.detach().cpu().numpy().tolist(),
+            'velocities': self.atoms.get_velocities().tolist(),  # Save velocities
             'cell': self._cm.box.detach().cpu().numpy().tolist(),
             'atom_labels': self._cm.labels,
             'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
@@ -68,6 +72,7 @@ class CMM_ASE(Calculator):
             'requires_grad': self._cm._need_coordindate_grads,
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
+            'output_folder': str(self.output_folder)
         }
 
         # Ensure output directory exists
@@ -106,10 +111,22 @@ class CMM_ASE(Calculator):
         from cmm.topology import Topology
         from cmm.parameters import Parameterizer
         from cmm.force_field import CMM
+        import os
+        import numpy as np
+        from ase.io import read as ase_read
 
         # Load the state from the JSON file
         with open(filename, 'r') as f:
             state = json.load(f)
+
+        # Check for trajectory file to load velocities
+        traj_filename = None
+        if filename.endswith('.json'):
+            traj_filename = filename.replace('.json', '.traj')
+        else:
+            traj_filename = filename + '.traj'
+
+        has_traj = os.path.exists(traj_filename)
 
         # Determine device and dtype
         device = state.get('device', 'cpu')
@@ -158,8 +175,25 @@ class CMM_ASE(Calculator):
             ff.pair_angle_params, ff.angle_params
         )
 
-        # Create and return CMM_ASE calculator
-        return cls(ff, cm, topology, parameters)
+        output_folder = state['output_folder']
+
+        # Create CMM_ASE calculator
+        calculator = cls(ff, cm, topology, parameters, output_folder=output_folder)
+
+        # If we have a trajectory file, load velocities from it
+        if has_traj:
+            try:
+                atoms_with_vel = ase_read(traj_filename, index=-1)  # Get the last frame
+                calculator.atoms.set_velocities(atoms_with_vel.get_velocities())
+                # You might also want to set other dynamic properties like:
+                # calculator.atoms.set_momenta(atoms_with_vel.get_momenta())
+            except Exception as e:
+                print(f"Warning: Could not load velocities from trajectory file: {e}")
+        elif 'velocities' in state:
+            # Or use velocities from JSON if available
+            calculator.atoms.set_velocities(np.array(state['velocities']))
+
+        return calculator
     
     def create_checkpoint(self, filename_prefix='checkpoint'):
         """
@@ -171,19 +205,20 @@ class CMM_ASE(Calculator):
         Returns:
             str: Name of the checkpoint file.
         """
-        import os
-    
-        # Alternate between checkpoint_0 and checkpoint_1
-        suffix = self._checkpoint_counter % 2
-        self._checkpoint_counter += 1
+        import os, time
 
-        # Create filename
-        filename = os.path.join(self.output_folder, f"{filename_prefix}_{suffix}.json")
+        # Create a timestamp to avoid overwriting previous checkpoints
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
 
-        # Save the state
-        self.save_state(filename)
+        # Create filenames
+        json_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.json")
+        traj_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.traj")
 
-        return filename
+        # Save the state to both files
+        self.save_state(json_filename)
+
+        # Return the checkpoint filename
+        return json_filename
 
     def write_trajectory(self, filename: str, mode: str='a', properties=None):
         """

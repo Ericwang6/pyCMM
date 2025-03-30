@@ -79,7 +79,7 @@ def test_cmm_ase_checkpointing():
         )
 
     calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
-    
+
     # Initial forces calculation
     initial_forces = calculator.atoms.get_forces()
     print(f"Initial max force: {np.max(np.abs(initial_forces))}")
@@ -96,15 +96,20 @@ def test_cmm_ase_checkpointing():
         print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K")
 
     dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
-    dyn.attach(log_step, interval=1)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=5)  # Checkpoint every 5 steps
-    finished = dyn.run(200)
+    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
+    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 50 steps
+    finished = dyn.run(100)
     if finished:
         calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
 
     # To restart from a checkpoint
-    #calculator = CMM_ASE.load_state('checkpoint_20230320_120000.json')
-    #atoms = calculator.atoms
+    calculator = CMM_ASE.load_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
+    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
+    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 5 steps
+    finished = dyn.run(100)
+    if finished:
+        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state_2.json'))
 
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)
