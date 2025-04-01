@@ -52,6 +52,9 @@ class CMM(ForceField):
             self.polarization_solver = PolarizationSolver(
                 max_iter=self.max_iterations, tol=self.solve_tolerance, solver_type=self.solver_type
             )
+        
+        self.last_induced_multipoles = None
+
 
         self._build()
     
@@ -728,7 +731,7 @@ class CMM(ForceField):
             if self.use_ewald:
                 long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
             
-            self.last_induced_multipoles = None
+            #self.last_induced_multipoles = None
             #self.last_induced_multipoles = torch.zeros(natoms + 3 * natoms + topology.n_pol_groups, device=elec_field.device, requires_grad=True)
             with torch.no_grad():
                 if self.last_induced_multipoles is None:

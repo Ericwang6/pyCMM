@@ -86,8 +86,8 @@ def test_cmm_ase_checkpointing():
 
     temperature = 150.0  # K
     MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)
-    Stationary(calculator.atoms)
-    ZeroRotation(calculator.atoms)
+    #Stationary(calculator.atoms)
+    #ZeroRotation(calculator.atoms)
 
     def log_step(atoms=calculator.atoms):
         energy = atoms.get_potential_energy()
