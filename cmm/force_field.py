@@ -655,7 +655,6 @@ class CMM(ForceField):
             # Get reciprocal space and self contributions to field variables
             # and corresponding electrostatic interactions.
             ewald_potential, ewald_field, ewald_field_gradient = long_range_potential(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
-
             ene_ewald = 0.5 * (
                 torch.einsum("n,n->", mono_lr, ewald_potential) -
                 torch.einsum("ni,ni->", dipo_lr, ewald_field) -
