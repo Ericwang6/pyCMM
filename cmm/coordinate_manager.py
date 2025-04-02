@@ -11,9 +11,12 @@ class CoordinateManager:
         self.coords = coords
         self.box = box
         self.labels = labels
-        self.cutoff = torch.tensor(cutoff)
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
+        self.cutoff = torch.tensor(cutoff)
+        if cutoff > 0.5 * min(self.box_lengths):
+            print(f"Requested cutoff of {cutoff} is larger than half of the smallest side length {0.5 * min(self.box_lengths)}. Setting the cutoff to {0.5 * min(self.box_lengths)}")
+            self.cutoff = 0.5 * min(self.box_lengths)
         with torch.no_grad():
             self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=max_neighbors)
         self._check_for_nl_update = False

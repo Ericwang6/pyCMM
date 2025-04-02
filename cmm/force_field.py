@@ -44,6 +44,7 @@ class CMM(ForceField):
         self.cutoff_ewald = cutoff_ewald
         self.ewald_tolerance = ewald_tolerance
         self.use_polarization = use_polarization
+        self.cutoff_vdw = cutoff_ewald
 
         if self.use_polarization:
             self.solver_type = pol_solver_type
@@ -381,7 +382,8 @@ class CMM(ForceField):
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_grads=reset_grads)
-        
+        self.cutoff_vdw = cm.cutoff
+
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
             # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
@@ -404,11 +406,17 @@ class CMM(ForceField):
         dists_lr = dists[topology.all_intermolecular_pairs]
         dist_vecs_lr = dist_vecs[topology.all_intermolecular_pairs]
 
+        # Get pairs, dists, and vectors for vdw potential #
+        pairs_vdw = pairs[topology.all_intermolecular_pairs, :]
+        pairs_vdw_i_a = pairs_vdw[:, 0]
+        pairs_vdw_j_a = pairs_vdw[:, 1]
+        dists_vdw = dists[topology.all_intermolecular_pairs]
+        dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
+
         # Get switching function values for long-range nonbonded potential #
-        cutoff_lr = cm.cutoff
-        switch_start_lr = cutoff_lr - 2.0
-        switch_start_lr = switch_start_lr if switch_start_lr > 0.0 else 0.0
-        switch_lr = switch_543(dists_lr, switch_start_lr, cutoff_lr)
+        switch_start_vdw = self.cutoff_vdw - 2.0
+        switch_start_vdw = switch_start_vdw if switch_start_vdw > 0.0 else 0.0
+        switch_vdw = switch_543(dists_vdw, switch_start_vdw, self.cutoff_vdw)
 
         # Get pairs, dists, and vectors for short-range nonbonded potential #
         indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long, device=dists_lr.device), torch.tensor(-1, dtype=torch.long, device=dists_lr.device))
@@ -486,15 +494,15 @@ class CMM(ForceField):
         b_j_xpol_p = b_xpol[pairs_sr_j_a]
         b_i_ct_p = b_ct[pairs_sr_i_a]
         b_j_ct_p = b_ct[pairs_sr_j_a]
-        b_i_disp_p = b_disp[pairs_lr_i_a]
-        b_j_disp_p = b_disp[pairs_lr_j_a]
+        b_i_disp_p = b_disp[pairs_vdw_i_a]
+        b_j_disp_p = b_disp[pairs_vdw_j_a]
         
         b_ij_cp_sr_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
         b_ij_pauli_sr_p = torch.sqrt(b_i_pauli_p * b_j_pauli_p)
         b_ij_xpol_sr_p = torch.sqrt(b_i_xpol_p * b_j_xpol_p)
         b_ij_ct_sr_p = torch.sqrt(b_i_ct_p * b_j_ct_p)
-        b_ij_disp_lr_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
-        C6_ij_disp_lr_p = torch.sqrt(C6_disp[pairs_lr_i_a] * C6_disp[pairs_lr_j_a])
+        b_ij_disp_vdw_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
+        C6_ij_disp_vdw_p = torch.sqrt(C6_disp[pairs_vdw_i_a] * C6_disp[pairs_vdw_j_a])
 
         # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
@@ -843,8 +851,8 @@ class CMM(ForceField):
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
             dists_lr,
-            C6_ij_disp_lr_p, b_ij_disp_lr_p,
-            switch_lr
+            C6_ij_disp_vdw_p, b_ij_disp_vdw_p,
+            switch_vdw
         )
         ene_disp = torch.sum(disp_pairwise) / 2
 
