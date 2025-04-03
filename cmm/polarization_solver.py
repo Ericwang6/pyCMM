@@ -1,6 +1,144 @@
 import torch
 from .polarization import compute_product_with_polarization_matrix
 
+import torch
+import time
+
+
+def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-6, atol=1e-6, maxiter=400, verbose=False):
+    """Solves positive-definite matrix linear system using the preconditioned CG algorithm.
+    This implementation is a modified version of that available at: https://github.com/sbarratt/torch_cg/
+    which is MIT licensed.
+
+    This function solves a linear system of the form
+
+        A x = b
+
+    where A is a n x n positive definite matrix and b is a n element vector,
+    and x is the n element vector representing the solution.
+
+    Args:
+        A_bmm: A callable that performs a matrix multiply of A and X.
+        b: A vector representing the right hand side.
+        M_mm: (optional) A callable that performs a matrix multiply of the preconditioning
+            matrix M and an n x n matrix. (default=identity matrix)
+        X0: (optional) Initial guess for X, defaults to M_bmm(B). (default=None)
+        rtol: (optional) Relative tolerance for norm of residual. (default=1e-3)
+        atol: (optional) Absolute tolerance for norm of residual. (default=0)
+        maxiter: (optional) Maximum number of iterations to perform. (default=5*n)
+        verbose: (optional) Whether or not to print status messages. (default=False)
+    """
+
+    if M_mm is None:
+        M_mm = lambda x: x
+        X0 = torch.zeros_like(b)
+    if X0 is None:
+        X0 = M_mm(b)
+
+    assert rtol > 0 or atol > 0
+    assert isinstance(maxiter, int)
+
+    X_k = X0
+    R_k = b - A_mm(X_k)
+    Z_k = M_mm(R_k)
+
+    P_k = torch.zeros_like(Z_k)
+
+    P_k1 = P_k
+    R_k1 = R_k
+    R_k2 = R_k
+    X_k1 = X0
+    Z_k1 = Z_k
+    Z_k2 = Z_k
+
+    B_norm = torch.norm(b)
+    stopping_matrix = torch.max(rtol*B_norm, atol*torch.ones_like(B_norm))
+
+    if verbose:
+        print("%03s | %010s %06s" % ("it", "dist", "it/s"))
+
+    optimal = False
+    start = time.perf_counter()
+    for k in range(1, maxiter + 1):
+        start_iter = time.perf_counter()
+        Z_k = M_mm(R_k)
+
+        if k == 1:
+            P_k = Z_k
+            R_k1 = R_k
+            X_k1 = X_k
+            Z_k1 = Z_k
+        else:
+            R_k2 = R_k1
+            Z_k2 = Z_k1
+            P_k1 = P_k
+            R_k1 = R_k
+            Z_k1 = Z_k
+            X_k1 = X_k
+            denominator = (R_k2 * Z_k2).sum(1)
+            denominator[denominator == 0] = 1e-8
+            beta = (R_k1 * Z_k1).sum(1) / denominator
+            P_k = Z_k1 + beta.unsqueeze(1) * P_k1
+
+        AP = A_mm(P_k)
+        denominator = (P_k * AP).sum(1)
+        denominator[denominator == 0] = 1e-8
+        alpha = (R_k1 * Z_k1).sum(1) / denominator
+        X_k = X_k1 + alpha.unsqueeze(1) * P_k
+        R_k = R_k1 - alpha.unsqueeze(1) * AP
+        end_iter = time.perf_counter()
+
+        residual_norm = torch.norm(A_mm(X_k) - b)
+
+        if verbose:
+            print("%03d | %8.4e %4.2f" %
+                  (k, torch.max(residual_norm-stopping_matrix),
+                    1. / (end_iter - start_iter)))
+
+        if (residual_norm <= stopping_matrix).all():
+            optimal = True
+            break
+
+    end = time.perf_counter()
+
+    if verbose:
+        if optimal:
+            print("Terminated in %d steps (reached maxiter). Took %.3f ms." %
+                  (k, (end - start) * 1000))
+        else:
+            print("Terminated in %d steps (optimal). Took %.3f ms." %
+                  (k, (end - start) * 1000))
+
+    info = {
+        "niter": k,
+        "optimal": optimal
+    }
+
+    return X_k, info
+
+
+class CG(torch.autograd.Function):
+
+    def __init__(self, A_mm, M_mm=None, rtol=1e-6, atol=1e-6, maxiter=400, verbose=False):
+        self.A_bmm = A_mm
+        self.M_bmm = M_mm
+        self.rtol = rtol
+        self.atol = atol
+        self.maxiter = maxiter
+        self.verbose = verbose
+
+    @staticmethod
+    def forward(self, B, X0=None):
+        X, _ = cg_solve(self.A_mm, B, M_mm=self.M_bmm, X0=X0, rtol=self.rtol,
+                     atol=self.atol, maxiter=self.maxiter, verbose=self.verbose)
+        return X
+
+    @staticmethod
+    def backward(self, dX):
+        dB, _ = cg_solve(self.A_mm, dX, M_mm=self.M_mm, rtol=self.rtol,
+                      atol=self.atol, maxiter=self.maxiter, verbose=self.verbose)
+        return dB
+
 class PolarizationSolver:
     def __init__(self, max_iter=400, tol=1e-7, solver_type="conjugate_gradient"):
         """
@@ -15,7 +153,6 @@ class PolarizationSolver:
         self.max_iter = max_iter
         self.tol = tol
         self.solver_type = solver_type
-        self.last_induced_multipoles = None
 
     def solve_by_conjugate_gradient(self, initial_guess, b_vector, n_charges,
                            pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
