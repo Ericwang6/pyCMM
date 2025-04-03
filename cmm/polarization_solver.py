@@ -2,7 +2,7 @@ import torch
 from .polarization import compute_product_with_polarization_matrix
 
 class PolarizationSolver:
-    def __init__(self, max_iter=400, tol=1e-10, solver_type="conjugate_gradient"):
+    def __init__(self, max_iter=400, tol=1e-7, solver_type="conjugate_gradient"):
         """
         Initialize the PolarizationSolver.
         
