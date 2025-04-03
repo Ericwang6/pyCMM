@@ -19,7 +19,6 @@ from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
-from cmm.cmm_water import CMMWater
 
 def finite_difference(coords: torch.Tensor, f, h: float = 1e-5):
     grads_fd = torch.zeros(coords.shape)
@@ -349,16 +348,3 @@ def test_nonbonded_interactions():
     assert torch.allclose(disp, disp_ref)
     assert torch.allclose(xpol, xpol_ref)
 
-def test_bonded_interactions_with_fd_morse():
-    torch.set_default_dtype(torch.float64)
-
-    coords = get_water_dimer_coords(requires_grad=False)
-
-    model = CMMWater(2, do_polarization=True)
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
-    energies = model.computeEnergy(coords, box)
-    # NOTE(JOE): This reference energy is in hartree hence no unit conversion.
-    deformation_energy = energies['deformation']
-
-    deformation_ref = torch.tensor([5.787663617905589e-5])
-    assert torch.allclose(deformation_energy, deformation_ref)

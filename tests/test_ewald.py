@@ -7,7 +7,6 @@ import torch._dynamo as dynamo
 
 from cmm.units import HARTREE2KCAL, BOHR2ANG, BOHR2NM, HARTREE2KJ
 from cmm.misc_utils import read_from_tinker_xyz
-from cmm.cmm_water import CMMWater
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.parameters import Parameterizer
