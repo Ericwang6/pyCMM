@@ -148,7 +148,7 @@ def test_optimize_dimers_via_ase():
     assert torch.isclose(torch.tensor(ff_ase.results['energy'] / (kcal / mol)), torch.tensor(E_w2_ref))
 
 def test_optimize_water_box_via_ase():
-    torch.set_default_dtype(torch.float32)
+    torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device, requires_grad=True)

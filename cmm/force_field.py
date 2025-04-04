@@ -756,22 +756,40 @@ class CMM(ForceField):
 
         # TODO: Implement least-squares extrapolation for generating induced dipole guess.
         # Solve polarization equations by preconditioned conjugate gradient #
+        #ene_pol = torch.tensor(0.0)
+        #if self.use_polarization:
+        #    with torch.no_grad():
+        #        # Evaluate the initial guess #
+        #        if self.last_induced_multipoles is None:
+        #            self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+        #        
+        #        b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
+        #        induced_multipoles, info = cg_solve(
+        #            A_mm, b_vector,
+        #            X0=self.last_induced_multipoles, M_mm=M_mm,
+        #            atol=self.solve_tolerance, rtol=self.solve_tolerance
+        #        )
+        #        #print(f"Solved polarization in {info['niter']} iterations")
+        #ene_pol = torch.dot(induced_multipoles, (0.5 * A_mm(induced_multipoles) - b_vector))
+        #self.last_induced_multipoles = induced_multipoles
+
         ene_pol = torch.tensor(0.0)
-        if self.use_polarization:
-            with torch.no_grad():
-                # Evaluate the initial guess #
-                if self.last_induced_multipoles is None:
-                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-                
-                b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-                induced_multipoles, info = cg_solve(
-                    A_mm, b_vector,
-                    X0=self.last_induced_multipoles, M_mm=M_mm,
-                    atol=self.solve_tolerance, rtol=self.solve_tolerance
-                )
-                #print(f"Solved polarization in {info['niter']} iterations")
-        ene_pol = torch.dot(induced_multipoles, (0.5 * A_mm(induced_multipoles) - b_vector))
-        self.last_induced_multipoles = induced_multipoles
+        if self.polarization_solver:
+            # Evaluate the initial guess #
+            if self.last_induced_multipoles is None:
+                self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+            ene_pol, induced_multipoles, induced_potential, induced_field = self.polarization_solver.solve(
+                self.last_induced_multipoles,
+                elec_potential, elec_field, dq_groups,
+                natoms,
+                pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
+                pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
+                pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
+                eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
+                topology.pol_group_segment_indices, topology.pol_group_lengths_g,
+                long_range_potential_function=long_range_induced_potential_function
+            )
+            self.last_induced_multipoles = induced_multipoles
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
