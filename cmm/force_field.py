@@ -26,7 +26,7 @@ class ForceField(torch.nn.Module):
 class CMM(ForceField):
     def __init__(self,
                  cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG),
-                 cutoff_ewald: torch.Tensor=torch.tensor(10.0 / BOHR2ANG),
+                 cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG),
                  ewald_tolerance: torch.Tensor=torch.tensor(1e-6),
                  use_ewald: bool=False, use_polarization: bool=True,
                  pol_solver_type="conjugate_gradient", max_iterations=400, solve_tolerance=1e-7) -> None:

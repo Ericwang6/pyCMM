@@ -277,7 +277,6 @@ class CMM_ASE(Calculator):
 
         # Ensure coordinates have gradients enabled
         if not self._cm.coords.requires_grad:
-            print("WARNING: Coordinates do not have gradients enabled!")
             self._cm.coords.requires_grad_(True)
 
         # Calculate forces and energy
