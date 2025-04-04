@@ -1,10 +1,6 @@
 import torch
 from .bonded import *
 
-# This file provides convenient wrappers of combinations of computational kernels
-# which might be used by a force field. It is also possible to define these wrapper
-# methods inside of a force field as needed.
-
 def evaluate_bond_charge_flux(
     pairs: torch.Tensor, dists: torch.Tensor, bonded_pairs: torch.Tensor,
     q: torch.Tensor, r_eq: torch.Tensor, j_cf: torch.Tensor

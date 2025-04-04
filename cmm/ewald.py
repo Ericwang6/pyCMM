@@ -43,7 +43,7 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
     kl_range = torch.arange(-max_hkl, max_hkl + 1, device=coords.device)
     
     # Create all combinations and convert to float64
-    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(torch.float64)
+    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(box.dtype)
     
     # Remove the origin (0,0,0)
     all_hkl = all_hkl[torch.norm(all_hkl, dim=1) > 0.0]
@@ -114,7 +114,7 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     kl_range = torch.arange(-max_hkl, max_hkl + 1, device=coords.device)
     
     # Create all combinations and convert to float64
-    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(torch.float64)
+    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(box.dtype)
     
     # Remove the origin (0,0,0)
     all_hkl = all_hkl[torch.norm(all_hkl, dim=1) > 0.0]

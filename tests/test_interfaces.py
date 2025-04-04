@@ -26,7 +26,7 @@ def test_ase_basic():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=False, device=device)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
@@ -67,7 +67,7 @@ def test_cmm_ase_checkpointing():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, dtype=torch.float64, requires_grad=False, device=device)
+    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, requires_grad=False, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=False, cutoff_short_range=9.0 / BOHR2ANG)
@@ -118,7 +118,7 @@ def test_optimize_dimers_via_ase():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
 
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -148,7 +148,7 @@ def test_optimize_dimers_via_ase():
     assert torch.isclose(torch.tensor(ff_ase.results['energy'] / (kcal / mol)), torch.tensor(E_w2_ref))
 
 def test_optimize_water_box_via_ase():
-    torch.set_default_dtype(torch.float64)
+    torch.set_default_dtype(torch.float32)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device, requires_grad=True)
@@ -159,7 +159,7 @@ def test_optimize_water_box_via_ase():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=False, device=device)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=False, device=device)
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)

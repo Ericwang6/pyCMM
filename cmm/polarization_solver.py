@@ -119,7 +119,7 @@ def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, ver
 
 class CG(torch.autograd.Function):
 
-    def __init__(self, A_mm, M_mm=None, rtol=1e-6, atol=1e-6, maxiter=400, verbose=False):
+    def __init__(self, A_mm, M_mm=None, rtol=1e-7, atol=1e-7, maxiter=400, verbose=False):
         self.A_bmm = A_mm
         self.M_bmm = M_mm
         self.rtol = rtol

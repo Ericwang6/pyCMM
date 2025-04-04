@@ -84,13 +84,9 @@ def read_from_tinker_xyz(xyz_file: str, requires_grad=True, device="cpu"):
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
     atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False, device=device) - 1
-    coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad, device=device)
+    coords = torch.tensor(coords / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=requires_grad, device=device)
     return coords, atom_types, bonds, labels
-
-def guess_bond_graph(self, atom_types: List[str], dists: torch.Tensor, pairs: torch.Tensor):
-    expected_connectivities = get_expected_connectivities(atom_types)
     
-
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)
     positions = torch.cartesian_prod(grid, grid, grid)

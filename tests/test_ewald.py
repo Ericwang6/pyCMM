@@ -54,7 +54,7 @@ def test_ewald_exact():
     COULOMB = 1.602176634e-19
     exactEnergy = -(M * COULOMB * COULOMB  * AVOGADRO_CONSTANT_NA * numParticles) / (FOUR_PI_EPS * CELL_LENGTH * 2 * 1000)
 
-    coords = torch.tensor(positions / BOHR2NM, dtype=torch.float64, requires_grad=True)
+    coords = torch.tensor(positions / BOHR2NM, requires_grad=True)
     bonds = np.array([], dtype=np.float64)
     atom_type_names = ["" for i in range(coords.size(0))]
     for i in range(coords.size(0) // 2):
@@ -62,7 +62,7 @@ def test_ewald_exact():
     for i in range(coords.size(0) // 2, coords.size(0)):
         atom_type_names[i] = "Cl-"
 
-    box = torch.tensor(np.eye(3) * boxSize / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * boxSize / BOHR2ANG, requires_grad=True)
 
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -91,7 +91,7 @@ def test_multipolar_ewald_water_mchem_reference():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
     cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()

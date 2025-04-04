@@ -39,7 +39,7 @@ def get_water_dimer_coords(requires_grad=True):
         [-0.0036002768, -1.3547622039, 0.0027150961],
         [-0.492886242, -1.6733692175, 0.7647713563],
         [-0.4948459831, -1.6611969865, -0.763123154],
-    ]) / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad)
+    ]) / BOHR2ANG, requires_grad=requires_grad)
     return coords
 
 def water_data(coords: torch.Tensor):
@@ -149,7 +149,7 @@ def test_multiple_evaluations():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
 
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=True)
     
     ff = CMM()
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
@@ -176,7 +176,7 @@ def test_total_energy_and_total_gradients_ion_ion():
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "Na+", 1: "Cl-"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -225,7 +225,7 @@ def test_total_energy_and_total_gradients_ion_water():
         6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+"
     }
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False, device=device)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False, device=device)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -269,7 +269,7 @@ def test_total_energy_and_total_gradients():
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=True)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=True)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
@@ -313,7 +313,7 @@ def test_nonbonded_interactions():
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, dtype=torch.float64, requires_grad=False)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))

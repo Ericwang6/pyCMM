@@ -35,10 +35,9 @@ class CoordinateManager:
             if new_coords.requires_grad:
                 self.coords = new_coords
             else:
-                self.coords = new_coords.clone().requires_grad_(True)
+                self.coords = new_coords.clone().to(torch.get_default_dtype()).requires_grad_(True)
         else:
-            self.coords = new_coords.detach().clone()
-
+            self.coords = new_coords.detach().to(torch.get_default_dtype()).clone()
         self._check_for_nl_update = True
 
     def update_box(self, new_box: torch.Tensor):
@@ -54,9 +53,9 @@ class CoordinateManager:
             if new_box.requires_grad:
                 self.box = new_box
             else:
-                self.box = new_box.clone().requires_grad_(True)
+                self.box = new_box.clone().to(torch.get_default_dtype()).requires_grad_(True)
         else:
-            self.box = new_box.detach().clone()
+            self.box = new_box.detach().to(torch.get_default_dtype()).clone()
             
         # Update related quantities
         self.box_inv = torch.inverse(self.box)

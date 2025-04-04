@@ -25,7 +25,7 @@ def get_water_box_coords(requires_grad=True, device="cpu"):
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
     atom_types = torch.tensor(atom_types, dtype=torch.long, requires_grad=False, device=device) - 1
-    coords = torch.tensor(coords / BOHR2ANG, dtype=torch.float64, requires_grad=requires_grad, device=device)
+    coords = torch.tensor(coords / BOHR2ANG, requires_grad=requires_grad, device=device)
     return labels, coords, atom_types, bonds
 
 def profile_md():
@@ -39,7 +39,7 @@ def profile_md():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)
@@ -88,7 +88,7 @@ def profile_optimization():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.float64, requires_grad=True, device=device)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)
