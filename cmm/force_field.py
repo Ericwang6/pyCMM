@@ -3,7 +3,7 @@ from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
-from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, compute_product_with_polarization_matrix_2, direct_polarization_guess
+from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
@@ -224,6 +224,13 @@ class CMM(ForceField):
             -4.68943, -5.33155, -3.61961, -3.15899, 5.43047, # Alkali
             -445.336, -220.273, # Mg2+, Ca2+
         ])
+
+        # NOTE(JOE): The oxygen eta value should be exactly 0.0 by symmetry.
+        # I am leaving it at this small value since that is what was used
+        # when fitting the model. Changing it to 0.0 does not introduce any
+        # problems or change energies/forces meaningfully since this is
+        # actually the inverse hardness, rather than the hardness itself.
+        # Once the code is more solid, we should change it to exactly 0.0.
 
         self.eta = torch.tensor([
             6.18699e-6, 0.561535, # Water
@@ -737,7 +744,7 @@ class CMM(ForceField):
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
         
         def A_mm(x: torch.Tensor):
-            return compute_product_with_polarization_matrix_2(
+            return compute_product_with_polarization_matrix(
                 x,
                 natoms,
                 pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
@@ -755,22 +762,20 @@ class CMM(ForceField):
 
         # TODO: Implement least-squares extrapolation for generating induced dipole guess.
         # Solve polarization equations by preconditioned conjugate gradient #
-        #ene_pol = torch.tensor(0.0)
-        #if self.use_polarization:
-        #    with torch.no_grad():
-        #        # Evaluate the initial guess #
-        #        if self.last_induced_multipoles is None:
-        #            self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-        #        
-        #        b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        #        induced_multipoles_2, info = cg_solve(
-        #            A_mm, b_vector,
-        #            X0=self.last_induced_multipoles, M_mm=M_mm,
-        #            atol=self.solve_tolerance, rtol=self.solve_tolerance
-        #        )
-        #        #print(f"Solved polarization in {info['niter']} iterations")
-        #ene_pol = torch.dot(induced_multipoles_2, (0.5 * A_mm(induced_multipoles_2) - b_vector))
-        #self.last_induced_multipoles = induced_multipoles_2
+        ene_pol = torch.tensor(0.0)
+        if self.use_polarization:
+            b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
+            with torch.no_grad():
+                # Evaluate the initial guess #
+                if self.last_induced_multipoles is None:
+                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+                self.last_induced_multipoles, info = cg_solve(
+                    A_mm, b_vector,
+                    X0=self.last_induced_multipoles, M_mm=M_mm,
+                    atol=self.solve_tolerance, rtol=self.solve_tolerance
+                )
+                #print(f"Solved polarization in {info['niter']} iterations")
+            ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
 
         # HERE:
         # 1) Figure out why the optimizations using the below and above solvers disagree so much...
@@ -778,26 +783,6 @@ class CMM(ForceField):
         # 3) Verify the stress calculation is working using ASE finite difference stress
         # 4) Submit calculations to compute the density of water
 
-        ene_pol_2 = torch.tensor(0.0)
-        if self.polarization_solver:
-            # Evaluate the initial guess #
-            if self.last_induced_multipoles is None:
-                self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-            ene_pol_2, induced_multipoles, induced_potential, induced_field = self.polarization_solver.solve(
-                self.last_induced_multipoles,
-                elec_potential, elec_field, dq_groups,
-                natoms,
-                pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
-                pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
-                topology.pol_group_segment_indices, topology.pol_group_lengths_g,
-                long_range_potential_function=long_range_induced_potential_function
-            )
-            self.last_induced_multipoles = induced_multipoles
-        ene_pol = ene_pol_2
-        #print(torch.norm(induced_multipoles - induced_multipoles_2))
-        #print(ene_pol - ene_pol_2)
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
         # multipoles with respect to the cartesian coordinates are needed for the
