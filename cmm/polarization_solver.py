@@ -5,7 +5,7 @@ import torch
 import time
 
 
-def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-6, atol=1e-6, maxiter=400, verbose=False):
+def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, verbose=False):
     """Solves positive-definite matrix linear system using the preconditioned CG algorithm.
     This implementation is a modified version of that available at: https://github.com/sbarratt/torch_cg/
     which is MIT licensed.
@@ -75,20 +75,20 @@ def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-6, atol=1e-6, maxiter=400, ver
             R_k1 = R_k
             Z_k1 = Z_k
             X_k1 = X_k
-            denominator = (R_k2 * Z_k2).sum(1)
-            denominator[denominator == 0] = 1e-8
-            beta = (R_k1 * Z_k1).sum(1) / denominator
-            P_k = Z_k1 + beta.unsqueeze(1) * P_k1
+            denominator = torch.dot(R_k2, Z_k2)
+            #denominator[denominator == 0] = 1e-8
+            beta = torch.dot(R_k1, Z_k1) / denominator
+            P_k = Z_k1 + beta * P_k1
 
-        AP = A_mm(P_k)
-        denominator = (P_k * AP).sum(1)
-        denominator[denominator == 0] = 1e-8
-        alpha = (R_k1 * Z_k1).sum(1) / denominator
-        X_k = X_k1 + alpha.unsqueeze(1) * P_k
-        R_k = R_k1 - alpha.unsqueeze(1) * AP
+        AP_k = A_mm(P_k)
+        denominator = torch.dot(P_k, AP_k)
+        #denominator[denominator == 0] = 1e-8
+        alpha = torch.dot(R_k1, Z_k1) / denominator
+        X_k = X_k1 + alpha * P_k
+        R_k = R_k1 - alpha * AP_k
         end_iter = time.perf_counter()
 
-        residual_norm = torch.norm(A_mm(X_k) - b)
+        residual_norm = torch.norm(R_k)
 
         if verbose:
             print("%03d | %8.4e %4.2f" %

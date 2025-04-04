@@ -3,7 +3,7 @@ from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
-from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, compute_product_with_polarization_matrix_2
+from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, compute_product_with_polarization_matrix_2, direct_polarization_guess
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs
 from .coordinate_manager import CoordinateManager
@@ -742,7 +742,7 @@ class CMM(ForceField):
                 self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
         
         def A_mm(x: torch.Tensor):
-            return lambda x : compute_product_with_polarization_matrix_2(
+            return compute_product_with_polarization_matrix_2(
                 x,
                 natoms,
                 pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
@@ -753,11 +753,15 @@ class CMM(ForceField):
                 long_range_potential_function=long_range_induced_potential_function
             )
 
-        #def M_mm(x: torch.Tensor):
+        def M_mm(x: torch.Tensor):
+            return direct_polarization_guess(
+                x, natoms, topology.n_pol_groups, polarizabilities
+            )
 
         b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
 
-        induced_multipoles_2, info = cg_solve(A_mm, b_vector)
+        induced_multipoles_2, info = cg_solve(A_mm, b_vector, X0=self.last_induced_multipoles, M_mm=M_mm)
+        print(f"Solved polarization in: {info["niter"]} iterations with preconditioning")
 
         # Solve polarization equations using guess solution from preconditioner #
         ene_pol = torch.tensor(0.0)
@@ -789,7 +793,7 @@ class CMM(ForceField):
                 topology.pol_group_segment_indices, topology.pol_group_lengths_g,
                 long_range_potential_function=long_range_induced_potential_function
             )
-            print(f"Solved polarization in: {self.polarization_solver.iterations_to_solve} iterations")
+            print(f"Solved polarization in: {self.polarization_solver.iterations_to_solve} iterations w/o preconditioning")
             print(torch.norm(induced_multipoles - induced_multipoles_2))
             #other_guess = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
             #print(torch.norm(induced_multipoles - other_guess))

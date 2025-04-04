@@ -28,6 +28,20 @@ def direct_field_induced_dipole_guess(
         torch.zeros(n_groups, device=elec_field.device)
     ])
 
+def direct_polarization_guess(
+    x: torch.Tensor,
+    n_charges: torch.NumberType,
+    n_groups: torch.NumberType,
+    polarizabilities: torch.Tensor
+):
+    elec_field = torch.narrow(x, 0, n_charges, 3 * n_charges).reshape(n_charges, 3)
+    dipole_part = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
+    return torch.cat([
+        x[0:n_charges],
+        dipole_part,
+        x[4*n_charges:4*n_charges+n_groups]
+    ])
+
 def compute_product_with_polarization_matrix(
     vec_in: torch.Tensor, n_charges: torch.Tensor,
     pairs_lr_i_a: torch.Tensor, pairs_lr_j_a: torch.Tensor,
