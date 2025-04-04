@@ -226,8 +226,7 @@ class CMM(ForceField):
         ])
 
         self.eta = torch.tensor([
-            #6.18699e-6, 0.561535, # Water
-            0.1, 0.561535, # Water
+            6.18699e-6, 0.561535, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
@@ -764,21 +763,27 @@ class CMM(ForceField):
         #            self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
         #        
         #        b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        #        induced_multipoles, info = cg_solve(
+        #        induced_multipoles_2, info = cg_solve(
         #            A_mm, b_vector,
         #            X0=self.last_induced_multipoles, M_mm=M_mm,
         #            atol=self.solve_tolerance, rtol=self.solve_tolerance
         #        )
         #        #print(f"Solved polarization in {info['niter']} iterations")
-        #ene_pol = torch.dot(induced_multipoles, (0.5 * A_mm(induced_multipoles) - b_vector))
-        #self.last_induced_multipoles = induced_multipoles
+        #ene_pol = torch.dot(induced_multipoles_2, (0.5 * A_mm(induced_multipoles_2) - b_vector))
+        #self.last_induced_multipoles = induced_multipoles_2
 
-        ene_pol = torch.tensor(0.0)
+        # HERE:
+        # 1) Figure out why the optimizations using the below and above solvers disagree so much...
+        # 2) Submit NVT simulations at a range of temperatures
+        # 3) Verify the stress calculation is working using ASE finite difference stress
+        # 4) Submit calculations to compute the density of water
+
+        ene_pol_2 = torch.tensor(0.0)
         if self.polarization_solver:
             # Evaluate the initial guess #
             if self.last_induced_multipoles is None:
                 self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-            ene_pol, induced_multipoles, induced_potential, induced_field = self.polarization_solver.solve(
+            ene_pol_2, induced_multipoles, induced_potential, induced_field = self.polarization_solver.solve(
                 self.last_induced_multipoles,
                 elec_potential, elec_field, dq_groups,
                 natoms,
@@ -790,7 +795,9 @@ class CMM(ForceField):
                 long_range_potential_function=long_range_induced_potential_function
             )
             self.last_induced_multipoles = induced_multipoles
-
+        ene_pol = ene_pol_2
+        #print(torch.norm(induced_multipoles - induced_multipoles_2))
+        #print(ene_pol - ene_pol_2)
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
         # multipoles with respect to the cartesian coordinates are needed for the

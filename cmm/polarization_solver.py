@@ -226,7 +226,7 @@ class PolarizationSolver:
                 )
 
         # Cache the solution for next time
-        self.last_induced_multipoles = solution.clone().detach()
+        #self.last_induced_multipoles = solution.clone().detach()
 
         # Compute the induced fields
         TM, induced_potential, induced_field = compute_product_with_polarization_matrix(
