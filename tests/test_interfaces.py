@@ -42,15 +42,8 @@ def test_ase_basic():
 
     ff_ase = CMM_ASE(CMM(use_ewald=True), cm, topology, parameters)
     ff_ase.calculate(ff_ase.atoms)
-    print(energies)
-    print(ff_ase._energies)
 
     forces_ref = -grad_1 * (Hartree / Bohr)
-    print(forces_ref)
-    print(torch.from_numpy(ff_ase.results['forces']))
-    print(torch.from_numpy(ff_ase.results['forces']) - forces_ref)
-    print(torch.linalg.norm((torch.from_numpy(ff_ase.results['forces']) - forces_ref), dim=1))
-
 
     assert torch.isclose(energies['tot'] * Hartree, torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(forces_ref, torch.from_numpy(ff_ase.results['forces']))

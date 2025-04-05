@@ -13,6 +13,7 @@ class CoordinateManager:
         self.labels = labels
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
+        self.box_volume = torch.det(self.box)
         self.cutoff = torch.tensor(cutoff)
         if cutoff > 0.5 * min(self.box_lengths):
             print(f"Requested cutoff of {cutoff} is larger than half of the smallest side length {0.5 * min(self.box_lengths)}. Setting the cutoff to {0.5 * min(self.box_lengths)}")
@@ -60,6 +61,7 @@ class CoordinateManager:
         # Update related quantities
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
+        self.box_volume = torch.det(self.box)
         
         # Mark that the neighbor list needs to be updated
         self._check_for_nl_update = True

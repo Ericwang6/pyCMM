@@ -38,7 +38,7 @@ class CMM_ASE(Calculator):
         # Set ourselves as the calculator
         self.atoms.calc = self
 
-        self.implemented_properties = ['energy', 'forces'] # TODO: add stress and dipole
+        self.implemented_properties = ['energy', 'forces', 'stress'] # TODO: add dipole
     
         self._energies = {}
 
@@ -254,6 +254,10 @@ class CMM_ASE(Calculator):
 
         self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
         self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
+        if self._cm.box.grad is not None:
+            self.results['stress'] = ((
+                torch.matmul(self._cm.box.grad.T, self._cm.box) + torch.matmul(self._cm.coords.grad.T, self._cm.coords)
+             ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions']):
         # Call the parent implementation first 
@@ -297,3 +301,11 @@ class CMM_ASE(Calculator):
         else:
             self.calculate(self.atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
         return self.results['forces']
+
+    def get_stress(self, atoms=None):
+        """Get stress for current atomic configuration"""
+        if atoms is not None:
+            self.calculate(atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
+        else:
+            self.calculate(self.atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
+        return self.results['stress']

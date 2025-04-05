@@ -11,7 +11,10 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 
-from ase.optimize import BFGS
+from ase.optimize import LBFGS
+from ase.md import VelocityVerlet
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
+from ase.units import fs
 
 def calculate_stress_finite_difference(atoms, epsilon=0.001):
     """
@@ -91,9 +94,7 @@ def test_virial_tensor():
     # This is equivalent to taking the outer product of each particle gradient with the particle position
     # plus each box gradient with the box vector. (i.e. sum over F cross R) Note that the box is just
     # another degree of freedom in the simulation.
-    right = torch.matmul(box.grad.T, box)
-    left = torch.matmul(coords.grad.T, coords)
-    virial = right + left
+    virial = torch.matmul(box.grad.T, box) + torch.matmul(coords.grad.T, coords)
     stress = virial / box_volume
 
     coords, atom_types, bonds, _ = read_from_tinker_xyz(system_file, requires_grad=False)
@@ -109,18 +110,19 @@ def test_virial_tensor():
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
 
     stress_fd = torch.from_numpy(calculate_stress_finite_difference(ff_ase.atoms, epsilon=1e-6) * BOHR2ANG**3 / HARTREE2EV)
+
     assert torch.allclose(stress_fd, stress)
 
 def test_md():
     torch.set_default_dtype(torch.float64)
 
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
@@ -134,36 +136,58 @@ def test_md():
     print(energies['tot'])
     print(coords.grad)
 
-def test_optimize_nacl():
+def test_npt_optimization():
     torch.set_default_dtype(torch.float64)
-    torch.autograd.set_detect_anomaly(True)
 
-    positions = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/nacl_crystal.txt"), dtype=np.float64)
-    positions[0, 0] += 0.1 # move from equilibrium
-    coords = torch.tensor(positions / BOHR2NM, requires_grad=True)
-    bonds = np.array([], dtype=np.float64)
-    atom_type_names = ["" for i in range(coords.size(0))]
-    for i in range(coords.size(0) // 2):
-        atom_type_names[i] = "Na+"
-    for i in range(coords.size(0) // 2, coords.size(0)):
-        atom_type_names[i] = "Cl-"
-
-    box = torch.tensor(np.eye(3) * 28.2 / BOHR2ANG, requires_grad=True)
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), device=device)
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+    bonds[0] = bonds[0][permutation]
+    bonds[1] = bonds[1][permutation]
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, requires_grad=False, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=False, cutoff_short_range=9.0 / BOHR2ANG)
     with torch.no_grad():
-        ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-5), use_ewald=True)
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
             atom_type_names, pairs, topology.angle_atoms,
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
 
-    ff.alpha_damp_exponent[3] = 0.0 # 3 corresponds to Cl-
-    ff.alpha_damp_max[3] = 0.0
-    ff.rebuild_atomic_params()
+    calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
 
-    ff_ase = CMM_ASE(ff, cm, topology, parameters)
-    ff_ase.calculate()
-    dyn = BFGS(ff_ase.atoms, trajectory='nacl_opt.traj')
-    dyn.run(fmax=1e-6, steps=10)
+    # Initial forces calculation
+    initial_forces = calculator.atoms.get_forces()
+    print(f"Initial max force: {np.max(np.abs(initial_forces))}")
+
+    temperature = 150.0  # K
+    MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)
+    #Stationary(calculator.atoms)
+    #ZeroRotation(calculator.atoms)
+
+    def log_step(atoms=calculator.atoms):
+        energy = atoms.get_potential_energy()
+        kinetic = atoms.get_kinetic_energy()
+        temperature = atoms.get_temperature()
+        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K")
+
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
+    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
+    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 50 steps
+    finished = dyn.run(100)
+    if finished:
+        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
+
+    # To restart from a checkpoint
+    calculator = CMM_ASE.load_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
+    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
+    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 5 steps
+    finished = dyn.run(100)
+    if finished:
+        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state_2.json'))
