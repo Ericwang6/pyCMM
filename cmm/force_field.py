@@ -777,12 +777,6 @@ class CMM(ForceField):
                 #print(f"Solved polarization in {info['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
 
-        # HERE:
-        # 1) Figure out why the optimizations using the below and above solvers disagree so much...
-        # 2) Submit NVT simulations at a range of temperatures
-        # 3) Verify the stress calculation is working using ASE finite difference stress
-        # 4) Submit calculations to compute the density of water
-
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
         # multipoles with respect to the cartesian coordinates are needed for the

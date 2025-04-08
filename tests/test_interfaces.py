@@ -2,6 +2,7 @@ import torch
 import os
 import numpy as np
 
+from ase.filters import FrechetCellFilter
 from ase.optimize import LBFGS
 from ase.md import VelocityVerlet
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
@@ -163,5 +164,33 @@ def test_optimize_water_box_via_ase():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
-    dyn = LBFGS(ff_ase.atoms, trajectory='water216_opt.traj')
-    dyn.run(fmax=1e-3)
+    opt = LBFGS(ff_ase.atoms, trajectory='water216_opt.traj')
+    opt.run(fmax=1e-2)
+
+def test_optimize_water_box_and_cell_via_ase():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device, requires_grad=True)
+    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+    bonds[0] = bonds[0][permutation]
+    bonds[1] = bonds[1][permutation]
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True)
+    with torch.no_grad():
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True)
+    opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')
+    opt.run(fmax=1e-2)
+    ff_ase.save_state("water216_cell_opt.json")
