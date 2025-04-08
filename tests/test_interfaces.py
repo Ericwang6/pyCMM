@@ -49,11 +49,11 @@ def test_ase_basic():
     assert torch.isclose(energies['tot'] * Hartree, torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(forces_ref, torch.from_numpy(ff_ase.results['forces']))
 
-def test_cmm_ase_checkpointing():
+def test_cmm_ase_checkpoint_and_restart():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device)
     permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
     bonds[1] = bonds[1][permutation]
@@ -61,10 +61,10 @@ def test_cmm_ase_checkpointing():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, requires_grad=False, device=device)
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=False, cutoff_short_range=9.0 / BOHR2ANG)
+    ff = CMM(use_ewald=True)
     with torch.no_grad():
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
@@ -74,14 +74,8 @@ def test_cmm_ase_checkpointing():
 
     calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
 
-    # Initial forces calculation
-    initial_forces = calculator.atoms.get_forces()
-    print(f"Initial max force: {np.max(np.abs(initial_forces))}")
-
-    temperature = 150.0  # K
+    temperature = 300.0  # K
     MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)
-    #Stationary(calculator.atoms)
-    #ZeroRotation(calculator.atoms)
 
     def log_step(atoms=calculator.atoms):
         energy = atoms.get_potential_energy()
@@ -89,21 +83,19 @@ def test_cmm_ase_checkpointing():
         temperature = atoms.get_temperature()
         print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K")
 
-    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
-    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 50 steps
-    finished = dyn.run(100)
+    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/temp.traj'))
+    dyn.attach(lambda : log_step(calculator.atoms), interval=1)  # Log at every step
+    dyn.attach(calculator.create_checkpoint, interval=1)  # Checkpoint every 50 steps
+    finished = dyn.run(1)
     if finished:
         calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
 
     # To restart from a checkpoint
-    calculator = CMM_ASE.load_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
-    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
-    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 5 steps
-    finished = dyn.run(100)
-    if finished:
-        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state_2.json'))
+    new_calculator = CMM_ASE.load_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
+    assert np.allclose(calculator.atoms.get_positions(), new_calculator.atoms.get_positions())
+    assert np.allclose(calculator.atoms.get_cell(), new_calculator.atoms.get_cell())
+    new_calculator.calculate()
+    assert np.isclose(new_calculator.atoms.get_potential_energy(), calculator.atoms.get_potential_energy())
 
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)

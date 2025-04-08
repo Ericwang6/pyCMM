@@ -419,7 +419,7 @@ class CMM(ForceField):
         pairs_vdw_i_a = pairs_vdw[:, 0]
         pairs_vdw_j_a = pairs_vdw[:, 1]
         dists_vdw = dists[topology.all_intermolecular_pairs]
-        dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
+        #dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
 
         # Get switching function values for long-range nonbonded potential #
         switch_start_vdw = self.cutoff_vdw - 2.0

@@ -152,20 +152,12 @@ class CMM_ASE(Calculator):
         box = torch.tensor(state['cell'], dtype=dtype, 
                           requires_grad=state['requires_grad'], 
                           device=device)
-
-        # Convert bonds to tensor
         bonds = torch.tensor(state['bonds'], device=device)
-
-        # Create CoordinateManager
         cm = CoordinateManager(positions, box, state['cutoff'], 
                              labels=state['atom_labels'])
-
-        # Create Topology
         topology = Topology(bonds, cm.neighbor_list, positions.size(0))
-
-        # Create or use provided force field
         if ff is None:
-            ff = CMM()
+            ff = CMM(use_ewald=True)
 
         # Create Parameterizer
         pairs, _, _ = cm.get_distances_vectors_and_pairs()
@@ -175,10 +167,10 @@ class CMM_ASE(Calculator):
             ff.pair_angle_params, ff.angle_params
         )
 
-        output_folder = state['output_folder']
+        #output_folder = state['output_folder']
 
         # Create CMM_ASE calculator
-        calculator = cls(ff, cm, topology, parameters, output_folder=output_folder)
+        calculator = cls(ff, cm, topology, parameters)#, output_folder=output_folder)
 
         # If we have a trajectory file, load velocities from it
         if has_traj:
