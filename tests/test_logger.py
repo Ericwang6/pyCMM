@@ -175,8 +175,3 @@ def test_md_logger_water_box():
         
         # Verify temperature is reasonable
         assert 250 < calculator.atoms.get_temperature() < 350
-
-
-if __name__ == "__main__":
-    # Run with more steps and output when run directly
-    test_md_logger_basic()

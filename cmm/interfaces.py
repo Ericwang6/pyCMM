@@ -66,7 +66,9 @@ class CMM_ASE(Calculator):
             'atom_labels': self._cm.labels,
             'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
             'bonds': self._topology.bonded_atoms.detach().cpu().numpy().tolist(),
-            'cutoff': float(self._cm.cutoff.item()),
+            'cutoff_max': float(self._cm.cutoff.item()),
+            'cutoff_ewald': float(self._ff.cutoff_ewald.item()),
+            'cutoff_short_range': float(self._ff.cutoff_sr.item()),
             'require_coord_grads': self._cm._need_coordinate_grads,
             'require_box_grads': self._cm._need_box_grads,
             'max_neighbors': self._cm.max_neighbors,
@@ -147,7 +149,7 @@ class CMM_ASE(Calculator):
                           requires_grad=state['require_box_grads'],
                           device=device)
         bonds = torch.tensor(state['bonds'], device=device)
-        cm = CoordinateManager(positions, box, state['cutoff'],
+        cm = CoordinateManager(positions, box, state['cutoff_max'],
                              labels=state['atom_labels'], max_neighbors=state['max_neighbors'])
         topology = Topology(bonds, cm.neighbor_list, positions.size(0))
         if ff is None:
@@ -155,7 +157,13 @@ class CMM_ASE(Calculator):
             use_polarization = state['use_polarization']
             solve_tolerance = torch.tensor(state['solve_tolerance'], device=device, dtype=dtype)
             ewald_tolerance = torch.tensor(state['ewald_tolerance'], device=device, dtype=dtype)
-            ff = CMM(use_ewald=use_ewald, use_polarization=use_polarization, solve_tolerance=solve_tolerance, ewald_tolerance=ewald_tolerance)
+            cutoff_ewald = torch.tensor(state['cutoff_ewald'], device=device, dtype=dtype)
+            cutoff_short_range = torch.tensor(state['cutoff_short_range'], device=device, dtype=dtype)
+            ff = CMM(
+                cutoff_ewald=cutoff_ewald, cutoff_short_range=cutoff_short_range,
+                use_ewald=use_ewald, use_polarization=use_polarization,
+                solve_tolerance=solve_tolerance, ewald_tolerance=ewald_tolerance
+            )
 
         # Create Parameterizer
         pairs, _, _ = cm.get_distances_vectors_and_pairs()

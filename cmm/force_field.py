@@ -58,8 +58,7 @@ class CMM(ForceField):
         
         self.last_induced_multipoles = None
         self.last_permanent_multipoles = None
-
-
+        
         self._build()
     
     def _build(self):
