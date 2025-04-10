@@ -67,7 +67,9 @@ class CMM_ASE(Calculator):
             'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
             'bonds': self._topology.bonded_atoms.detach().cpu().numpy().tolist(),
             'cutoff': float(self._cm.cutoff.item()),
-            'requires_grad': self._cm._need_coordindate_grads,
+            'require_coord_grads': self._cm._need_coordinate_grads,
+            'require_box_grads': self._cm._need_box_grads,
+            'max_neighbors': self._cm.max_neighbors,
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
             'output_folder': str(self.output_folder),
@@ -139,14 +141,14 @@ class CMM_ASE(Calculator):
 
         # Convert positions and cell to tensors
         positions = torch.tensor(state['positions'], dtype=dtype, 
-                                requires_grad=state['requires_grad'], 
+                                requires_grad=state['require_coord_grads'],
                                 device=device)
-        box = torch.tensor(state['cell'], dtype=dtype, 
-                          requires_grad=state['requires_grad'], 
+        box = torch.tensor(state['cell'], dtype=dtype,
+                          requires_grad=state['require_box_grads'],
                           device=device)
         bonds = torch.tensor(state['bonds'], device=device)
-        cm = CoordinateManager(positions, box, state['cutoff'], 
-                             labels=state['atom_labels'])
+        cm = CoordinateManager(positions, box, state['cutoff'],
+                             labels=state['atom_labels'], max_neighbors=state['max_neighbors'])
         topology = Topology(bonds, cm.neighbor_list, positions.size(0))
         if ff is None:
             use_ewald = state['use_ewald']

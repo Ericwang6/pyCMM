@@ -5,8 +5,8 @@ from .pbc import applyPBC
 from .axis_types import AxisTypes
 
 class CoordinateManager:
-    def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 512) -> None:
-        self._need_coordindate_grads = coords.requires_grad
+    def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 1024) -> None:
+        self._need_coordinate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
         self.coords = coords
         self.box = box
@@ -15,11 +15,12 @@ class CoordinateManager:
         self.box_lengths = torch.diagonal(self.box)
         self.box_volume = torch.det(self.box)
         self.cutoff = torch.tensor(cutoff)
+        self.max_neighbors = max_neighbors
         if cutoff > 0.5 * min(self.box_lengths):
             print(f"Requested cutoff of {cutoff} is larger than half of the smallest side length {0.5 * min(self.box_lengths)}. Setting the cutoff to {0.5 * min(self.box_lengths)}")
             self.cutoff = 0.5 * min(self.box_lengths)
         with torch.no_grad():
-            self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=max_neighbors)
+            self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
         self._check_for_nl_update = False
 
     def update_coordinates(self, new_coords: torch.Tensor):
@@ -31,7 +32,7 @@ class CoordinateManager:
         new_coords : torch.Tensor
             New coordinates to use
         """
-        if self._need_coordindate_grads:
+        if self._need_coordinate_grads:
             # If we're passing in a tensor that already requires grad, use it directly
             if new_coords.requires_grad:
                 self.coords = new_coords
