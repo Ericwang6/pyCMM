@@ -79,6 +79,10 @@ class Logger:
     
     def _initialize_log_file(self):
         """Initialize the log file with headers."""
+        if os.path.exists(self.log_file_path):
+            # If the file already exists, we are restarting a simulation
+            # and the header should already be in the log file.
+            return
         with open(self.log_file_path, 'w') as f:
             # Write header
             header = "# CMM MD Simulation Log\n"

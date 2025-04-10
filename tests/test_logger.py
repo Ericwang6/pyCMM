@@ -17,16 +17,6 @@ from ase.md.nptberendsen import NPTBerendsen
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.units import fs, bar
 
-
-def dipole_magnitude(cm, ff, ase_calc):
-    """Example custom property: Calculate system dipole magnitude"""
-    if hasattr(ff, 'last_induced_multipoles') and ff.last_induced_multipoles is not None:
-        natoms = cm.coords.size(0)
-        dipoles = ff.last_induced_multipoles[natoms:4*natoms].reshape(natoms, 3)
-        return float(torch.norm(torch.sum(dipoles, dim=0)).item())
-    return 0.0
-
-
 def test_md_logger_basic():
     """Test basic functionality of Logger"""
     torch.set_default_dtype(torch.float64)
@@ -61,7 +51,6 @@ def test_md_logger_basic():
         
         # Define custom property functions
         custom_properties = {
-            "dipole_mag": dipole_magnitude,
             "max_force": lambda cm, ff, ase_calc: float(np.max(np.abs(ase_calc.results['forces'])))
         }
         
