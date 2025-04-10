@@ -64,7 +64,7 @@ def test_cmm_ase_checkpoint_and_restart():
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True, solve_tolerance=1e-10)
+    ff = CMM(use_ewald=True, solve_tolerance=1e-10, ewald_tolerance=1e-10)
     with torch.no_grad():
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
@@ -77,15 +77,8 @@ def test_cmm_ase_checkpoint_and_restart():
     temperature = 300.0  # K
     MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)
 
-    def log_step(atoms=calculator.atoms):
-        energy = atoms.get_potential_energy()
-        kinetic = atoms.get_kinetic_energy()
-        temperature = atoms.get_temperature()
-        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K")
-
     dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/temp.traj'))
-    dyn.attach(lambda : log_step(calculator.atoms), interval=1)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=1)  # Checkpoint every 50 steps
+    dyn.attach(calculator.create_checkpoint, interval=10)
     finished = dyn.run(1)
     if finished:
         calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))

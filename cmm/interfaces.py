@@ -1,4 +1,3 @@
-import ase
 from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.units import Bohr, Hartree
@@ -11,9 +10,11 @@ from cmm.units import BOHR2ANG
 import numpy as np
 import torch
 import os
+from typing import Optional
 
 class CMM_ASE(Calculator):
-    def __init__(self, ff: CMM, cm: CoordinateManager, topology: Topology, params: Parameterizer, output_folder: str = "."):
+    def __init__(self, ff: CMM, cm: CoordinateManager, topology: Topology, params: Parameterizer,
+                 output_folder: str=""):
         super().__init__()
         self._ff = ff
         self._cm = cm
@@ -31,24 +32,22 @@ class CMM_ASE(Calculator):
         self.atoms = Atoms(
             positions=cm.coords.detach().cpu().numpy() * Bohr,
             cell=cm.box.detach().cpu().numpy() * Bohr,
-            pbc=[1, 1, 1],
+            pbc=[ff.use_ewald, ff.use_ewald, ff.use_ewald],
             symbols=cm.labels
         )
 
         # Set ourselves as the calculator
         self.atoms.calc = self
 
-        self.implemented_properties = ['energy', 'forces', 'stress'] # TODO: add dipole
+        self.implemented_properties = ['energy', 'forces', 'stress']
     
         self._energies = {}
 
-        self.results = {'energy': 0.0,
-                'forces': np.zeros((len(self.atoms), 3)),
-                'stress': np.zeros(6),
-                'dipole': np.zeros(3),
-                'charges': np.zeros(len(self.atoms)),
-                'magmom': 0.0,
-                'magmoms': np.zeros(len(self.atoms))}
+        self.results = {
+            'energy': 0.0,
+            'forces': np.zeros((len(self.atoms), 3)),
+            'stress': np.zeros(6)
+        }
     
     def save_state(self, filename: str):
         """
@@ -67,7 +66,6 @@ class CMM_ASE(Calculator):
             'atom_labels': self._cm.labels,
             'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
             'bonds': self._topology.bonded_atoms.detach().cpu().numpy().tolist(),
-            'pbc': [True, True, True],  # Usually true for CMM
             'cutoff': float(self._cm.cutoff.item()),
             'requires_grad': self._cm._need_coordindate_grads,
             'device': str(self._cm.coords.device),
@@ -75,8 +73,8 @@ class CMM_ASE(Calculator):
             'output_folder': str(self.output_folder),
             'solve_tolerance': self._ff.solve_tolerance.detach().cpu().numpy().tolist(),
             'ewald_tolerance': self._ff.ewald_tolerance.detach().cpu().numpy().tolist(),
-            'use_ewald': [self._ff.use_ewald],
-            'use_polarization': [self._ff.use_polarization],
+            'use_ewald': self._ff.use_ewald,
+            'use_polarization': self._ff.use_polarization,
         }
 
         # Ensure output directory exists
@@ -85,16 +83,6 @@ class CMM_ASE(Calculator):
         # Save the dictionary to a JSON file
         with open(filename, 'w') as f:
             json.dump(state, f, indent=2)
-
-        # Optionally, save the current atomic positions as an ASE trajectory
-        # This is redundant but can be useful for visualization
-        if filename.endswith('.json'):
-            traj_filename = filename.replace('.json', '.traj')
-        else:
-            traj_filename = filename + '.traj'
-
-        from ase.io import write
-        write(traj_filename, self.atoms)
 
     @classmethod
     def load_state(cls, filename, ff=None):
@@ -161,8 +149,8 @@ class CMM_ASE(Calculator):
                              labels=state['atom_labels'])
         topology = Topology(bonds, cm.neighbor_list, positions.size(0))
         if ff is None:
-            use_ewald = state['use_ewald'][0]
-            use_polarization = state['use_polarization'][0]
+            use_ewald = state['use_ewald']
+            use_polarization = state['use_polarization']
             solve_tolerance = torch.tensor(state['solve_tolerance'], device=device, dtype=dtype)
             ewald_tolerance = torch.tensor(state['ewald_tolerance'], device=device, dtype=dtype)
             ff = CMM(use_ewald=use_ewald, use_polarization=use_polarization, solve_tolerance=solve_tolerance, ewald_tolerance=ewald_tolerance)
@@ -175,11 +163,11 @@ class CMM_ASE(Calculator):
             ff.pair_angle_params, ff.angle_params
         )
 
-        #output_folder = state['output_folder']
 
         # Create CMM_ASE calculator
-        calculator = cls(ff, cm, topology, parameters)#, output_folder=output_folder)
+        calculator = cls(ff, cm, topology, parameters, output_folder=state['output_folder'])
         calculator.atoms.set_velocities(np.array(state['velocities']))
+        calculator.atoms.set_pbc([use_ewald, use_ewald, use_ewald])
 
         return calculator
     
@@ -194,18 +182,9 @@ class CMM_ASE(Calculator):
             str: Name of the checkpoint file.
         """
         import os, time
-
-        # Create a timestamp to avoid overwriting previous checkpoints
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-        # Create filenames
         json_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.json")
-        traj_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.traj")
-
-        # Save the state to both files
         self.save_state(json_filename)
-
-        # Return the checkpoint filename
         return json_filename
     
     def _evaluate_ff(self):
