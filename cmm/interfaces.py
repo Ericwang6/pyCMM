@@ -46,7 +46,7 @@ class CMM_ASE(Calculator):
         self.results = {
             'energy': 0.0,
             'forces': np.zeros((len(self.atoms), 3)),
-            'stress': np.zeros(6)
+            'stress': np.zeros((3, 3))
         }
     
     def save_state(self, filename: str):
