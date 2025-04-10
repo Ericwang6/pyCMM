@@ -401,7 +401,7 @@ class CMM(ForceField):
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_grads=reset_grads)
-        self.cutoff_vdw = cm.cutoff
+        self.cutoff_vdw = cm.cutoff-0.05
 
         if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
@@ -426,7 +426,7 @@ class CMM(ForceField):
         dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
 
         # Get switching function values for long-range nonbonded potential #
-        switch_start_vdw = self.cutoff_vdw - 2.0
+        switch_start_vdw = self.cutoff_vdw - 3.0
         switch_start_vdw = switch_start_vdw if switch_start_vdw > 0.0 else 0.0
         switch_vdw = switch_543(dists_vdw, switch_start_vdw, self.cutoff_vdw)
 
