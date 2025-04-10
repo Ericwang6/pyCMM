@@ -242,13 +242,13 @@ class CMM_ASE(Calculator):
     
     def _evaluate_ff(self):
         self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
-        self._energies['tot'].backward()
+        self._energies['total'].backward()
 
-        self.results['energy'] = float(self._energies['tot'].detach().cpu()) * Hartree
+        self.results['energy'] = float(self._energies['total'].detach().cpu()) * Hartree
         self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
         if self._cm.box.grad is not None:
             self.results['stress'] = ((
-                torch.matmul(self._cm.box.grad.T, self._cm.box) + torch.matmul(self._cm.coords.grad.T, self._cm.coords)
+                torch.matmul(self._cm.coords.grad.T, self._cm.coords) + torch.matmul(self._cm.box.grad.T, self._cm.box)
              ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions']):
@@ -294,10 +294,16 @@ class CMM_ASE(Calculator):
             self.calculate(self.atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
         return self.results['forces']
 
-    def get_stress(self, atoms=None):
+    def get_stress(self, atoms=None, include_ideal_gas=True):
         """Get stress for current atomic configuration"""
         if atoms is not None:
             self.calculate(atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
         else:
             self.calculate(self.atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
+        if include_ideal_gas:
+            return self.results['stress'] + self.atoms.get_kinetic_stress(voigt=False)
         return self.results['stress']
+    
+    def get_dipole_moment(self, include_induced_moments: bool = True):
+        dipole_moment = self._ff.get_dipole_moment(self._cm.coords, include_induced_moments=include_induced_moments)
+        return dipole_moment.detach().cpu().numpy()

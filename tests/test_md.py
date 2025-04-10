@@ -16,9 +16,9 @@ from ase.md import VelocityVerlet
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 from ase.units import fs
 
-def calculate_stress_finite_difference(atoms, epsilon=0.001):
+def calculate_virial_finite_difference(atoms, epsilon=0.001):
     """
-    Calculate the stress tensor using finite difference by applying small strains
+    Calculate the virial tensor using finite difference by applying small strains
     to the unit cell and measuring the energy change.
     
     Args:
@@ -28,9 +28,9 @@ def calculate_stress_finite_difference(atoms, epsilon=0.001):
     Returns:
         stress: 3x3 stress tensor in eV/Å³
     """
-    stress = np.zeros((3, 3))
+    virial = np.zeros((3, 3))
     orig_cell = atoms.get_cell().copy()
-    orig_volume = atoms.get_volume()
+    #orig_volume = atoms.get_volume()
     
     # Loop over the 6 independent components of the stress tensor
     for i in range(3):
@@ -61,10 +61,11 @@ def calculate_stress_finite_difference(atoms, epsilon=0.001):
             atoms.set_cell(orig_cell, scale_atoms=True)
             
             # Central difference formula for the stress component
-            stress[i, j] = (energy_plus - energy_minus) / (2.0 * epsilon) / (2.0 * orig_volume)
-            stress[j, i] = stress[i, j]  # Stress tensor is symmetric
+            # Extra factor of 2 since applying strain symmetrically
+            virial[i, j] = (energy_plus - energy_minus) / (2.0 * epsilon) / 2.0
+            virial[j, i] = virial[i, j]  # Stress tensor is symmetric
     
-    return stress
+    return virial
 
 def test_virial_tensor():
     torch.set_default_dtype(torch.float64)
@@ -88,13 +89,13 @@ def test_virial_tensor():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
-    energies['tot'].backward()
+    energies['total'].backward()
 
     # This equation for the virial stress is derived in the Appendix of: https://doi.org/10.1016/j.cpc.2019.107057
     # This is equivalent to taking the outer product of each particle gradient with the particle position
     # plus each box gradient with the box vector. (i.e. sum over F cross R) Note that the box is just
     # another degree of freedom in the simulation.
-    virial = torch.matmul(box.grad.T, box) + torch.matmul(coords.grad.T, coords)
+    virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
     stress = virial / box_volume
 
     coords, atom_types, bonds, _ = read_from_tinker_xyz(system_file, requires_grad=False)
@@ -109,7 +110,8 @@ def test_virial_tensor():
 
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
 
-    stress_fd = torch.from_numpy(calculate_stress_finite_difference(ff_ase.atoms, epsilon=1e-6) * BOHR2ANG**3 / HARTREE2EV)
+    virial_fd = torch.from_numpy(calculate_virial_finite_difference(ff_ase.atoms, epsilon=1e-6) / HARTREE2EV)
+    stress_fd = virial_fd / box_volume
 
     assert torch.allclose(stress_fd, stress)
 
@@ -132,8 +134,8 @@ def test_md():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
-    energies['tot'].backward()
-    print(energies['tot'])
+    energies['total'].backward()
+    print(energies['total'])
     print(coords.grad)
 
 def test_npt_optimization():

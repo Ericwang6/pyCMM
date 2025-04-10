@@ -10,6 +10,7 @@ AVOGADRO = constants.Avogadro
 INV_4PI_EPS0 = 8.987551e9 * ELE_CHG * ELE_CHG * 1e7 * AVOGADRO / 4.184 # in kcal/mol * A / e^-2
 
 DEBYE2EA = 0.2081943
+DEBYE2EBOHR = DEBYE2EA / BOHR2ANG
 
 HARTREE2KJ = constants.value("atomic unit of energy") * AVOGADRO / 1000
 HARTREE2KCAL = HARTREE2KJ / 4.184

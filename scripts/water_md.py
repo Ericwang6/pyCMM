@@ -302,7 +302,7 @@ class CMMWater(nn.Module):
             #"bond_bond": ene_bbs,
             #"bond_angle": ene_angles,
             "ewald": ene_ewald,
-            "tot": ene_tot
+            "total": ene_tot
         }
         return energies
         
@@ -320,7 +320,7 @@ if __name__ == '__main__':
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
     box = torch.tensor(np.eye(3) * 18.643 / cmm.BOHR2ANG, requires_grad=True)
     energies = model.computeEnergy(coords, box)
-    #energies['tot'].backward()
+    #energies['total'].backward()
     #grad = coords.grad
 
     for key in energies:
@@ -333,9 +333,9 @@ if __name__ == '__main__':
     #        for j in range(coords.shape[1]):
     #            h = 0.01
     #            coords[i, j] += h
-    #            ene_u = model.computeEnergy(coords, box)['tot']
+    #            ene_u = model.computeEnergy(coords, box)['total']
     #            coords[i, j] -= 2 * h
-    #            ene_d = model.computeEnergy(coords, box)['tot']
+    #            ene_d = model.computeEnergy(coords, box)['total']
     #            grad_numerical[i, j] += (ene_u.detach().item() - ene_d.detach().item()) / (2 * h)
     #            coords[i, j] += h
     #

@@ -9,7 +9,7 @@ import numpy as np
 
 import os
 
-from cmm.units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG
+from cmm.units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG, DEBYE2EA
 from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from cmm.misc_utils import read_from_tinker_xyz
 from cmm.coordinate_manager import CoordinateManager
@@ -160,11 +160,11 @@ def test_multiple_evaluations():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
     energies_ff = ff.evaluate(cm, topology, parameters)
-    energies_ff['tot'].backward()
+    energies_ff['total'].backward()
     grads_1 = cm.coords.grad.detach().clone()
 
     energies_ff = ff.evaluate(cm, topology, parameters)
-    energies_ff['tot'].backward()
+    energies_ff['total'].backward()
     grads_2 = cm.coords.grad.detach().clone()
     
     assert torch.allclose(grads_1, grads_2)
@@ -188,27 +188,7 @@ def test_total_energy_and_total_gradients_ion_ion():
     )
     energies_ff = ff.evaluate(cm, topology, parameters)
     total_ref = torch.tensor([-132.66013773479762 / HARTREE2KCAL])
-    assert torch.allclose(energies_ff['tot'], total_ref)
-
-    #def get_total_energy(coords: torch.Tensor):
-    #    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    #    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-    #    pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    #    ff = CMM()
-    #    parameters = Parameterizer(
-    #        atom_type_names, pairs, topology.angle_atoms,
-    #        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    #    )
-    #    energies_ff = ff.evaluate(cm, topology, parameters)
-    #    total_energy = energies_ff['tot']
-    #    return total_energy
-#
-    #grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
-    #energies_ff['tot'].backward(retain_graph=True)
-    #grads_ad_1 = coords.grad.clone()
-    #if not torch.allclose(grads_ad_1, grads_fd_1):
-    #    print(grads_ad_1 - grads_fd_1)
-    #assert torch.allclose(grads_ad_1, grads_fd_1)
+    assert torch.allclose(energies_ff['total'], total_ref)
 
 def test_total_energy_and_total_gradients_ion_water():
     torch.set_default_dtype(torch.float64)
@@ -238,7 +218,7 @@ def test_total_energy_and_total_gradients_ion_water():
 
     energies_ff = ff.evaluate(cm, topology, parameters)
     total_ref = torch.tensor([-28.231218043296266], device=device)
-    total_energy = energies_ff['tot'] * HARTREE2KCAL
+    total_energy = energies_ff['total'] * HARTREE2KCAL
     assert torch.allclose(total_energy, total_ref)
 
     energies_ff['bond'].backward()
@@ -282,10 +262,10 @@ def test_total_energy_and_total_gradients():
 
     energies_ff = ff.evaluate(cm, topology, parameters)
     total_ref = torch.tensor([-4.768231511534177])
-    total_ff = energies_ff['tot'] * HARTREE2KCAL
+    total_ff = energies_ff['total'] * HARTREE2KCAL
     assert torch.allclose(total_ff, total_ref)
 
-    energies_ff['tot'].backward()
+    energies_ff['total'].backward()
     grads_ad_1 = coords.grad.clone()
 
     def get_total_energy(coords: torch.Tensor):
@@ -298,7 +278,7 @@ def test_total_energy_and_total_gradients():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
         energies_ff = ff.evaluate(cm, topology, parameters)
-        total_energy = energies_ff['tot']
+        total_energy = energies_ff['total']
         return total_energy
 
     grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5)
@@ -306,6 +286,50 @@ def test_total_energy_and_total_gradients():
         print(grads_ad_1 - grads_fd_1)
 
     assert torch.allclose(grads_ad_1, grads_fd_1)
+
+def test_dipole_moment():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100, requires_grad=True)
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM(solve_tolerance=1e-15)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    dipole_moment = ff.get_dipole_moment(cm.coords)
+    assert torch.allclose(dipole_moment, torch.tensor([ -0.0198134931, -1.05513346, 0.00294907]))
+
+def test_dipole_moment_water_box():
+    torch.set_default_dtype(torch.float64)
+
+    system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
+
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    dipole_moment = ff.get_dipole_moment(cm.coords)
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)

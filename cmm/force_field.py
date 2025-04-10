@@ -56,6 +56,7 @@ class CMM(ForceField):
             )
         
         self.last_induced_multipoles = None
+        self.last_permanent_multipoles = None
 
 
         self._build()
@@ -386,6 +387,16 @@ class CMM(ForceField):
         
             self.parameters_have_changed = True
 
+    def get_dipole_moment(self, coords: torch.Tensor, include_induced_moments: bool = True):
+        natoms = self.last_permanent_multipoles.size(0)
+        dipole_moment = torch.matmul(coords.T, self.last_permanent_multipoles[:, 0])
+        dipole_moment = dipole_moment + torch.sum(self.last_permanent_multipoles[:, 1:4], dim=0)
+        if self.last_induced_multipoles is not None and include_induced_moments:
+            dipole_moment = dipole_moment + torch.matmul(coords.T, self.last_induced_multipoles[0:natoms])
+            dipole_moment = dipole_moment + torch.sum(self.last_induced_multipoles[natoms:4*natoms].view(-1, 3), dim=0)
+        
+        return dipole_moment
+
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
@@ -637,6 +648,7 @@ class CMM(ForceField):
         multipoles_cp = convertMultipolesToPolytensor(
             mono_lr - Z, dipo_lr, quad_lr
         )
+        self.last_permanent_multipoles = multipoles_real
 
         # @SPEED: Z_mpoles is all zeros besides the charge. Can certainly avoid allocating the
         # multipolar array entries and thereby eliminate the multiplications by zero.
@@ -849,11 +861,11 @@ class CMM(ForceField):
             "angle": ene_angles,
             "bond_bond": ene_bbs,
             "bond_angle": ene_bas,
-            "tot": ene_tot
+            "total": ene_tot
         }
 
         if self.use_ewald:
             energies["ewald"] = ene_ewald
-            energies["tot"] = ene_tot + ene_ewald
+            energies["total"] = ene_tot + ene_ewald
 
         return energies

@@ -38,7 +38,7 @@ def test_ase_basic():
     )
 
     energies = ff.evaluate(cm, topology, parameters)
-    energies['tot'].backward()
+    energies['total'].backward()
     grad_1 = cm.coords.grad.detach().clone().cpu()
 
     ff_ase = CMM_ASE(CMM(use_ewald=True), cm, topology, parameters)
@@ -46,7 +46,7 @@ def test_ase_basic():
 
     forces_ref = -grad_1 * (Hartree / Bohr)
 
-    assert torch.isclose(energies['tot'] * Hartree, torch.tensor(ff_ase.results['energy']))
+    assert torch.isclose(energies['total'] * Hartree, torch.tensor(ff_ase.results['energy']))
     assert torch.allclose(forces_ref, torch.from_numpy(ff_ase.results['forces']))
 
 def test_cmm_ase_checkpoint_and_restart():

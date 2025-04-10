@@ -62,12 +62,12 @@ def profile_md():
     with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=True, with_stack=True) as prof:
         with record_function("CMM_5_steps_nve_water_box_216"):
             energies_ff = ff.evaluate(cm, topology, parameters)
-            energies_ff['tot'].backward()
+            energies_ff['total'].backward()
             for _ in range(5):
                 new_coords = integrator.first_half_step(cm.coords)
                 cm.update_coordinates(new_coords)
                 energies_ff = ff.evaluate(cm, topology, parameters)
-                energies_ff['tot'].backward()
+                energies_ff['total'].backward()
                 integrator.second_half_step()
                 
                 # Synchronization after each step to get kernel info
@@ -105,7 +105,7 @@ def profile_optimization():
 
     #def run_model_forward_and_backward(ff, cm, topology, parameters):
     #    energies = ff.evaluate(cm, topology, parameters)
-    #    energies['tot'].backward(retain_graph=True)
+    #    energies['total'].backward(retain_graph=True)
     #    return energies
     
     #t = benchmark.Timer(
@@ -120,7 +120,7 @@ def profile_optimization():
     #with profile(activities=[ProfilerActivity.CUDA], profile_memory=True, record_shapes=False) as prof:
     #    with record_function("CMM_evaluate_water_box_216"):
     #        energies = ff.evaluate(cm, topology, parameters)
-    #        energies['tot'].backward()
+    #        energies['total'].backward()
     #print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
 if __name__ == "__main__":
