@@ -72,7 +72,11 @@ class CMM_ASE(Calculator):
             'requires_grad': self._cm._need_coordindate_grads,
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
-            'output_folder': str(self.output_folder)
+            'output_folder': str(self.output_folder),
+            'solve_tolerance': self._ff.solve_tolerance.detach().cpu().numpy().tolist(),
+            'ewald_tolerance': self._ff.ewald_tolerance.detach().cpu().numpy().tolist(),
+            'use_ewald': [self._ff.use_ewald],
+            'use_polarization': [self._ff.use_polarization],
         }
 
         # Ensure output directory exists
@@ -157,7 +161,11 @@ class CMM_ASE(Calculator):
                              labels=state['atom_labels'])
         topology = Topology(bonds, cm.neighbor_list, positions.size(0))
         if ff is None:
-            ff = CMM(use_ewald=True)
+            use_ewald = state['use_ewald'][0]
+            use_polarization = state['use_polarization'][0]
+            solve_tolerance = torch.tensor(state['solve_tolerance'], device=device, dtype=dtype)
+            ewald_tolerance = torch.tensor(state['ewald_tolerance'], device=device, dtype=dtype)
+            ff = CMM(use_ewald=use_ewald, use_polarization=use_polarization, solve_tolerance=solve_tolerance, ewald_tolerance=ewald_tolerance)
 
         # Create Parameterizer
         pairs, _, _ = cm.get_distances_vectors_and_pairs()
@@ -171,19 +179,7 @@ class CMM_ASE(Calculator):
 
         # Create CMM_ASE calculator
         calculator = cls(ff, cm, topology, parameters)#, output_folder=output_folder)
-
-        # If we have a trajectory file, load velocities from it
-        if has_traj:
-            try:
-                atoms_with_vel = ase_read(traj_filename, index=-1)  # Get the last frame
-                calculator.atoms.set_velocities(atoms_with_vel.get_velocities())
-                # You might also want to set other dynamic properties like:
-                # calculator.atoms.set_momenta(atoms_with_vel.get_momenta())
-            except Exception as e:
-                print(f"Warning: Could not load velocities from trajectory file: {e}")
-        elif 'velocities' in state:
-            # Or use velocities from JSON if available
-            calculator.atoms.set_velocities(np.array(state['velocities']))
+        calculator.atoms.set_velocities(np.array(state['velocities']))
 
         return calculator
     
@@ -211,34 +207,6 @@ class CMM_ASE(Calculator):
 
         # Return the checkpoint filename
         return json_filename
-
-    def write_trajectory(self, filename: str, mode: str='a', properties=None):
-        """
-        Write the current state to a trajectory file.
-
-        Args:
-            filename (str): Name of the trajectory file.
-            mode (str): Write mode, 'a' for append, 'w' for write.
-            properties (list): Properties to include in the trajectory.
-        """
-        import os
-        from ase.io import write
-
-        # Create absolute path using output folder
-        full_path = os.path.join(self.output_folder, filename)
-
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(full_path)), exist_ok=True)
-
-        # Write atomic configuration to trajectory
-        write(full_path, self.atoms, mode=mode, properties=properties)
-
-        # Also save the topology info to enable proper restart
-        # Only save this information if writing a new file or appending first frame
-        if mode == 'w' or (mode == 'a' and not os.path.exists(full_path)):
-            # Save topology file alongside trajectory
-            topo_filename = full_path + '.topology.json'
-            self.save_state(topo_filename)
     
     def _evaluate_ff(self):
         self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)

@@ -19,7 +19,10 @@ class Topology:
     def __init__(self, bonds: NDArray[np.int64], nl: NeighborList, natoms: int):
         self.device = nl.device
         self.natoms = natoms
-        self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
+        if torch.is_tensor(bonds):
+            self.bonded_atoms = bonds.clone().detach()
+        else:
+            self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
         self.find_bond_and_angle_pair_indices(nl)
         self._find_atoms_for_building_local_axes()
         self._find_polarization_groups_and_scatter_indices()

@@ -25,11 +25,12 @@ class ForceField(torch.nn.Module):
 
 class CMM(ForceField):
     def __init__(self,
-                 cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG),
-                 cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG),
-                 ewald_tolerance: torch.Tensor=torch.tensor(1e-6),
+                 cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG, dtype=torch.float64),
+                 cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG, dtype=torch.float64),
+                 ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64),
                  use_ewald: bool=False, use_polarization: bool=True,
-                 pol_solver_type="conjugate_gradient", max_iterations=400, solve_tolerance=1e-7) -> None:
+                 pol_solver_type="conjugate_gradient", max_iterations=400,
+                 solve_tolerance: torch.Tensor=torch.tensor(1e-7, dtype=torch.float64)) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -39,18 +40,18 @@ class CMM(ForceField):
             "Li+": 6, "Na+": 7, "K+": 8, "Rb+": 9, "Cs+": 10,
             "Mg2+": 11, "Ca2+": 12
         }
-        self.cutoff_sr = cutoff_short_range
+        self.cutoff_sr = cutoff_short_range if torch.is_tensor(cutoff_short_range) else torch.tensor(cutoff_short_range, dtype=torch.float64)
+        self.ewald_tolerance = ewald_tolerance if torch.is_tensor(ewald_tolerance) else torch.tensor(ewald_tolerance, dtype=torch.float64)
+        self.cutoff_ewald = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
+        self.cutoff_vdw = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.use_ewald = use_ewald
-        self.cutoff_ewald = cutoff_ewald
-        self.ewald_tolerance = ewald_tolerance
-        self.use_polarization = use_polarization
-        self.cutoff_vdw = cutoff_ewald
-        self.polarization_solver = None
 
+        self.use_polarization = use_polarization
+        self.polarization_solver = None
         if self.use_polarization:
             self.solver_type = pol_solver_type
             self.max_iterations = max_iterations
-            self.solve_tolerance = solve_tolerance
+            self.solve_tolerance = solve_tolerance if torch.is_tensor(solve_tolerance) else torch.tensor(solve_tolerance, dtype=torch.float64)
             self.polarization_solver = PolarizationSolver(
                 max_iter=self.max_iterations, tol=self.solve_tolerance, solver_type=self.solver_type
             )

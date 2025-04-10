@@ -64,7 +64,7 @@ def test_cmm_ase_checkpoint_and_restart():
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True)
+    ff = CMM(use_ewald=True, solve_tolerance=1e-10)
     with torch.no_grad():
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(

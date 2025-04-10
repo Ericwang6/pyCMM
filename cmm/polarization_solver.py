@@ -140,7 +140,7 @@ class CG(torch.autograd.Function):
         return dB
 
 class PolarizationSolver:
-    def __init__(self, max_iter=400, tol=1e-7, solver_type="conjugate_gradient"):
+    def __init__(self, max_iter=400, tol=torch.tensor(1e-7, dtype=torch.float64), solver_type="conjugate_gradient"):
         """
         Initialize the PolarizationSolver.
         
