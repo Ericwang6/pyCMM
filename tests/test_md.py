@@ -115,6 +115,64 @@ def test_virial_tensor():
 
     assert torch.allclose(stress_fd, stress)
 
+def test_virial_tensor_translational_invariance():
+    torch.set_default_dtype(torch.float64)
+
+    system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
+    box_volume = torch.det(box)
+
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies = ff.evaluate(cm, topology, parameters)
+    energies['total'].backward()
+
+    virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
+    stress = virial / box_volume
+
+    system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True)
+    
+    # Translation along all x, y, and z
+    coords = coords + torch.ones_like(coords) * torch.rand(3, dtype=torch.float64) * 10.0
+    coords = coords.detach().clone().requires_grad_()
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
+    box_volume = torch.det(box)
+
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies_2 = ff.evaluate(cm, topology, parameters)
+    energies_2['total'].backward()
+
+    virial_2 = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
+    stress_2 = virial_2 / box_volume
+
+    assert torch.allclose(stress, stress_2)
+    assert torch.isclose(energies['total'], energies_2['total'])
+
 def test_md():
     torch.set_default_dtype(torch.float64)
 
