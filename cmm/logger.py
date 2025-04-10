@@ -95,7 +95,7 @@ class Logger:
             
             # Create CSV header
             csv_header = ",".join(self.properties)
-            header += f"# {csv_header}\n"
+            header += f"{csv_header}\n"
             
             f.write(header)
     
