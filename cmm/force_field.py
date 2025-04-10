@@ -418,35 +418,38 @@ class CMM(ForceField):
         dists_excl = dists[topology.all_intramolecular_pairs]
         dist_vecs_excl = dist_vecs[topology.all_intramolecular_pairs]
 
-        # Get pairs, dists, and vectors for long-range nonbonded potential #
-        pairs_lr = pairs[topology.all_intermolecular_pairs, :]
-        pairs_lr_i_a = pairs_lr[:, 0]
-        pairs_lr_j_a = pairs_lr[:, 1]
-        dists_lr = dists[topology.all_intermolecular_pairs]
-        dist_vecs_lr = dist_vecs[topology.all_intermolecular_pairs]
-
         # Get pairs, dists, and vectors for vdw potential #
         pairs_vdw = pairs[topology.all_intermolecular_pairs, :]
         pairs_vdw_i_a = pairs_vdw[:, 0]
         pairs_vdw_j_a = pairs_vdw[:, 1]
         dists_vdw = dists[topology.all_intermolecular_pairs]
-        #dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
+        dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
 
         # Get switching function values for long-range nonbonded potential #
         switch_start_vdw = self.cutoff_vdw - 2.0
         switch_start_vdw = switch_start_vdw if switch_start_vdw > 0.0 else 0.0
         switch_vdw = switch_543(dists_vdw, switch_start_vdw, self.cutoff_vdw)
 
-        # Get pairs, dists, and vectors for short-range nonbonded potential #
-        indices_lr_to_sr = torch.where(dists_lr <= self.cutoff_sr, torch.arange(dists_lr.size(0), dtype=torch.long, device=dists_lr.device), torch.tensor(-1, dtype=torch.long, device=dists_lr.device))
-        indices_lr_to_sr = indices_lr_to_sr[indices_lr_to_sr >= 0]
-        all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_lr_to_sr]
+        # Get pairs, dists, and vectors for long-range nonbonded potential #
+        indices_vdw_to_lr = torch.where(dists_vdw <= self.cutoff_ewald, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
+        indices_vdw_to_lr = indices_vdw_to_lr[indices_vdw_to_lr >= 0]
 
-        pairs_sr = pairs_lr[indices_lr_to_sr, :]
+        pairs_lr = pairs_vdw[indices_vdw_to_lr, :]
+        pairs_lr_i_a = pairs_lr[:, 0]
+        pairs_lr_j_a = pairs_lr[:, 1]
+        dists_lr = dists_vdw[indices_vdw_to_lr]
+        dist_vecs_lr = dist_vecs_vdw[indices_vdw_to_lr]
+
+        # Get pairs, dists, and vectors for short-range nonbonded potential #
+        indices_vdw_to_sr = torch.where(dists_vdw <= self.cutoff_sr, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
+        indices_vdw_to_sr = indices_vdw_to_sr[indices_vdw_to_sr >= 0]
+        all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_vdw_to_sr]
+
+        pairs_sr = pairs_vdw[indices_vdw_to_sr, :]
         pairs_sr_i_a = pairs_sr[:, 0]
         pairs_sr_j_a = pairs_sr[:, 1]
-        dists_sr = dists_lr[indices_lr_to_sr]
-        dist_vecs_sr = dist_vecs_lr[indices_lr_to_sr]
+        dists_sr = dists_vdw[indices_vdw_to_sr]
+        dist_vecs_sr = dist_vecs_vdw[indices_vdw_to_sr]
 
         # Get switching function values for short-range nonbonded potential #
         switch_start_sr = self.cutoff_sr - 2.0
@@ -842,7 +845,7 @@ class CMM(ForceField):
 
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
-            dists_lr,
+            dists_vdw,
             C6_ij_disp_vdw_p, b_ij_disp_vdw_p,
             switch_vdw
         )
