@@ -296,25 +296,25 @@ class CMM_ASE(Calculator):
     def get_potential_energy(self, atoms=None, force_consistent=False):
         """Get potential energy for current atomic configuration"""
         if atoms is not None:
-            self.calculate(atoms, ['energy'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(atoms, ['energy'], ['positions', 'cell'])
         else:
-            self.calculate(self.atoms, ['energy'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(self.atoms, ['energy'], ['positions', 'cell'])
         return self.results['energy']
     
     def get_forces(self, atoms=None):
         """Get forces for current atomic configuration"""
         if atoms is not None:
-            self.calculate(atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(atoms, ['forces'], ['positions', 'cell'])
         else:
-            self.calculate(self.atoms, ['forces'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(self.atoms, ['forces'], ['positions', 'cell'])
         return self.results['forces']
 
     def get_stress(self, atoms=None, include_ideal_gas=True):
         """Get stress for current atomic configuration"""
         if atoms is not None:
-            self.calculate(atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(atoms, ['stress'], ['positions', 'cell'])
         else:
-            self.calculate(self.atoms, ['stress'], ['positions', 'cell', 'numbers', 'pbc'])
+            self.calculate(self.atoms, ['stress'], ['positions', 'cell'])
         if include_ideal_gas:
             return self.results['stress'] + self.atoms.get_kinetic_stress(voigt=False)
         return self.results['stress']
