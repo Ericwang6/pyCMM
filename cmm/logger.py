@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from typing import List, Dict, Any, Optional, Callable, Set
 from datetime import datetime
-from ase.units import bar
+from ase.units import GPa
 
 from .coordinate_manager import CoordinateManager
 from .force_field import CMM, ForceField
@@ -171,7 +171,7 @@ class Logger:
             if hasattr(self.ase_calculator, 'results') and 'stress' in self.ase_calculator.results:
                 stress = self.ase_calculator.results['stress'] + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
                 pressure = -(stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3  # Negative trace of stress tensor
-                return pressure / bar / 1.01325
+                return (pressure / GPa) * 9869.2326671601 # GPa to atm
             return None
         
         elif prop == "density" and self.ase_calculator is not None:
