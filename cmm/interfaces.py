@@ -181,6 +181,64 @@ class CMM_ASE(Calculator):
 
         return calculator
     
+    @classmethod
+    def load_last_state(cls, directory: str, ff=None):
+        """
+        Load a CMM_ASE calculator from the most recent saved state file in a directory.
+
+        This method searches the specified directory for checkpoint files and loads
+        the most recent one based on the timestamp in the filename.
+
+        Args:
+            directory (str): Directory containing checkpoint files
+            ff (CMM, optional): The force field to use. If None, a new CMM
+                               instance will be created with default parameters.
+
+        Returns:
+            CMM_ASE: A reconstructed CMM_ASE calculator from the most recent checkpoint.
+
+        Raises:
+            FileNotFoundError: If no checkpoint files are found in the directory.
+        """
+        import os
+        import re
+        import glob
+
+        # Pattern to match checkpoint files with timestamps
+        # Expected format: checkpoint_YYYYMMDD_HHMMSS.json
+        checkpoint_pattern = os.path.join(directory, "checkpoint_*.json")
+        checkpoint_files = glob.glob(checkpoint_pattern)
+
+        if not checkpoint_files:
+            # Also try to match any .json file that might be a checkpoint
+            alternative_pattern = os.path.join(directory, "*.json")
+            checkpoint_files = glob.glob(alternative_pattern)
+
+        if not checkpoint_files:
+            raise FileNotFoundError(f"No checkpoint files found in {directory}")
+
+        # Extract timestamps from filenames
+        timestamp_pattern = re.compile(r'.*_(\d{8}_\d{6})\.json$')
+
+        # Try to find files with timestamps (like checkpoint_20220101_120000.json)
+        timestamped_files = []
+        for filepath in checkpoint_files:
+            match = timestamp_pattern.match(filepath)
+            if match:
+                timestamp = match.group(1)
+                timestamped_files.append((filepath, timestamp))
+
+        if timestamped_files:
+            # Sort by timestamp (most recent last)
+            timestamped_files.sort(key=lambda x: x[1])
+            latest_file = timestamped_files[-1][0]
+        else:
+            # If no files match the timestamp pattern, use file modification time
+            checkpoint_files.sort(key=os.path.getmtime)
+            latest_file = checkpoint_files[-1]
+
+        return cls.load_state(latest_file, ff=ff)
+    
     def create_checkpoint(self, filename_prefix='checkpoint'):
         """
         Create a checkpoint that can be used to restart the simulation.
