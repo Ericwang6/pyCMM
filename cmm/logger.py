@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from typing import List, Dict, Any, Optional, Callable, Set
 from datetime import datetime
-from ase.units import GPa
+from ase.units import GPa, bar
 
 from .coordinate_manager import CoordinateManager
 from .force_field import CMM, ForceField
@@ -169,9 +169,9 @@ class Logger:
         
         elif prop == "pressure" and self.ase_calculator is not None:
             if hasattr(self.ase_calculator, 'results') and 'stress' in self.ase_calculator.results:
-                stress = self.ase_calculator.results['stress'] + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
+                stress = self.ase_calculator.results['stress']# + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
                 pressure = -(stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3  # Negative trace of stress tensor
-                return (pressure / GPa) * 9869.2326671601 # GPa to atm
+                return (pressure / (bar * 1.01325))
             return None
         
         elif prop == "density" and self.ase_calculator is not None:
@@ -189,10 +189,10 @@ class Logger:
         
         # System properties
         elif prop == "volume":
-            return float(self.cm.box_volume.detach().cpu().numpy())
+            return float(self.cm.box_volume.detach().cpu().numpy() * BOHR2ANG**3)
         
         elif prop == "box_lengths":
-            return self.cm.box_lengths.detach().cpu().numpy().tolist()
+            return (self.cm.box_lengths.detach().cpu().numpy() * BOHR2ANG).tolist()
         
         # Energy components - extract from the latest calculation
         elif prop.startswith("energy_"):

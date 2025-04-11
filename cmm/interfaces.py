@@ -1,6 +1,7 @@
 from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.units import Bohr, Hartree
+from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 
 from cmm.parameters import Parameterizer
 from cmm.coordinate_manager import CoordinateManager
@@ -261,9 +262,12 @@ class CMM_ASE(Calculator):
 
         self.results['energy'] = float(self._energies['total'].detach().cpu()) * Hartree
         self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
+        self.results['stress'] = (
+            torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
+        ).detach().cpu().numpy() * (Hartree / Bohr**3)
         if self._cm.box.grad is not None:
-            self.results['stress'] = ((
-                torch.matmul(self._cm.coords.grad.T, self._cm.coords) + torch.matmul(self._cm.box.grad.T, self._cm.box)
+            self.results['stress'] = self.results['stress'] + ((
+                torch.matmul(self._cm.box.grad.T, self._cm.box)
              ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions']):
@@ -295,29 +299,23 @@ class CMM_ASE(Calculator):
 
     def get_potential_energy(self, atoms=None, force_consistent=False):
         """Get potential energy for current atomic configuration"""
-        if atoms is not None:
-            self.calculate(atoms, ['energy'], ['positions', 'cell'])
-        else:
-            self.calculate(self.atoms, ['energy'], ['positions', 'cell'])
+        self.calculate(self.atoms, ['energy'], ['positions', 'cell'])
         return self.results['energy']
     
     def get_forces(self, atoms=None):
         """Get forces for current atomic configuration"""
-        if atoms is not None:
-            self.calculate(atoms, ['forces'], ['positions', 'cell'])
-        else:
-            self.calculate(self.atoms, ['forces'], ['positions', 'cell'])
+        self.calculate(self.atoms, ['forces'], ['positions', 'cell'])
         return self.results['forces']
 
-    def get_stress(self, atoms=None, include_ideal_gas=True):
+    def get_stress(self, voigt=False, apply_constraint=False, include_ideal_gas=True):
         """Get stress for current atomic configuration"""
-        if atoms is not None:
-            self.calculate(atoms, ['stress'], ['positions', 'cell'])
-        else:
-            self.calculate(self.atoms, ['stress'], ['positions', 'cell'])
+        self.calculate(self.atoms, ['stress'], ['positions', 'cell'])
+        stress = self.results['stress']
+        if voigt:
+            stress = full_3x3_to_voigt_6_stress(stress)
         if include_ideal_gas:
-            return self.results['stress'] + self.atoms.get_kinetic_stress(voigt=False)
-        return self.results['stress']
+            return stress #+ self.atoms.get_kinetic_stress(voigt=voigt)
+        return stress
     
     def get_dipole_moment(self, include_induced_moments: bool = True):
         dipole_moment = self._ff.get_dipole_moment(self._cm.coords, include_induced_moments=include_induced_moments)
