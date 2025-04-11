@@ -122,10 +122,7 @@ def test_virial_tensor():
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
 
     virial_fd = torch.from_numpy(calculate_virial_finite_difference(ff_ase.atoms, epsilon=1e-6) / HARTREE2EV).to(device)
-    print(virial_fd)
-    print(box_volume)
     stress_fd = virial_fd / box_volume
-    print(stress_fd)
 
     assert torch.allclose(stress_fd, stress)
 
