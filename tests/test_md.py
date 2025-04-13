@@ -11,7 +11,7 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 from cmm.logger import Logger
-from cmm.memory import MemoryTracker, add_memory_tracking_to_md
+from cmm.memory import MemoryTracker, add_memory_tracking_to_md, BackwardMemoryMonitor, patch_cmm_ase_with_backward_memory_monitor
 
 from ase.optimize import LBFGS
 from ase.filters import FrechetCellFilter
@@ -336,8 +336,9 @@ def test_memory_usage():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
     ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
-    mt = MemoryTracker(os.path.join(os.path.dirname(__file__), "scratch/memory_logs"))
-    ff_ase = add_memory_tracking_to_md(ff_ase, mt, check_interval=5)
+    #mt = MemoryTracker(os.path.join(os.path.dirname(__file__), "scratch/memory_logs"))
+    #ff_ase = add_memory_tracking_to_md(ff_ase, mt, check_interval=5)
+    backward_monitor = patch_cmm_ase_with_backward_memory_monitor(ff_ase)
 
     temperature = 270.0
     MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
@@ -358,5 +359,6 @@ def test_memory_usage():
         print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, P: {pressure:.2f} atm")
 
     #dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
-    dyn.run(1000)
-    mt.finalize(limit_tensor_report=True)
+    dyn.run(100)
+    #mt.finalize(limit_tensor_report=True)
+    backward_monitor.summarize()

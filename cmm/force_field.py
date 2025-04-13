@@ -651,7 +651,7 @@ class CMM(ForceField):
         multipoles_cp = convertMultipolesToPolytensor(
             mono_lr - Z, dipo_lr, quad_lr
         )
-        self.last_permanent_multipoles = multipoles_real
+        self.last_permanent_multipoles = multipoles_real.clone().detach().requires_grad_(False)
 
         # @SPEED: Z_mpoles is all zeros besides the charge. Can certainly avoid allocating the
         # multipolar array entries and thereby eliminate the multiplications by zero.
@@ -791,6 +791,7 @@ class CMM(ForceField):
                 )
                 #print(f"Solved polarization in {info['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
+            self.last_induced_multipoles = self.last_induced_multipoles.clone().detach()
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
