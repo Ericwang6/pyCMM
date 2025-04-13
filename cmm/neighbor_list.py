@@ -275,7 +275,7 @@ class CellList(NeighborList):
             self.box_lengths = box_lengths
             self.minimum_vector = torch.min(positions, dim=0)[0]
             self._build(positions)
-            self.last_positions = positions.detach().clone()
+            self.last_positions = positions.detach().clone().requires_grad_(False)
             self.num_updates_since_last_build = 0
             return
         

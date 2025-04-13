@@ -11,6 +11,7 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 from cmm.logger import Logger
+from cmm.memory import MemoryTracker, add_memory_tracking_to_md
 
 from ase.optimize import LBFGS
 from ase.filters import FrechetCellFilter
@@ -253,6 +254,7 @@ def test_md():
         temperature = atoms.get_temperature()
         stress = atoms.get_stress(voigt=True)
         print(stress)
+        print(bar * 1.01325)
         pressure = (-(stress[0] + stress[1] + stress[2]) / 3) / (bar * 1.01325)
         print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, P: {pressure:.2f} atm")
 
@@ -314,3 +316,47 @@ def test_npt_optimization():
     finished = dyn.run(100)
     if finished:
         calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state_2.json'))
+
+def test_memory_usage():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
+    mt = MemoryTracker(os.path.join(os.path.dirname(__file__), "scratch/memory_logs"))
+    ff_ase = add_memory_tracking_to_md(ff_ase, mt, check_interval=5)
+
+    temperature = 270.0
+    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
+    Stationary(ff_ase.atoms)
+
+    dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
+                   taut=100 * fs, pressure_au=1.01325 * bar,
+                   taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+
+    def log_step(atoms=ff_ase.atoms):
+        energy = atoms.get_potential_energy()
+        kinetic = atoms.get_kinetic_energy()
+        temperature = atoms.get_temperature()
+        stress = atoms.get_stress(voigt=True)
+        print(stress)
+        print(bar * 1.01325)
+        pressure = (-(stress[0] + stress[1] + stress[2]) / 3) / (bar * 1.01325)
+        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, P: {pressure:.2f} atm")
+
+    #dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
+    dyn.run(1000)
+    mt.finalize(limit_tensor_report=True)
