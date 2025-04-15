@@ -324,10 +324,10 @@ class VerletList(NeighborList):
                                         dtype=torch.long, device=self.device)
         self.n_neighbors = torch.zeros(self.n_atoms, dtype=torch.long, 
                                      device=self.device)
-        #self.distance_vectors = torch.zeros((self.n_atoms, max_neighbors, 3),
-        #                                  dtype=positions.dtype, device=self.device)
-        #self.distances = torch.zeros((self.n_atoms, max_neighbors),
-        #                           dtype=positions.dtype, device=self.device)
+        self.distance_vectors = torch.zeros((self.n_atoms, max_neighbors, 3),
+                                          dtype=positions.dtype, device=self.device)
+        self.distances = torch.zeros((self.n_atoms, max_neighbors),
+                                   dtype=positions.dtype, device=self.device)
         
         self._build(positions)
     
@@ -391,7 +391,7 @@ class VerletList(NeighborList):
         # @SPEED We can do better than this but this will have to do for now.
         # Always rebuild if box changes
         if box_lengths is not None and torch.allclose(box_lengths, self.box_lengths) == False:
-            self.box_lengths = box_lengths.detach.clone()
+            self.box_lengths = box_lengths.detach().clone()
             self._build(positions)
             return
             
