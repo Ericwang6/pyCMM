@@ -80,7 +80,7 @@ class NSquaredList(NeighborList):
         all_pairs_0 = []
         all_pairs_1 = []
         for i in range(self.natoms):
-            all_pairs_0.append(torch.full((self.n_neighbors[i],), i))
+            all_pairs_0.append(torch.full((self.n_neighbors[i],), i, device=self.device),)
             all_pairs_1.append(self.neighbor_list[i, :self.n_neighbors[i]])
             n_pairs += self.n_neighbors[i]
         return torch.stack((torch.cat(all_pairs_0), torch.cat(all_pairs_1)), dim=1)
