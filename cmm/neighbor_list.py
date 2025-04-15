@@ -271,10 +271,10 @@ class CellList(NeighborList):
             self._build(positions)
             self.last_positions = positions.detach().clone().requires_grad_(False)
             self.num_updates_since_last_build = 0
-            return
+            return True
         
         self.num_updates_since_last_build += 1
-        return
+        return False
 
     def get_pairs(self) -> torch.Tensor:
         return self.pairs[:, :self.n_pairs].t().contiguous()
@@ -393,12 +393,14 @@ class VerletList(NeighborList):
         if box_lengths is not None and torch.allclose(box_lengths, self.box_lengths) == False:
             self.box_lengths = box_lengths.detach().clone()
             self._build(positions)
-            return
+            return True
             
         if self._needs_rebuild(positions):
             self._build(positions)
+            return True
         #else:
         #    self._update_distances(positions)
+        return False
     
     def _update_distances(self, positions: torch.Tensor):
         """

@@ -23,12 +23,12 @@ class Topology:
             self.bonded_atoms = bonds.clone().detach()
         else:
             self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
-        self._build(nl)        
-        
-    def _build(self, nl: NeighborList):
-        self.find_bond_and_angle_pair_indices(nl)
+        self.rebuild(nl)
         self._find_atoms_for_building_local_axes()
         self._find_polarization_groups_and_scatter_indices()
+        
+    def rebuild(self, nl: NeighborList):
+        self.find_bond_and_angle_pair_indices(nl)
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
         """
@@ -46,7 +46,6 @@ class Topology:
         bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i])
         angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
 
-        
         # Below will get the same bond pairs as above but will find them in the 
         # reverse order. I don't think we need them ever but I'm not sure yet so leaving the comment.
         #half_bond_ending_with_i = self.bonded_atoms[0, (self.bonded_atoms[1] == i)]

@@ -21,8 +21,8 @@ class CoordinateManager:
             print(f"Requested cutoff of {cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
             self.cutoff = 0.5 * min(self.box_lengths).detach()
         with torch.no_grad():
-            #self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
-            self.neighbor_list = VerletList(coords, self.box_lengths, self.cutoff, cutoff_padding=1.0, max_neighbors=self.max_neighbors)
+            self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
+            #self.neighbor_list = VerletList(coords, self.box_lengths, self.cutoff, cutoff_padding=1.0, max_neighbors=self.max_neighbors)
             #self.neighbor_list = NSquaredList(coords, self.box_lengths, self.cutoff)
         self._check_for_nl_update = False
 
@@ -44,10 +44,10 @@ class CoordinateManager:
         self.box_lengths = torch.diagonal(self.box)
         self.box_volume = torch.det(self.box)
         if self.cutoff > 0.5 * min(self.box_lengths):
-            print(f"Requested cutoff of {self.cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
+            #print(f"Requested cutoff of {self.cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
             self.cutoff = 0.5 * min(self.box_lengths).detach()
             self.neighbor_list.cutoff = self.cutoff
-            self.neighbor_list.verlet_cutoff = self.cutoff + self.neighbor_list.cutoff_padding
+            #self.neighbor_list.verlet_cutoff = self.cutoff + self.neighbor_list.cutoff_padding
         
         self._check_for_nl_update = True
         
@@ -66,9 +66,9 @@ class CoordinateManager:
         # Check if neighbor list needs to be updated
         if self._check_for_nl_update:
             with torch.no_grad():
-                self.neighbor_list.update(self.coords, self.box_lengths)
-                if topology:
-                    topology._build(self.neighbor_list)
+                did_update_nl = self.neighbor_list.update(self.coords, self.box_lengths)
+                if topology is not None and did_update_nl:
+                    topology.rebuild(self.neighbor_list)
                 self._check_for_nl_update = False
 
         # Get pairs from neighbor list (no gradients needed)
