@@ -23,6 +23,9 @@ class Topology:
             self.bonded_atoms = bonds.clone().detach()
         else:
             self.bonded_atoms = torch.tensor(bonds, dtype=torch.long, device=nl.device, requires_grad=False)
+        self._build(nl)        
+        
+    def _build(self, nl: NeighborList):
         self.find_bond_and_angle_pair_indices(nl)
         self._find_atoms_for_building_local_axes()
         self._find_polarization_groups_and_scatter_indices()
@@ -91,8 +94,10 @@ class Topology:
         self.angle_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
         # @SPEED Avoid this for loop. I have to use it because the way the NL
         # works, we cannot use vmap. Need to figure out how to fix that.
+        neighbors_per_atom = nl.get_n_neighbors()
         for i in torch.arange(self.natoms):
-            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), nl.get_n_neighbors()) 
+            #print(nl.get_neighbors(i))
+            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), neighbors_per_atom) 
             self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
             self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
         
@@ -102,7 +107,8 @@ class Topology:
         # will also be coupled to that angle, we can use self.angle_pairs to compute
         # the angular, bond-bond coupling, and bond-angle coupling potentials.
         self.angle_pairs = self.angle_pairs.t().contiguous()
-        
+        #print(self.angle_pairs)
+
         pairs = nl.get_pairs()
         self._find_all_intramolecular_pairs(pairs)
         self._find_all_intermolecular_pairs(pairs.size(0))

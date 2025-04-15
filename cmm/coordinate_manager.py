@@ -3,13 +3,14 @@ import torch
 from typing import Dict, Tuple, List, Optional
 from .pbc import applyPBC
 from .axis_types import AxisTypes
+from .topology import Topology
 
 class CoordinateManager:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 1024) -> None:
         self._need_coordinate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
-        self.coords = coords
-        self.box = box
+        self.coords = coords.detach().clone().requires_grad_(self._need_coordinate_grads)
+        self.box = box.detach().clone().requires_grad_(self._need_box_grads)
         self.labels = labels
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
@@ -17,81 +18,58 @@ class CoordinateManager:
         self.cutoff = torch.tensor(cutoff)
         self.max_neighbors = max_neighbors
         if cutoff > 0.5 * min(self.box_lengths):
-            print(f"Requested cutoff of {cutoff} is larger than half of the smallest side length {0.5 * min(self.box_lengths)}. Setting the cutoff to {0.5 * min(self.box_lengths)}")
-            self.cutoff = 0.5 * min(self.box_lengths)
+            print(f"Requested cutoff of {cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
+            self.cutoff = 0.5 * min(self.box_lengths).detach()
         with torch.no_grad():
-            self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
+            #self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
+            #self.neighbor_list = VerletList(coords, self.box_lengths, self.cutoff, cutoff_padding=1.0, max_neighbors=self.max_neighbors)
+            self.neighbor_list = NSquaredList(coords, self.box_lengths, self.cutoff)
         self._check_for_nl_update = False
 
     def update_coordinates(self, new_coords: torch.Tensor):
         """
         Update coordinates held by the coordinate manager.
-
-        Parameters
-        ----------
-        new_coords : torch.Tensor
-            New coordinates to use
         """
-        if self._need_coordinate_grads:
-            # If we're passing in a tensor that already requires grad, use it directly
-            if new_coords.requires_grad:
-                self.coords = new_coords
-            else:
-                self.coords = new_coords.clone().to(torch.get_default_dtype()).requires_grad_(True)
-        else:
-            self.coords = new_coords.detach().to(torch.get_default_dtype()).clone()
+        self.coords = new_coords.detach().clone().to(torch.get_default_dtype()).requires_grad_(self._need_coordinate_grads)
         self._check_for_nl_update = True
 
     def update_box(self, new_box: torch.Tensor):
         """
         Update box vectors and related quantities.
-        
-        Parameters
-        ----------
-        new_box : torch.Tensor
-            New box vectors to use
         """
-        if self._need_box_grads:
-            if new_box.requires_grad:
-                self.box = new_box
-            else:
-                self.box = new_box.clone().to(torch.get_default_dtype()).requires_grad_(True)
-        else:
-            self.box = new_box.detach().to(torch.get_default_dtype()).clone()
-            
+        self.box = new_box.detach().clone().to(torch.get_default_dtype()).requires_grad_(self._need_box_grads)
+        
         # Update related quantities
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)
         self.box_volume = torch.det(self.box)
+        if self.cutoff > 0.5 * min(self.box_lengths):
+            print(f"Requested cutoff of {self.cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
+            self.cutoff = 0.5 * min(self.box_lengths).detach()
+            self.neighbor_list.cutoff = self.cutoff
         
         # Mark that the neighbor list needs to be updated
         self._check_for_nl_update = True
         
-    def get_distances_vectors_and_pairs(self, reset_grads=False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_distances_vectors_and_pairs(self, topology: Topology = None, reset_grads=False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Get all distances, distance vectors, and indices of atom pairs.
-        Parameters
-        ----------
-        reset_grads : bool, optional
-            If True, reset gradients by creating new tensors. Use this when you want
-            to start a fresh computation graph.
-        Returns
-        -------
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-            Pairs, distances, and distance vectors
+        Get all indices of atom pairs, distances, distance vectors.
         """
 
         # Only reset gradients if explicitly requested
-        if reset_grads and self.coords.grad is not None:
-            self.update_coordinates(self.coords.detach().clone())
+        if reset_grads: 
+            if self._need_coordinate_grads:
+                self.update_coordinates(self.coords.detach().clone())
             if self._need_box_grads:
                 self.update_box(self.box.detach().clone())
 
         # Check if neighbor list needs to be updated
-        if self._check_for_nl_update:
-            with torch.no_grad():
-                self.neighbor_list.update(self.coords, self.box_lengths)
-                self._check_for_nl_update = False
+        #if self._check_for_nl_update:
+        with torch.no_grad():
+            self.neighbor_list.update(self.coords, self.box_lengths)
+            if topology:
+                topology._build(self.neighbor_list)
+            self._check_for_nl_update = False
 
         # Get pairs from neighbor list (no gradients needed)
         with torch.no_grad():

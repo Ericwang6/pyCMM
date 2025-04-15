@@ -26,8 +26,8 @@ class Parameterizer:
         self._unique_atom_type_names = list(dict.fromkeys(atom_type_names)) # trick to create ordered set
 
         self._define_type_names_and_indices()
-        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
         
+        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
         self._build_atomic_parameter_arrays(raw_atomic_params)
         self._build_pair_parameter_arrays(raw_pair_params)
         self._build_pair_pair_parameter_arrays(raw_pair_pair_params)
@@ -38,7 +38,9 @@ class Parameterizer:
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
         self._angle_types = self._get_angle_types_from_angle_atoms(angle_atoms)
 
-    def rebuild(self, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
+    def rebuild(self, pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
+        self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
+        self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
         self._build_atomic_parameter_arrays(raw_atomic_params)
         self._build_pair_parameter_arrays(raw_pair_params)
         self._build_pair_pair_parameter_arrays(raw_pair_pair_params)

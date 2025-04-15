@@ -53,9 +53,6 @@ class CMM_ASE(Calculator):
     def save_state(self, filename: str):
         """
         Save the state of the CMM_ASE calculator for restart purposes.
-
-        Args:
-            filename (str): The name of the file to save the state to.
         """
         import json, os
 
@@ -93,14 +90,6 @@ class CMM_ASE(Calculator):
     def load_state(cls, filename, ff=None):
         """
         Load a CMM_ASE calculator from a saved state file.
-
-        Args:
-            filename (str): The name of the file to load the state from.
-            ff (CMM, optional): The force field to use. If None, a new CMM
-                               instance will be created with default parameters.
-
-        Returns:
-            CMM_ASE: A reconstructed CMM_ASE calculator.
         """
         import json
         import torch
@@ -189,17 +178,6 @@ class CMM_ASE(Calculator):
 
         This method searches the specified directory for checkpoint files and loads
         the most recent one based on the timestamp in the filename.
-
-        Args:
-            directory (str): Directory containing checkpoint files
-            ff (CMM, optional): The force field to use. If None, a new CMM
-                               instance will be created with default parameters.
-
-        Returns:
-            CMM_ASE: A reconstructed CMM_ASE calculator from the most recent checkpoint.
-
-        Raises:
-            FileNotFoundError: If no checkpoint files are found in the directory.
         """
         import os
         import re
@@ -270,7 +248,7 @@ class CMM_ASE(Calculator):
                 torch.matmul(self._cm.box.grad.T, self._cm.box)
              ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
 
-    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions']):
+    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions', 'cell']):
         # Call the parent implementation first 
         Calculator.calculate(self, atoms, properties, system_changes)
     

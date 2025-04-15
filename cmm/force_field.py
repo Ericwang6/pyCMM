@@ -400,15 +400,28 @@ class CMM(ForceField):
     #@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(reset_grads=reset_grads)
+        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff-0.05
+        # HERE: I think I fixed a bug with the synchronization of data between CPU and GPU.
+        # Now, I need to do the following:
+        # 1) Find the bug in neighbor list rebuilds since I am not getting the same energies from identical coordinates when NL is rebuilt
+        # 2) Start with the below since clearly some of the atoms do not have the right neighbors even though the size of the pairs tensor is right
+        # 3) Once this is fixed, write a test which runs 20 steps of NVE simulation, serializes the state after 10 steps, then test if we
+        #    can get back to the same final positions as the first NVE simulations when restarting from the serialized state. Should be EXACT!!
+        # TODO: Still need to implement the above.
 
-        if self.parameters_have_changed:
+        # NOTE(JOE): So, I need to get some simulations running so I can get data. Currently, I have hacked a bunch of stuff to make it work
+        # I'm rebuilding the neighbor list on each step along with finding the topology pairs and re-parameterizing at each step.
+        # This is all screaming for me to turn the CoordinateManager into a class which has the neighbor list and topology.
+        # The parameters need to be a part of the force field for technical reasons even though the simplest thing to do is put
+        # the parameterizer with the system. I think force field + parameters = ForceField and coordinates, neighbor list, and topology = System.
+        # The System will also have some kind of data class specifying what type of calculation we are doing so that we can respond appropriately.
+        if True: #self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
             # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
             # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.
             # This would be a reason to add setter functions. In addition to a way to set the status bool.
-            params.rebuild(self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
+            params.rebuild(pairs, self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
             self.parameters_have_changed = False
         
         # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
