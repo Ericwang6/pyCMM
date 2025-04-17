@@ -13,6 +13,7 @@ from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 from cmm.logger import Logger
 
+from ase.md import VelocityVerlet
 from ase.md.nptberendsen import NPTBerendsen
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.units import fs, bar

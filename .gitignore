@@ -2,7 +2,7 @@
 */temp.xyz
 *.traj
 *.xyz
-*.json
+checkpoint*.json
 tests/scratch/*
 
 
