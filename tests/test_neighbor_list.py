@@ -169,7 +169,7 @@ def test_verlet_neighbor_list():
     # Test full update
     assert check_neighbor_lists_match(nl_1_verlet, nl_2_ref, nl_1_verlet.natoms) == False
     nl_1_verlet.update(coords_2, cell_2)
-    assert check_neighbor_lists_match(nl_1_verlet, nl_2_ref, nl_1_verlet.natoms) == True    
+    assert check_neighbor_lists_match(nl_1_verlet, nl_2_ref, nl_1_verlet.natoms) == True
 
     # Test update from existing pair list inside verlet cutoff
     nl_1_verlet = VerletList(coords_1, cell_1, cutoff, torch.tensor(1.0))
