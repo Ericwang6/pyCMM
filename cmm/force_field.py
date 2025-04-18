@@ -828,7 +828,9 @@ class CMM(ForceField):
                 (elec_field)[topology.bonded_atoms[1]],
                 dq_a[topology.bonded_atoms[1]]
             )
-            
+            # HERE: Either the bonded pairs or bonded atoms are getting out of sync
+            # when neighbor list rebuilds occur. This causes a crash getting FD Morse params.
+
             # morse-bond
             ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
             ene_bonds = torch.sum(ene_bond_list)

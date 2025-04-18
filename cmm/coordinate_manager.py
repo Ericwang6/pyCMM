@@ -21,9 +21,7 @@ class CoordinateManager:
             print(f"Requested cutoff of {cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
             self.cutoff = 0.5 * min(self.box_lengths).detach()
         with torch.no_grad():
-            #self.neighbor_list = CellList(coords, self.box_lengths, self.cutoff, max_neighbors=self.max_neighbors)
-            #self.neighbor_list = VerletList(coords, self.box_lengths, self.cutoff, cutoff_padding=1.0, max_neighbors=self.max_neighbors)
-            self.neighbor_list = NSquaredList(coords, self.box_lengths, self.cutoff)
+            self.neighbor_list = VerletList(coords, self.box, self.cutoff, padding=1.0)
         self._check_for_nl_update = False
 
     def update_coordinates(self, new_coords: torch.Tensor):
@@ -59,16 +57,15 @@ class CoordinateManager:
         # Only reset gradients if explicitly requested
         if reset_grads: 
             if self._need_coordinate_grads:
-                self.update_coordinates(self.coords.detach().clone())
+                self.update_coordinates(self.coords)
             if self._need_box_grads:
-                self.update_box(self.box.detach().clone())
+                self.update_box(self.box)
 
         # Check if neighbor list needs to be updated
         if self._check_for_nl_update:
             with torch.no_grad():
-                did_update_nl = self.neighbor_list.update(self.coords, self.box_lengths)
-                if topology is not None and did_update_nl:
-                    topology.rebuild(self.neighbor_list)
+                self.neighbor_list.update(self.coords, self.box)
+                topology.rebuild(self.neighbor_list)
                 self._check_for_nl_update = False
 
         # Get pairs from neighbor list (no gradients needed)

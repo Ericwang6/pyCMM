@@ -1,5 +1,5 @@
 from ase import Atoms
-from ase.calculators.calculator import Calculator
+from ase.calculators.calculator import Calculator, all_changes
 from ase.units import Bohr, Hartree
 from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 
@@ -14,8 +14,12 @@ import os
 from typing import Optional
 
 class CMM_ASE(Calculator):
+    implemented_properties = ['energy', 'forces', 'stress']
+    calculate_numerical_stress = False
+    calculate_numerical_forces = False
+
     def __init__(self, ff: CMM, cm: CoordinateManager, topology: Topology, params: Parameterizer,
-                 output_folder: str=""):
+                 output_folder: str="", use_cache=True):
         super().__init__()
         self._ff = ff
         self._cm = cm
@@ -36,14 +40,13 @@ class CMM_ASE(Calculator):
             pbc=[ff.use_ewald, ff.use_ewald, ff.use_ewald],
             symbols=cm.labels
         )
+        self._last_atoms_hash = None
+        self._last_positions = None
 
         # Set ourselves as the calculator
         self.atoms.calc = self
 
-        self.implemented_properties = ['energy', 'forces', 'stress']
-    
         self._energies = {}
-
         self.results = {
             'energy': 0.0,
             'forces': np.zeros((len(self.atoms), 3)),
@@ -248,53 +251,63 @@ class CMM_ASE(Calculator):
                 torch.matmul(self._cm.box.grad.T, self._cm.box)
              ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
 
-    def calculate(self, atoms=None, properties=['energy', 'forces'], system_changes=['positions', 'cell']):
-        # Call the parent implementation first 
-        Calculator.calculate(self, atoms, properties, system_changes)
+    def calculate(self, atoms=None, properties=None, system_changes=['positions', 'cell']):
+        if properties is None:
+            properties = self.implemented_properties
+        super().calculate(atoms, properties, system_changes)
     
-        # If atoms is provided and it's different from our internal one,
-        # update our reference
         if atoms is not None and atoms is not self.atoms:
             self.atoms = atoms
             self.atoms.calc = self
+        
+        current_hash = self._get_configuration_hash(self.atoms)
+        if self._last_atoms_hash == current_hash:
+            return
+        if self._last_positions is not None:
+            # NOTE(JOE): I am not sure if this is right or not...
+            # We might just have to eat the two evaluations per step with NPT.
+            pos_ratio = self.atoms.get_positions() / self._last_positions
+            if np.max(pos_ratio - pos_ratio[0]) < 1e-12:
+                return
+        positions_tensor = torch.from_numpy(self.atoms.get_positions() / Bohr).to(self._cm.coords.device)
+        box_tensor = torch.from_numpy(self.atoms.get_cell().array / Bohr).to(self._cm.coords.device)
+        self._cm.update_coordinates(positions_tensor)
+        self._cm.update_box(box_tensor)
 
-        # Only update coordinates if positions have changed
-        if 'positions' in system_changes:
-            positions_tensor = torch.from_numpy(self.atoms.get_positions() / Bohr).to(self._cm.coords.device)
-            self._cm.update_coordinates(positions_tensor)
-
-        # Only update box if cell has changed
-        if 'cell' in system_changes:
-            box_tensor = torch.from_numpy(self.atoms.get_cell().array / Bohr).to(self._cm.coords.device)
-            self._cm.update_box(box_tensor)
-
-        # Ensure coordinates have gradients enabled
-        if not self._cm.coords.requires_grad:
-            self._cm.coords.requires_grad_(True)
-
-        # Calculate forces and energy
+        # Calculate forces, energy, and stress then store hash for this configuration #
         self._evaluate_ff()
+        self._last_positions = self.atoms.get_positions()
+        self._last_atoms_hash = current_hash
 
-    def get_potential_energy(self, atoms=None, force_consistent=False):
+    def get_potential_energy(self, atoms=None):
         """Get potential energy for current atomic configuration"""
-        self.calculate(self.atoms, ['energy'], ['positions', 'cell'])
+        self.calculate(self.atoms, properties=['energy'])
         return self.results['energy']
     
     def get_forces(self, atoms=None):
         """Get forces for current atomic configuration"""
-        self.calculate(self.atoms, ['forces'], ['positions', 'cell'])
+        self.calculate(self.atoms, properties=['forces'])
         return self.results['forces']
 
-    def get_stress(self, voigt=False, apply_constraint=False, include_ideal_gas=True):
+    def get_stress(self, voigt=False, include_ideal_gas=True):
         """Get stress for current atomic configuration"""
-        self.calculate(self.atoms, ['stress'], ['positions', 'cell'])
+        self.calculate(self.atoms, properties=['stress'])
         stress = self.results['stress']
         if voigt:
             stress = full_3x3_to_voigt_6_stress(stress)
         if include_ideal_gas:
-            return stress #+ self.atoms.get_kinetic_stress(voigt=voigt)
+            return stress# + self.atoms.get_kinetic_stress(voigt=voigt)
         return stress
     
     def get_dipole_moment(self, include_induced_moments: bool = True):
         dipole_moment = self._ff.get_dipole_moment(self._cm.coords, include_induced_moments=include_induced_moments)
         return dipole_moment.detach().cpu().numpy()
+    
+    def _get_configuration_hash(self, atoms):
+        """Generate a hash that uniquely identifies the atomic configuration"""
+        positions_hash = hash(np.array2string(atoms.positions, precision=10))
+        if atoms.cell is not None and np.any(atoms.cell != 0.0):
+            cell_hash = hash(np.array2string(atoms.cell, precision=10))
+            return hash((positions_hash, cell_hash))
+        else:
+            return positions_hash

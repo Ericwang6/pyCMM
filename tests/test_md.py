@@ -17,6 +17,8 @@ from ase.optimize import LBFGS
 from ase.filters import FrechetCellFilter
 from ase.md import VelocityVerlet, MDLogger
 from ase.md.nptberendsen import NPTBerendsen
+from ase.md.nvtberendsen import NVTBerendsen
+from ase.md.npt import NPT
 from ase.md.langevin import Langevin
 from ase.io import Trajectory
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
@@ -194,7 +196,7 @@ def test_md():
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
@@ -241,9 +243,13 @@ def test_md():
 
     traj = Trajectory('water216_npt_270K.traj', 'a', ff_ase.atoms)
 
+    #dyn = NPT(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, externalstress=1.01325 * bar)
     dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
                    taut=100 * fs, pressure_au=1.01325 * bar,
                    taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+    #dyn = NVTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, taut=0.5*1000*fs)
+    #dyn = VelocityVerlet(ff_ase.atoms, 1.0 * fs)
+    #dyn = Langevin(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, friction=0.01 / fs)
     dyn.attach(traj.write, interval=1)
     logger.attach_to_ase_dynamics(dyn)
     energy_logger.attach_to_ase_dynamics(dyn)
@@ -252,70 +258,13 @@ def test_md():
         energy = atoms.get_potential_energy()
         kinetic = atoms.get_kinetic_energy()
         temperature = atoms.get_temperature()
-        stress = atoms.get_stress(voigt=True)
-        print(stress)
-        print(bar * 1.01325)
+        stress = atoms.get_stress(voigt=True, include_ideal_gas=True)
         pressure = (-(stress[0] + stress[1] + stress[2]) / 3) / (bar * 1.01325)
-        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, P: {pressure:.2f} atm")
+        kinetic_pressure = 2 * kinetic / (3 * atoms.get_volume()) / (bar * 1.01325)
+        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Virial Press.: {pressure:.2f} atm, Kinetic Press. {kinetic_pressure:.2f}")
 
     dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
     dyn.run(100)
-
-def test_npt_optimization():
-    torch.set_default_dtype(torch.float64)
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), device=device)
-    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
-    bonds[0] = bonds[0][permutation]
-    bonds[1] = bonds[1][permutation]
-    
-    # Normally, the parser should enforce just returning the names of atom types
-    atom_indices_to_names = {0: "O_water", 1: "H_water"}
-    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, requires_grad=False, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=False, cutoff_short_range=9.0 / BOHR2ANG)
-    with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-        parameters = Parameterizer(
-            atom_type_names, pairs, topology.angle_atoms,
-            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-        )
-
-    calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
-
-    # Initial forces calculation
-    initial_forces = calculator.atoms.get_forces()
-    print(f"Initial max force: {np.max(np.abs(initial_forces))}")
-
-    temperature = 150.0  # K
-    MaxwellBoltzmannDistribution(calculator.atoms, temperature_K=temperature, force_temp=True)
-    #Stationary(calculator.atoms)
-    #ZeroRotation(calculator.atoms)
-
-    def log_step(atoms=calculator.atoms):
-        energy = atoms.get_potential_energy()
-        kinetic = atoms.get_kinetic_energy()
-        temperature = atoms.get_temperature()
-        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K")
-
-    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
-    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 50 steps
-    finished = dyn.run(100)
-    if finished:
-        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
-
-    # To restart from a checkpoint
-    calculator = CMM_ASE.load_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state.json'))
-    dyn = VelocityVerlet(calculator.atoms, 0.5 * fs, trajectory=os.path.join(os.path.dirname(__file__), 'scratch/w2_dynamics.traj'))
-    dyn.attach(lambda : log_step(calculator.atoms), interval=10)  # Log at every step
-    dyn.attach(calculator.create_checkpoint, interval=50)  # Checkpoint every 5 steps
-    finished = dyn.run(100)
-    if finished:
-        calculator.save_state(os.path.join(os.path.dirname(__file__), 'scratch/final_state_2.json'))
 
 def test_memory_usage():
     torch.set_default_dtype(torch.float64)

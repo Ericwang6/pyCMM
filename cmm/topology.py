@@ -93,9 +93,11 @@ class Topology:
         self.angle_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
         # @SPEED Avoid this for loop. I have to use it because the way the NL
         # works, we cannot use vmap. Need to figure out how to fix that.
+
+        # @SPEED Write a different version of this which updates the topology
+        # for only those atoms which actually have a change in their neighbors.
         neighbors_per_atom = nl.get_n_neighbors()
         for i in torch.arange(self.natoms):
-            #print(nl.get_neighbors(i))
             bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), neighbors_per_atom) 
             self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
             self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
@@ -106,7 +108,6 @@ class Topology:
         # will also be coupled to that angle, we can use self.angle_pairs to compute
         # the angular, bond-bond coupling, and bond-angle coupling potentials.
         self.angle_pairs = self.angle_pairs.t().contiguous()
-        #print(self.angle_pairs)
 
         pairs = nl.get_pairs()
         self._find_all_intramolecular_pairs(pairs)
@@ -172,11 +173,12 @@ class Topology:
         # The point is, only the code for finding the groups needs to be changed. The below
         # should just work...
         self.pol_group_indices_a = torch.cat(self.polarization_groups.unbind())
-        self.pol_group_lengths_g = torch.tensor([g.size(0) for g in self.polarization_groups.unbind()], 
-                             dtype=torch.long,
-                             device=groups.device)
+        self.pol_group_lengths_g = torch.tensor(
+            [g.size(0) for g in self.polarization_groups.unbind()], 
+            dtype=torch.long, device=groups.device
+        )
         self.n_pol_groups = self.pol_group_lengths_g.size(0)
         self.pol_group_segment_indices = torch.zeros(self.n_pol_groups + 1, 
-                            dtype=torch.long,
-                            device=groups.device)
+            dtype=torch.long, device=groups.device
+        )
         self.pol_group_segment_indices[1:] = torch.cumsum(self.pol_group_lengths_g, dim=0)
