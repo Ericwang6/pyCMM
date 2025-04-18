@@ -279,7 +279,7 @@ class CMM_ASE(Calculator):
         self._last_positions = self.atoms.get_positions()
         self._last_atoms_hash = current_hash
 
-    def get_potential_energy(self, atoms=None):
+    def get_potential_energy(self, atoms=None, force_consistent=False, apply_constraint=False):
         """Get potential energy for current atomic configuration"""
         self.calculate(self.atoms, properties=['energy'])
         return self.results['energy']
