@@ -700,9 +700,7 @@ class CMM(ForceField):
         # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
             self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            #self.alpha_ewald = 0.544590516336201 * BOHR2ANG
             self.k_max = 50
-            #self.k_max = 15
             for i in range(2, 50):
                 error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
                 if error_estimate < self.ewald_tolerance:
@@ -713,8 +711,13 @@ class CMM(ForceField):
             # ^^^ for removing excluded interactions that are implicitly included in long-range summation
             # The reciprocal space calculation uses an erf(alpha*r) damping so the above is -erf(alpha*r)
         else:
-            erfc_damps = torch.ones_like(dists_lr)
-            erf_damps = torch.zeros_like(dists_excl)
+            # This is hard-coded to 5 since we always compute damping factors up to quad-quad interactions.
+            # In the (distant) future, we should enable automatic detection of multipole rank and try
+            # to dispatch batches to kernels which consider the smallest maximum rank allowable. In that
+            # case, this 5 would not be hard-coded. The code is going to be so different at that point this
+            # comment is hardly worth writing, but at least now you know why there is a 5 here.
+            erfc_damps = torch.ones((5, dists_lr.size(0)))
+            erf_damps = torch.zeros((5, dists_excl.size(0)))
 
         cp_damps_sr_1c_i = -computeShortRangeOneCenterDampFactors(dists_sr, b_i_elec_p)
         cp_damps_sr_1c_j = -computeShortRangeOneCenterDampFactors(dists_sr, b_j_elec_p)
@@ -757,7 +760,7 @@ class CMM(ForceField):
 
         eps = params.get_pair_parameters('eps', all_intermolecular_pairs_sr)
 
-        if topology.bonded_pairs.size(0) > 0:
+        if topology.bonded_pairs.numel() > 0:
             r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
             k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
             D_p = params.get_pair_parameters('D', topology.bonded_pairs)
@@ -772,7 +775,7 @@ class CMM(ForceField):
         # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
         # Currently, we don't have parameters for a non-symmetric angle but they will come up with
         # organic molecules.
-        if topology.angle_pairs.size(0) > 0:
+        if topology.angle_pairs.numel() > 0:
             r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
             r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
             r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
@@ -790,11 +793,11 @@ class CMM(ForceField):
             k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
         # Pauli charge flux #
-        if topology.bonded_pairs.size(0):
+        if topology.bonded_pairs.numel():
             evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
-        if topology.angle_pairs.size(0) > 0:
+        if topology.angle_pairs.numel() > 0:
             evaluate_bond_and_angle_charge_flux(
                 pairs, dists, angles,
                 topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
@@ -977,7 +980,7 @@ class CMM(ForceField):
         # figure that out once we are in a better position to actually run MD.
         ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         ene_bbs = torch.zeros(1, dtype=dists.dtype, device=dists.device)
-        if topology.bonded_pairs.size(0) > 0:
+        if topology.bonded_pairs.numel() > 0:
             re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
                 dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
@@ -1002,7 +1005,7 @@ class CMM(ForceField):
 
         ene_angles = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         ene_bas = torch.zeros(1, dtype=dists.dtype, device=dists.device)
-        if topology.angle_atoms.size(0) > 0:
+        if topology.angle_atoms.numel() > 0:
             # angles
             ene_angles_list = computeCosAnglePotential(
                 angles, theta_eq, k_theta

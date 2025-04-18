@@ -91,7 +91,7 @@ class Topology:
         """
         self.bonded_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
         self.angle_pairs = torch.tensor([], dtype=torch.long, device=nl.device)
-        # @SPEED Avoid this for loop. I have to use it because the way the NL
+        # @SPEED Avoid the for loop below. I have to use it because the way the NL
         # works, we cannot use vmap. Need to figure out how to fix that.
 
         # @SPEED Write a different version of this which updates the topology
@@ -127,7 +127,7 @@ class Topology:
         # is not bonded but should be ignored in the intermolecular
         # calculations.
         # These indexing shenanigans come from: https://stackoverflow.com/questions/73187923/applying-torch-combinations-on-multidimensional-tensor-or-tuple-of-tensors-in-py
-        if self.bonded_atoms.size(0) == 0:
+        if self.bonded_pairs.size(0) == 0:
             self.angle_atoms = torch.empty_like(self.bonded_atoms)
             self.intramolecular_atom_indices = torch.empty_like(self.bonded_atoms)
             self.all_intramolecular_pairs = torch.empty_like(self.bonded_pairs)

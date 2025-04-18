@@ -174,7 +174,12 @@ def test_total_energy_and_total_gradients_ion_ion():
 
     coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=False)
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
-    atom_indices_to_names = {0: "Na+", 1: "Cl-"}
+    atom_indices_to_names = {
+        0: "O_water", 1: "H_water",
+        2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
+        6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+",
+        11: "Mg2+", 12: "Ca2+"
+    }
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
