@@ -932,6 +932,11 @@ class CMM(ForceField):
         if self.use_ewald:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
         
+        # TODO: To accelerate convergence of the polarization calculation, try the following:
+        # Implement local iterations using a 4 angstrom cutoff. Use that as the preconditioner
+        # as described in https://pubs.acs.org/doi/10.1021/acs.jctc.3c00226
+        # Plus, implement some of the other tricks there.
+
         def A_mm(x: torch.Tensor):
             return compute_product_with_polarization_matrix(
                 x,

@@ -4,7 +4,6 @@ from .polarization import compute_product_with_polarization_matrix
 import torch
 import time
 
-
 def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, verbose=False):
     """Solves positive-definite matrix linear system using the preconditioned CG algorithm.
     This implementation is a modified version of that available at: https://github.com/sbarratt/torch_cg/
