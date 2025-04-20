@@ -296,8 +296,8 @@ class CMM_ASE(Calculator):
         if voigt:
             stress = full_3x3_to_voigt_6_stress(stress)
         if include_ideal_gas:
-            return -stress + self.atoms.get_kinetic_stress(voigt=voigt)
-        return -stress
+            return 0.5 * (stress - self.atoms.get_kinetic_stress(voigt=voigt))
+        return 0.5 * stress
     
     def get_dipole_moment(self, include_induced_moments: bool = True):
         dipole_moment = self._ff.get_dipole_moment(self._cm.coords, include_induced_moments=include_induced_moments)
