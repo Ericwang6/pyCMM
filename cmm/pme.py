@@ -8,7 +8,8 @@ from .pbc import applyPBC
 import numpy as np
 from itertools import combinations
 torch.set_printoptions(profile="full")
-lmax = 1
+lmax = 2
+diff_flag = 1
 #This file contains the Ewald Summation for computing Long range interactions
 #Multipolar Ewald Methods, 1: Theory, Accuracy, and Performance
 #Timothy J. Giese, Maria T. Panteva, Haoyuan Chen, and Darrin M. York Journal of Chemical Theory and Computation 2015 11 (2), 436-450 DOI: 10.1021/ct5007983
@@ -18,7 +19,7 @@ def self_interaction_vectorized(coords,q,p,t,kappa):
     U_cq = torch.dot(q,torch.einsum("bii->b",t)) * 2*kappa**3/(3 * torch.pi)
     U_t = torch.sum(t*t) * 8*kappa**5/(45*torch.pi)
     #total self-interaction energy
-    U_self = U_q# + U_d + U_cq + U_t
+    U_self = U_q + U_d + U_cq + U_t
     return U_self
 ########################################################################################################################
 def get_recip_vectors(N,box):
@@ -47,7 +48,7 @@ def get_u_reference(coords, Nj_Aji_star):
     return m_u0, u0
 
 def b5spline(u, order=5):
-    #B-spline oder 5. TO check with Q-Chem implementation!
+    #B-spline order 5. TO check with Q-Chem implementation!
     #DERIVATIVES OF THIS HAVE NOT BEEN IMPLEMENTED YET
     if order == 5:
         u2 = u ** 2
@@ -210,8 +211,7 @@ def sph_harmonics_GO(u0, Nj_Aji_star,shifts,n_mesh):
     stencil(subgrid) in the main grid.
     Inputs:
         u0: 
-            a N_a * 3 matrix containing all positions
-        Nj_Aji_star:
+
             reciprocal lattice vectors in the m-grid
         lmax:
             int: max L
@@ -280,7 +280,6 @@ def Q_m_peratom(Q, sph_harms,n_mesh):
         Q_dbf = torch.hstack([Q_dbf, Q[:,1:4]])
     if lmax >= 2:
         Q_dbf = torch.hstack([Q_dbf, Q[:,4:9]/3])#Q[:9] in DMFF as their quadrupole moment is defined using only 5 values
-    #Q_m_pera = torch.sum(Q_dbf[:,torch.unsqueeze(0),:]* sph_harms, axis=2)                                          
     Q_m_pera = torch.sum(Q_dbf.unsqueeze(1) * sph_harms, dim=2)
     assert Q_m_pera.shape == (N_a, n_mesh)
     return Q_m_pera
@@ -315,11 +314,8 @@ def setup_kpts_integer(N):
         kpts_int:
             n_k * 3 matrix, n_k = N[0] * N[1] * N[2]
     """
-    #N_half = N.reshape(3)
     N_half = N.reshape(3).tolist()
     kx, ky, kz = [torch.roll(torch.arange(- (N_half[i] - 1) // 2, (N_half[i] + 1) // 2 ), - (N_half[i] - 1) // 2) for i in range(3)]
-    #kx, ky, kz = [torch.roll(torch.arange(- (int(N_half[i]) - 1) // 2, (int(N_half[i]) + 1) // 2), shifts=- (int(N_half[i]) - 1) // 2) for i in range(3)]
-    #kx, ky, kz = [torch.roll(torch.arange(-N_half[i] - 1 // 2, (N_half[i] + 1) // 2), shifts=- (N_half[i] - 1) // 2) for i in range(3)]
     kpts_int = torch.hstack([ki.flatten().unsqueeze(1) for ki in torch.meshgrid(kx, ky, kz, indexing='ij')])
     return kpts_int 
 def setup_kpts(box, kpts_int):
@@ -342,7 +338,6 @@ def setup_kpts(box, kpts_int):
     # K * 3, coordinate in reciprocal space
     kpts = 2 * torch.pi * torch.matmul(kpts_int, box_inv)
     ksq = torch.sum(kpts**2, axis=1)
-    #kpts = torch.hstack((kpts, ksq[:, torch.unsqueeze(0)])).T
     kpts = torch.hstack((kpts, ksq.unsqueeze(1))).T
     return kpts
 def spread_Q(N,positions, box, Q,n_mesh):
@@ -374,29 +369,18 @@ def spread_Q(N,positions, box, Q,n_mesh):
 
 def Ck_1(ksq, kappa, V):
     return 4*torch.pi/V/ksq * torch.exp(-ksq/4/kappa**2)
-
-def setup_kpts_integer_fft(N):
-    K1, K2, K3 = N.reshape(-1).tolist()
-    fx = torch.fft.fftfreq(K1) * K1
-    fy = torch.fft.fftfreq(K2) * K2
-    fz = torch.fft.fftfreq(K3) * K3
-    nx, ny, nz = torch.meshgrid(fx, fy, fz, indexing='ij')
-    kpts_int = torch.stack([nx, ny, nz], dim=0).reshape(3, -1).T
-    return kpts_int
 ###########################################
 def get_pme_recip(Ck_fn, kappa,positions,box,Q,K1,K2,K3, bspline_order=6):
-    print("BSPLINE ORDER: ", bspline_order)
     bspline_range = torch.arange(-bspline_order//2, bspline_order//2)
     n_mesh = (bspline_order)**3
     shifts  = make_stencil(order=6)
     # spread Q
-    N_= torch.tensor([K1,K2,K3]) #For potential calculations
     N = torch.tensor([K1, K2, K3])
+    N_ = torch.tensor([K1, K2, K3])
     n_mesh = shifts.shape[1]
     Q_mesh = spread_Q(N,positions, box, Q,n_mesh)
     N = N.reshape((1, 1, 3))
     kpts_int = setup_kpts_integer(N)
-    #kpts_int = setup_kpts_integer_fft(N)
     kpts = setup_kpts(box, kpts_int)
     half   = bspline_order // 2                     # 3 for order‑6
     m = torch.arange(-half, half).reshape(-1, 1, 1)               # p integers: −3 … +2
@@ -408,55 +392,64 @@ def get_pme_recip(Ck_fn, kappa,positions,box,Q,K1,K2,K3, bspline_order=6):
             axis = 1
             )
     V = torch.linalg.det(box)
-    #Calculate structure factor. 3d form is used for potential. Flattened form for energy
-    S_k_3d = torch.fft.fftn(Q_mesh)
-    S_k = S_k_3d.flatten()
-    #Calculate fourier space convolution kernel.include k=0
-    C_k_full = Ck_fn(kpts[3], kappa, V)
-    C_k_3d = C_k_full.reshape(K1, K2, K3)  # Reshape to match grid
-    #Compute reciprocal space potential and energy
-    theta_k_3d = theta_k.reshape(K1,K2,K3)
+    #Calculate structure factor. FFT of charges on mesh grid
+    S_k = torch.fft.fftn(Q_mesh).flatten()
+    #Calculate fourier space convolution kernel.without k=0
     C_k = Ck_fn(kpts[3,1:], kappa, V)
-    E_k = C_k * torch.abs(S_k[1:] / theta_k[1:])**2
+    #Compute reciprocal space potential and energy. Potential is IFFT structure factor times convolution factor
     Phi_k = torch.zeros_like(S_k)
-    #Phi_k[1:] = (E_k / torch.abs(S_k[1:])**2) * S_k[1:]
     Phi_k[1:] = C_k*S_k[1:]/torch.abs(theta_k[1:])**2
-    print("Phi_k max:", Phi_k.abs().max())
     Phi_k_3d = Phi_k.reshape(K1,K2,K3)
     Phi_real_space = torch.fft.ifftn(Phi_k_3d, norm='forward').real
-    E_k = 0.5 * torch.sum(E_k)
-    #Compute reciprocal space electric fields
-    #print("KPTS: ", kpts)
-    print("KPTS SHAPE: ",  kpts.shape)
-    print("Phi_k_3d SHAPE: ", Phi_k_3d.shape)
-    kx, ky, kz = kpts[0, 1:], kpts[1, 1:], kpts[2, 1:]
-    # Compute i*k * Phi_k in each direction
-    grad_k_x = 1j * kx * C_k * S_k[1:] / torch.abs(theta_k[1:])**2
-    grad_k_y = 1j * ky * C_k * S_k[1:] / torch.abs(theta_k[1:])**2
-    grad_k_z = 1j * kz * C_k * S_k[1:] / torch.abs(theta_k[1:])**2
-    # Pad k=0 back in with zeros
-    zero_pad = torch.zeros(1, dtype=torch.cfloat, device=grad_k_x.device)
-    grad_k_x = torch.cat([zero_pad, grad_k_x])
-    grad_k_y = torch.cat([zero_pad, grad_k_y])
-    grad_k_z = torch.cat([zero_pad, grad_k_z])
-    # Reshape to 3D
-    grad_k_x = grad_k_x.reshape(K1, K2, K3)
-    grad_k_y = grad_k_y.reshape(K1, K2, K3)
-    grad_k_z = grad_k_z.reshape(K1, K2, K3)
-    # Stack and IFFT
-    grad_k_stack = torch.stack([grad_k_x, grad_k_y, grad_k_z], dim=-1)  # shape [K1, K2, K3, 3]
-    #Electric field is negative gradient of potential
-    E_grid_real_space = -torch.fft.ifftn(grad_k_stack, dim=(0,1,2), norm='forward').real
-    print("C_k max:", C_k.max().item())
-    print("V:", V)
-    print("mean k^2:", kpts[3].mean().item())
-    print("E_grid_real_space shape:", E_grid_real_space.shape)
-    print("max |E_grid|:", E_grid_real_space.abs().max())
-
-    Phi_atoms, E_atoms = interpolate_to_atoms(Phi_real_space,E_grid_real_space,positions,box,N_)
-
-
-    return E_k, Phi_atoms, E_atoms
+    E_k = 0.5 * torch.sum(C_k * torch.abs(S_k[1:] / theta_k[1:])**2)
+    #Electric field and field gradient code below
+    #Default is diff_flag == 1. Use analytical differentiation of weighting function. Faster but slightly less accurate
+    #Diff_flag ==2 uses ik diffentiation. Leads to most accurate force calculations. However one must do more FFTs back to real space thereby increasing complexity
+    if diff_flag == 2:
+        if lmax >= 1:
+            kx = kpts[0].reshape(K1, K2, K3)
+            ky = kpts[1].reshape(K1, K2, K3)
+            kz = kpts[2].reshape(K1, K2, K3)
+            # Compute E_k = i * k * Phi_k
+            E_kx = 1j * kx * Phi_k_3d
+            E_ky = 1j * ky * Phi_k_3d
+            E_kz = 1j * kz * Phi_k_3d
+            # Convert to real-space grid
+            E_grid_x = torch.fft.ifftn(E_kx, norm='forward').real
+            E_grid_y = torch.fft.ifftn(E_ky, norm='forward').real
+            E_grid_z = torch.fft.ifftn(E_kz, norm='forward').real
+            # Stack to shape [K1, K2, K3, 3]
+            E_grid = torch.stack([E_grid_z, E_grid_x, E_grid_y], dim=-1)
+            EG_grid = 0
+        if lmax>=2:
+            # Given: Phi_k_3d, kx, ky, kz of shape [K1, K2, K3]
+            kx2 = kx**2
+            ky2 = ky**2
+            kz2 = kz**2
+            kxy = kx * ky
+            kxz = kx * kz
+            kyz = ky * kz
+            sqrt3 = torch.sqrt(torch.tensor(3.0))
+            ##calculate  spherical quadrubole basis components in k-space
+            Phi_k_20  = 0.5 * (2 * kz2 - kx2 - ky2) * Phi_k_3d
+            Phi_k_21c = sqrt3 * kxz * Phi_k_3d
+            Phi_k_21s = sqrt3 * kyz * Phi_k_3d
+            Phi_k_22c = 0.5 * sqrt3* (kx2 - ky2) * Phi_k_3d
+            Phi_k_22s =    sqrt3 * kxy * Phi_k_3d
+            # IFFT back to real space
+            EG_20  = -torch.fft.ifftn(Phi_k_20, norm='forward').real
+            EG_21c = -torch.fft.ifftn(Phi_k_21c, norm='forward').real
+            EG_21s = -torch.fft.ifftn(Phi_k_21s, norm='forward').real
+            EG_22c = -torch.fft.ifftn(Phi_k_22c, norm='forward').real
+            EG_22s = -torch.fft.ifftn(Phi_k_22s, norm='forward').real
+            # Stack into real-space field gradient grid
+            EG_grid = torch.stack([EG_20, EG_21c, EG_21s, EG_22c, EG_22s], dim=-1)  # shape [K1, K2, K3, 5]
+        Phi_atoms, E_atoms, EG_atoms= interpolate_to_atoms(Phi_real_space,E_grid,EG_grid,positions,box,N_)
+    #Else call default differeniation scheme
+    else:
+        E_grid, EG_grid = 0,0
+        Phi_atoms, E_atoms, EG_atoms= interpolate_to_atoms(Phi_real_space, E_grid, EG_grid, positions, box, N_)
+    return E_k, Phi_atoms, E_atoms ,EG_atoms
 def construct_Q(q, p, t):
     """
     Constructs the full multipole moment matrix Q.
@@ -467,21 +460,11 @@ def construct_Q(q, p, t):
     Output:
         Q: (N_a, 9) tensor containing monopoles, dipoles, and quadrupoles
     """
-    #QUADRUPOLES UNDERGOING CONSTRUCTION
     N_a = q.shape[0]
     # Ensure tensors are correct shape
     q = q.reshape(N_a, 1)  # (N_a, 1)
     p = p.reshape(N_a, 3)  # (N_a, 3)
-    # Convert quadrupoles to a 5-element vector
-    t_vec = torch.stack([
-        t[:, 0, 0],  # Q_xx
-        t[:, 0, 1],  # Q_xy
-        t[:, 0, 2],  # Q_xz
-        t[:, 1, 1],  # Q_yy
-        t[:, 1, 2]   # Q_yz
-    #    t[:, 2, 2],  # Q_zz
-    ], dim=1) * torch.tensor([1/3, 2/3, 2/3, 1/3, 2/3])  #,1/3
-    #t_vec = t.reshape(N_a,5)
+    t_vec = t.reshape(N_a,5)
     # Construct full Q matrix
     Q = torch.hstack([q, p, t_vec])  # Shape: (N_a, 9)
 
@@ -508,31 +491,26 @@ def make_stencil(order: int):
 # ----------------------------------------------------------------------
 def interpolate_to_atoms(phi_grid: torch.Tensor,
                          E_grid: torch.Tensor,
+                         EG_grid: torch.Tensor,
                          positions: torch.Tensor,
                          box: torch.Tensor,
-                         N: torch.Tensor,
-                         order: int = 6) -> torch.Tensor:
+                         N: torch.Tensor) -> torch.Tensor:
     """
     B‑spline interpolation consistent with spread_Q().
     phi_grid : (Nx,Ny,Nz) real‑space potential on the mesh
     returns   : (Natoms,) potential at atomic positions
     """
-
+    order = 6
     # --- 1. pre‑compute quantities also used in spread_Q ----------------
     Nj_Aji_star = get_recip_vectors(N, box)                  # 3x3
     m_u0, u0    = get_u_reference(positions, Nj_Aji_star)    # (Na,3)
     shifts      = make_stencil(order)
     n_mesh      = order**3
     Na          = positions.shape[0]
-
     # --- 2. THETA weights with the SAME helper used in spreading ------------
     #       just call the STGO routine with lmax
     stgo = sph_harmonics_GO(u0, Nj_Aji_star, shifts, n_mesh)                            # (Na, p**3,4)
     theta = stgo[...,0]
-    thetaprime_z = stgo[...,1]
-    thetaprime_x = stgo[...,2]
-    thetaprime_y = stgo[...,3]
-
     # --- 3. collect grid values ----------------------------------------
     Nx, Ny, Nz = N.tolist() #get mesh grid axises
     m_idx = (m_u0[:, None, :] + shifts[0]) % N[None, None, :]#compute stencil offsets around each atom in the grid and wrap them
@@ -543,20 +521,41 @@ def interpolate_to_atoms(phi_grid: torch.Tensor,
     phi_loc = flat[grid_i]  #gather potentials from flattened grid with stencils  #(Na, p^3)
     # --- 4. weighted sum  (no renormalisation – theta already sums to 1) ---
     phi_atoms = (theta * phi_loc).sum(dim=1)                # (Na,)
-    # ---5. Now for electric fields
-    flat_x = E_grid[..., 0].reshape(-1)
-    flat_y = E_grid[..., 1].reshape(-1)
-    flat_z = E_grid[..., 2].reshape(-1)
-    E_x = (thetaprime_x * flat_x[grid_i]).sum(dim=1)
-    E_y = (thetaprime_y * flat_y[grid_i]).sum(dim=1)
-    E_z = (thetaprime_z * flat_z[grid_i]).sum(dim=1)
-    E_atoms = torch.stack([E_x,E_y,E_z],dim=1)
-    print("thetaprime_x[0]:", thetaprime_x[0])
-    print("max thetaprime:", thetaprime_x.abs().max().item())
-    print("flat_x[grid_i[0]]:", flat_x[grid_i[0]])
-    print("max E_grid value:", flat_x.abs().max().item())
-
-    return phi_atoms, E_atoms
+    if diff_flag == 2:
+        #Use ik differentiation
+        #only use theta weights(aka use 6th order B-spline) for field and field gradient
+        if lmax >=1:
+            E_grid_flat = E_grid.reshape(-1, 3)
+            E_stencil = E_grid_flat[grid_i]
+            E_atoms = torch.sum(theta.unsqueeze(-1) * E_stencil, dim=1)
+        if lmax>=2:
+            EG_flat = EG_grid.reshape(-1, 5)
+            EG_stencil = EG_flat[grid_i]
+            theta /= 3.0
+            EG_atoms = torch.sum(theta.unsqueeze(-1) * EG_stencil, dim=1)
+    else:
+        if lmax>=1:
+            thetaprime_z = stgo[...,1]
+            thetaprime_x = stgo[...,2]
+            thetaprime_y = stgo[...,3]
+            E_x = (thetaprime_x * phi_loc).sum(dim=1)  
+            E_y = (thetaprime_y * phi_loc).sum(dim=1) 
+            E_z = (thetaprime_z * phi_loc).sum(dim=1)
+            E_atoms = torch.stack([E_z,E_x,E_y],dim=1)
+        if lmax>=2:
+            thetaprime2 = stgo[...,4:9] / 3 # Must divide by (2l-1)!!=3 for l=2. Normalization for quadrupoles
+            thetaprime2_1 = thetaprime2[...,0]  
+            thetaprime2_2 = thetaprime2[...,1]  
+            thetaprime2_3 = thetaprime2[...,2]  
+            thetaprime2_4 = thetaprime2[...,3] 
+            thetaprime2_5 = thetaprime2[...,4]
+            EG_1 = (thetaprime2_1 * phi_loc).sum(dim=1)
+            EG_2 = (thetaprime2_2 * phi_loc).sum(dim=1)
+            EG_3 = (thetaprime2_3 * phi_loc).sum(dim=1)
+            EG_4 = (thetaprime2_4 * phi_loc).sum(dim=1)
+            EG_5 = (thetaprime2_5 * phi_loc).sum(dim=1)
+            EG_atoms = torch.stack([EG_1,EG_2,EG_3,EG_4,EG_5], dim=1)
+    return phi_atoms, E_atoms, EG_atoms
 
 
 def compute_pme(coords, q ,p, t,box, rcutoff, thresh):
@@ -569,15 +568,13 @@ def compute_pme(coords, q ,p, t,box, rcutoff, thresh):
   U_s = 0 #short_range(coords, q,p,t, box, kappa, rcutoff) 
   U_self_vectorized = 0# self_interaction_vectorized(coords,q,p,t,kappa)
   Q = construct_Q(q,p,t)
-  #print("FULL MULTIPOLE MOMENT MATRIX: ", Q)
-  #print("Q SHAPE: ", Q.shape)
-  #Ck_list = [Ck_1, Ck_6, Ck_8, Ck_10]
   result = get_pme_recip(Ck_1, kappa,coords,box,Q,K1,K2,K3,bspline_order=6)
   U_l = result[0]
   V_l = result[1]
   E_l = result[2]
+  E_g_l = result[3]
   U_ewald =  U_l + U_s - U_self_vectorized
   print(f"FINAL ENERGIES(HARTREE): U_s = {U_s} , U_l = {U_l} , U_self = {U_self_vectorized}, Total Coulombic Energy = {U_ewald}")
   print(f"FINAL ENERGIES(KCAL/MOL): U_s = {U_s*HARTREE2KCAL} , U_l = {U_l*HARTREE2KCAL} , U_self = {U_self_vectorized*HARTREE2KCAL}, Total Coulombic Energy = {U_ewald*HARTREE2KCAL}")
-  return U_ewald, V_l, E_l
+  return U_ewald, V_l, E_l, E_g_l
 

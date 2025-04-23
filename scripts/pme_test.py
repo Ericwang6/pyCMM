@@ -31,26 +31,31 @@ class CMMWater(nn.Module):
     def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True):
         Z = torch.tensor([3.61565, 0.93619])
         #mono = torch.tensor([-0.390896, 0.195448])
-        mono = torch.tensor([-0.51966, 0.25983])
+        mono = torch.tensor([-0.51966, 0.25983]) #for testing with MCHEM
+        #mono = torch.tensor([0., 0.])  #exclude monopoles for testing 
         qShell = mono - Z
-        #dipo = torch.tensor([
-        #    [0.0, 0.0, 0.0],
-        #    [0.0, 0.0, 0.0]
-        #])
-        #quad_s = torch.tensor([
+#        dipo = torch.tensor([
+#            [0.0, 0.0, 0.0],
+#            [0.0, 0.0, 0.0]
+#        ])
+#        quad_s = torch.tensor([
             # Q20, Q21c, Q21s, Q22c, Q22s
-        #    [0.0, 0.0, 0.0, 0.0, 0.0],
-        #    [0.0, 0.0, 0.0, 0.0, 0.0]
-        #])
+#            [0.0, 0.0, 0.0, 0.0, 0.0],
+#            [0.0, 0.0, 0.0, 0.0, 0.0]
+#        ])
         dipo = torch.tensor([
-            [0.0,       0.0, -0.094298],
-            [0.0910288, 0.0, -0.207851]
+#            [0.0,       0.0, -0.094298],
+#            [0.0910288, 0.0, -0.207851]
+            [0.0, 0.0, 0.14279],
+            [-0.03859, 0.0, -0.05818]
         ])
     
         quad_s = torch.tensor([
-            # Q20,       Q21c,      Q21s, Q22c,       Q22s
-            [-0.330685,  0.0,       0.0,  0.869923,   0.0],
-            [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
+            # Q20,       Q21c,      Q21s, Q22c,     Q22s
+#            [-0.330685,  0.0,       0.0,  0.869923,   0.0],
+#            [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
+            [0.0910, 0.0000, 0.0000, 0.7085, 0.0000],
+            [9.3610e-02, 8.0829e-05, 0.0000e+00, 3.4069e-02, 0.0000e+00]
         ])
 
         # NOTE(JOE): These should end up being in the force field itself.
@@ -284,12 +289,55 @@ class CMMWater(nn.Module):
         #Multipolar Ewald Summation
         mono = self.nb_params['mono']
         dipo = cmm.rotateDipoles(self.nb_params['dipo'], rotMatrix).squeeze(1)
+        dipo = cmm.computeSphericaldipoles(dipo)
         quad = cmm.rotateQuadrupoles(self.nb_params['quad'], rotMatrix)
-        ene_ewald = cmm.compute_pme(coords, mono, dipo, quad, box, rcutoff=5,thresh =0.0001)
+        print("QUADRUPOLES in GCF: ", quad[:10])
+        quad = cmm.computeSphericalQuadrupoles(quad)
+        #quad = cmm.computeRegularSphericalQuadrupoles(quad)
+        print("QUADRUPOLES in QIF: ", quad[:10])
+        result = cmm.compute_pme(coords, mono, dipo, quad, box, rcutoff=7.0/cmm.BOHR2ANG,thresh =1e-6)
+        ene_pme = result[0]
+        potential_pme = result[1]
+        field_pme = result[2]
+        field_grad_pme = result[3]
+        #print("field_grad_pme shape: ", field_grad_pme.shape)
+        #print("Quadrupoles tensor shape: ", quad.shape)
+        #ewald_potential, ewald_field, ewald_field_gradient = cmm.long_range_potential(coords,mono,dipo,quad,box,alpha=0.544590516336201*cmm.BOHR2ANG,max_hkl=24)
+        #long_range_charge_ene = 0.5 * (
+        #                        torch.einsum("n,n->",mono,ewald_potential)
+        #                        + torch.einsum("ni,ni->", dipo,ewald_field) 
+        #                        + torch.einsum("nij,nij->", quad, ewald_field_gradient)
+        #                        ) * cmm.HARTREE2KCAL
+        #print('phi (Ewald) vs phi (PME)   :',
+        #        ewald_potential[:10],"\n",
+        #        potential_pme[:10])          
+        #print("FIELD (EWALD): ", ewald_field[:3])
+        #print("\n\n")
+        #print("FIELD (PME): ", field_pme[:3])
+        #print("EWALD SUMMATION ENERGY")
+        #print(long_range_charge_ene)
+        E_interp =  0.5 * (
+                  torch.einsum("n,n->", mono, potential_pme) 
+                + torch.einsum("ni,ni->", dipo, field_pme) 
+                + torch.einsum("ni,ni->", quad, field_grad_pme)
+                )
+        print("Energy due to potential: ", torch.einsum("n,n->", mono, potential_pme)) 
+        print("Energy due to field: ",-torch.einsum("ni,ni->", dipo, field_pme))
+        print("Energy due to field gradient: ",torch.einsum("ni,ni->", quad/3, field_grad_pme))
+        print("E_interp in KCAL/MOL: ", E_interp * cmm.HARTREE2KCAL)
+        print("Structure factor energy:", ene_pme.item())
+        print("Interpolated energy:    ", E_interp.item())
+        print("Difference:              ", abs(E_interp.item() - ene_pme.item()))
 
-        #Total energy
+        print("Dipole[0]:", dipo[0])  
+        print("Field[0]:", field_pme[0])  
+        print("Dot product:", torch.dot(dipo[0], field_pme[0]))
+        print("Quadrupole[0]: ", quad[0])
+        print("Field Gradient[0]",  field_grad_pme[0])
+        print("Dot product:", torch.dot(quad[0], field_grad_pme[0]))
+        print("Energy Ratio:",  ene_pme.item()/ E_interp.item() )
         #ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ewald
-        ene_tot = ene_ewald
+        ene_tot = ene_pme
         energies = {
             #"perm_elec": ene_perm_elec,
             #"pol": ene_pol,
@@ -301,7 +349,7 @@ class CMMWater(nn.Module):
             #"angle": ene_angles,
             #"bond_bond": ene_bbs,
             #"bond_angle": ene_angles,
-            "ewald": ene_ewald,
+            #"ewald": ene_ewald,
             "tot": ene_tot
         }
         return energies
@@ -312,19 +360,20 @@ class CMMWater(nn.Module):
         pairs = self.all_pairs[:, mask]
         drVecs = drVecs[mask]
         return pairs, drVecs
-
+    
 
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    model = CMMWater(216, rcut=8.0, do_polarization=True)
+    model = CMMWater(216, rcut=7.0/cmm.BOHR2ANG, do_polarization=True)
     coords, atom_types, bonds = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
     box = torch.tensor(np.eye(3) * 18.643 / cmm.BOHR2ANG, dtype=torch.float64, requires_grad=True)
     energies = model.computeEnergy(coords, box)
     #energies['tot'].backward()
     #grad = coords.grad
-
     for key in energies:
+        print("Energies before conversion: ", energies[key])
         energies[key] *= cmm.HARTREE2KCAL
+        print("Energies after conversion: ", energies[key])
     pprint(energies)
 
     #with torch.no_grad():
