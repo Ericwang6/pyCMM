@@ -195,6 +195,56 @@ def test_total_energy_and_total_gradients_ion_ion():
     total_ref = torch.tensor([-132.66013773479762 / HARTREE2KCAL])
     assert torch.allclose(energies_ff['total'], total_ref)
 
+def test_total_energy_and_total_gradients_ion_water_cluster():
+    torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w4_na_cl.xyz"), requires_grad=False)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w4_na_cl.xyz"), requires_grad=True)
+    atom_indices_to_names = {
+        0: "O_water", 1: "H_water",
+        2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
+        6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+"
+    }
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False, device=device)
+    
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM(cutoff_short_range=torch.tensor(10.0 / BOHR2ANG), use_ewald=False)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+
+    energies_ff = ff.evaluate(cm, topology, parameters)
+    total_ref = torch.tensor([-28.231218043296266], device=device)
+    total_energy = energies_ff['total'] * HARTREE2KCAL
+    # HERE: Get the actual reference data!!!!!!!!!!!!!
+    assert torch.allclose(total_energy, total_ref)
+
+    energies_ff['bond'].backward()
+    grads_ad_1 = coords.grad.clone()
+
+    def get_total_energy(coords: torch.Tensor):
+        cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
+        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        pairs, _, _ = cm.get_distances_vectors_and_pairs()
+        ff = CMM(cutoff_short_range=torch.tensor(10.0 / BOHR2ANG))
+        parameters = Parameterizer(
+            atom_type_names, pairs, topology.angle_atoms,
+            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+        )
+        energies_ff = ff.evaluate(cm, topology, parameters)
+        total_energy = energies_ff['bond']
+        return total_energy
+
+    grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5).to(device)
+    if not torch.allclose(grads_ad_1, grads_fd_1):
+        print(grads_ad_1 - grads_fd_1)
+    assert torch.allclose(grads_ad_1, grads_fd_1)
+
 def test_total_energy_and_total_gradients_ion_water():
     torch.set_default_dtype(torch.float64)
     

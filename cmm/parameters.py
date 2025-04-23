@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 class Parameterizer:
     """
@@ -125,7 +125,7 @@ class Parameterizer:
         # only HOH angles are actually needed.
         # There are two options for fixing this, which may be faster/use-less-memory when the number of atom types
         # is large. One is to make the types dense by using a map that takes the computed types and
-        # turns puts them in the range 0:N_pair_types, etc. The other option is to turn these dense arrays
+        # puts them in the range 0:N_pair_types, etc. The other option is to turn these dense arrays
         # into sparse arrays whose only valid indices are the pair types, angle types, etc.
 
         # Pair Types #
@@ -133,7 +133,7 @@ class Parameterizer:
             if self._unique_pair_type_names[i] in raw_pair_params:
                 for param_key in raw_pair_params[self._unique_pair_type_names[i]]:
                     self._pair_param_arrays[param_key] = torch.zeros(torch.max(self._unique_pair_types) + 1, device=self.device)
-                break
+                #break
         
         # Build matrix indexable by two Pair Types #
         for pair_tuple in raw_pair_pair_params.keys(): # Loop over names
@@ -150,7 +150,7 @@ class Parameterizer:
             if self._unique_angle_type_names[i] in raw_angle_params:
                 for param_key in raw_angle_params[self._unique_angle_type_names[i]]:
                     self._angle_param_arrays[param_key] = torch.zeros(torch.max(self._unique_angle_types) + 1, device=self.device)
-                break
+                break # <------ I think this is actually a bug when there are more angle types than HOH???
 
     def _build_atomic_parameter_arrays(self, raw_atomic_params: Dict[str, torch.Tensor]):
         for param_key in self._atomic_param_arrays.keys():
@@ -158,6 +158,8 @@ class Parameterizer:
                 self._atomic_param_arrays[param_key][i] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
 
     def _build_pair_parameter_arrays(self, raw_pair_params: Dict[Tuple[str, str], torch.Tensor]):
+        #print(raw_pair_params[("O_water", "H_water")])
+        #print(self._pair_param_arrays.keys())
         for param_key in self._pair_param_arrays.keys():
             for i in torch.arange(len(self._unique_pair_type_names)):
                 if self._unique_pair_type_names[i] in raw_pair_params and param_key in raw_pair_params[self._unique_pair_type_names[i]]:
@@ -188,6 +190,28 @@ class Parameterizer:
     
     def get_pair_parameters(self, name: str, pairs_p: torch.Tensor):
         return self._pair_param_arrays[name][self._pair_types[pairs_p]]
+
+    def get_pair_parameters_with_optional_combination_rule(self, name: str, pairs_p: torch.Tensor, pairs_a: torch.Tensor, combination_rule=torch.sqrt):
+        # HERE: I have the atomic parameters when they are available. What I need to do now is get
+        # the pair parameters and then determine which parameters were not actually filled in due
+        # to not having a pair-specific entry. Those will have a value of zero. Form a mask out
+        # of those entries in the pairs array. Grab the appropriate atomic indices from pairs_a
+        # and fill those entries, using the mask, with the pair parameters formed by a combination
+        # rule.
+
+        pair_types = self._pair_types[pairs_p]
+        pair_params = torch.zeros_like(pair_types, device=self.device, dtype=torch.get_default_dtype()) # Add dtype argument
+        if name in self._pair_param_arrays.keys():
+            pair_params = self._pair_param_arrays[name][pair_types]
+        
+        mask = torch.nonzero(pair_params).flatten()
+        pair_specific_params = pair_params[mask]
+        if name in self._atomic_param_arrays.keys():
+            atomic_params_1 = self._atomic_param_arrays[name][self._atom_types].squeeze_()[pairs_a[:,0]]
+            atomic_params_2 = self._atomic_param_arrays[name][self._atom_types].squeeze_()[pairs_a[:,1]]
+            pair_params = combination_rule(atomic_params_1 * atomic_params_2)
+        pair_params[mask] = pair_specific_params
+        return pair_params
 
     def get_angle_parameters(self, name: str, angle_atoms_a: torch.Tensor):
         return self._angle_param_arrays[name][self._get_angle_types_from_angle_atoms(angle_atoms_a)]

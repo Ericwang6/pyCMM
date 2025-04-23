@@ -9,8 +9,8 @@ class CoordinateManager:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 1024) -> None:
         self._need_coordinate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
-        self.coords = coords.detach().clone().requires_grad_(self._need_coordinate_grads)
-        self.box = box.detach().clone().requires_grad_(self._need_box_grads)
+        self.coords = coords
+        self.box = box
         self.labels = labels
         self.box_inv = torch.inverse(self.box)
         self.box_lengths = torch.diagonal(self.box)

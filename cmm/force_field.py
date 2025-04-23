@@ -277,8 +277,6 @@ class CMM(ForceField):
             0.0, 0.0, # Mg2+, Ca2+
         ])
 
-        # TODO: Add all the ion-ion pair-specific parameters!
-
         self.pair_params = {
             ("O_water", "H_water"): {
                 "D": torch.tensor([524.265 / HARTREE2KJ]),
@@ -308,7 +306,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([2.0662]),
                 "b_elec": torch.tensor([3.29393]),
                 "b_disp": torch.tensor([1.66054]),
-                "b_exch_pol": torch.tensor([2.42899]),
+                "b_xpol": torch.tensor([2.42899]),
                 "b_ct": torch.tensor([1.68936]),
                 "eps": torch.tensor([4.16245e6]),
             },
@@ -316,7 +314,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.81696]),
                 "b_elec": torch.tensor([2.53683]),
                 "b_disp": torch.tensor([1.50876]),
-                "b_exch_pol": torch.tensor([21.7689]),
+                "b_xpol": torch.tensor([21.7689]),
                 "b_ct": torch.tensor([1.14099]),
                 "eps": torch.tensor([0.622129]),
             },
@@ -324,7 +322,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.78426]),
                 "b_elec": torch.tensor([2.4508]),
                 "b_disp": torch.tensor([1.42241]),
-                "b_exch_pol": torch.tensor([3.43206]),
+                "b_xpol": torch.tensor([3.43206]),
                 "b_ct": torch.tensor([1.09604]),
                 "eps": torch.tensor([0.556197]),
             },
@@ -332,7 +330,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.76695]),
                 "b_elec": torch.tensor([2.34386]),
                 "b_disp": torch.tensor([2.0152]),
-                "b_exch_pol": torch.tensor([2.6963]),
+                "b_xpol": torch.tensor([2.6963]),
                 "b_ct": torch.tensor([0.911407]),
                 "eps": torch.tensor([0.493998]),
             },
@@ -340,7 +338,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([2.23085]),
                 "b_elec": torch.tensor([2.47042]),
                 "b_disp": torch.tensor([1.52165]),
-                "b_exch_pol": torch.tensor([24.3618]),
+                "b_xpol": torch.tensor([24.3618]),
                 "b_ct": torch.tensor([2.12257]),
                 "eps": torch.tensor([5.59222e6]),
             },
@@ -348,7 +346,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.96851]),
                 "b_elec": torch.tensor([2.09285]),
                 "b_disp": torch.tensor([1.37519]),
-                "b_exch_pol": torch.tensor([13.9896]),
+                "b_xpol": torch.tensor([13.9896]),
                 "b_ct": torch.tensor([0.981402]),
                 "eps": torch.tensor([0.92137]),
             },
@@ -356,7 +354,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.90723]),
                 "b_elec": torch.tensor([2.06585]),
                 "b_disp": torch.tensor([1.32684]),
-                "b_exch_pol": torch.tensor([13.7141]),
+                "b_xpol": torch.tensor([13.7141]),
                 "b_ct": torch.tensor([0.948933]),
                 "eps": torch.tensor([0.834803]),
             },
@@ -364,7 +362,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.87522]),
                 "b_elec": torch.tensor([2.0484]),
                 "b_disp": torch.tensor([1.63812]),
-                "b_exch_pol": torch.tensor([13.5543]),
+                "b_xpol": torch.tensor([13.5543]),
                 "b_ct": torch.tensor([0.911423]),
                 "eps": torch.tensor([0.634873]),
             },
@@ -372,7 +370,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([2.0344]),
                 "b_elec": torch.tensor([2.27313]),
                 "b_disp": torch.tensor([1.39697]),
-                "b_exch_pol": torch.tensor([2.77048]),
+                "b_xpol": torch.tensor([2.77048]),
                 "b_ct": torch.tensor([1.92339]),
                 "eps": torch.tensor([1.30686e7]),
             },
@@ -380,7 +378,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.79779]),
                 "b_elec": torch.tensor([2.01972]),
                 "b_disp": torch.tensor([1.28869]),
-                "b_exch_pol": torch.tensor([13.5339]),
+                "b_xpol": torch.tensor([13.5339]),
                 "b_ct": torch.tensor([1.56964]),
                 "eps": torch.tensor([1.41644]),
             },
@@ -388,7 +386,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.74843]),
                 "b_elec": torch.tensor([1.99904]),
                 "b_disp": torch.tensor([1.24628]),
-                "b_exch_pol": torch.tensor([13.2437]),
+                "b_xpol": torch.tensor([13.2437]),
                 "b_ct": torch.tensor([1.47289]),
                 "eps": torch.tensor([0.975592]),
             },
@@ -396,7 +394,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.70111]),
                 "b_elec": torch.tensor([1.9751]),
                 "b_disp": torch.tensor([1.66612]),
-                "b_exch_pol": torch.tensor([12.9938]),
+                "b_xpol": torch.tensor([12.9938]),
                 "b_ct": torch.tensor([1.34706]),
                 "eps": torch.tensor([0.621612]),
             },
@@ -404,7 +402,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([2.07856]),
                 "b_elec": torch.tensor([2.289]),
                 "b_disp": torch.tensor([0.989019]),
-                "b_exch_pol": torch.tensor([15.3797]),
+                "b_xpol": torch.tensor([15.3797]),
                 "b_ct": torch.tensor([1.97104]),
                 "eps": torch.tensor([4.07063]),
             },
@@ -412,7 +410,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.79968]),
                 "b_elec": torch.tensor([2.0295]),
                 "b_disp": torch.tensor([1.58976]),
-                "b_exch_pol": torch.tensor([13.8017]),
+                "b_xpol": torch.tensor([13.8017]),
                 "b_ct": torch.tensor([1.43009]),
                 "eps": torch.tensor([0.997574]),
             },
@@ -420,7 +418,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.74034]),
                 "b_elec": torch.tensor([1.9988]),
                 "b_disp": torch.tensor([1.62445]),
-                "b_exch_pol": torch.tensor([13.8468]),
+                "b_xpol": torch.tensor([13.8468]),
                 "b_ct": torch.tensor([1.34474]),
                 "eps": torch.tensor([0.833069]),
             },
@@ -428,7 +426,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.71241]),
                 "b_elec": torch.tensor([1.99082]),
                 "b_disp": torch.tensor([3.90536]),
-                "b_exch_pol": torch.tensor([12.3616]),
+                "b_xpol": torch.tensor([12.3616]),
                 "b_ct": torch.tensor([1.29478]),
                 "eps": torch.tensor([0.626737]),
             },
@@ -436,7 +434,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.94985]),
                 "b_elec": torch.tensor([2.05036]),
                 "b_disp": torch.tensor([1.17374]),
-                "b_exch_pol": torch.tensor([14.339]),
+                "b_xpol": torch.tensor([14.339]),
                 "b_ct": torch.tensor([1.80732]),
                 "eps": torch.tensor([1.10774]),
             },
@@ -444,7 +442,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.70545]),
                 "b_elec": torch.tensor([1.90651]),
                 "b_disp": torch.tensor([1.49986]),
-                "b_exch_pol": torch.tensor([12.9929]),
+                "b_xpol": torch.tensor([12.9929]),
                 "b_ct": torch.tensor([1.39542]),
                 "eps": torch.tensor([0.819386]),
             },
@@ -452,7 +450,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.64889]),
                 "b_elec": torch.tensor([1.89059]),
                 "b_disp": torch.tensor([1.47483]),
-                "b_exch_pol": torch.tensor([12.7337]),
+                "b_xpol": torch.tensor([12.7337]),
                 "b_ct": torch.tensor([1.33849]),
                 "eps": torch.tensor([0.748004]),
             },
@@ -460,7 +458,7 @@ class CMM(ForceField):
                 "b_pauli": torch.tensor([1.64008]),
                 "b_elec": torch.tensor([1.90755]),
                 "b_disp": torch.tensor([2.21299]),
-                "b_exch_pol": torch.tensor([12.6147]),
+                "b_xpol": torch.tensor([12.6147]),
                 "b_ct": torch.tensor([1.31385]),
                 "eps": torch.tensor([0.577828]),
             },
@@ -487,6 +485,15 @@ class CMM(ForceField):
                 "j_cf_angle": torch.tensor([0.0220891]),
                 "k_hardness_angle": torch.tensor([-0.0991956]),
             }
+        }
+
+        self.combination_rules = {
+            "b_pauli": torch.sqrt,
+            "b_elec": torch.sqrt,
+            "b_disp": torch.sqrt,
+            "b_xpol": torch.sqrt,
+            "b_ct": torch.sqrt,
+            "C6_disp": torch.sqrt,
         }
     
         self.rebuild_atomic_params()
@@ -560,20 +567,7 @@ class CMM(ForceField):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff-0.05
-        # HERE: I think I fixed a bug with the synchronization of data between CPU and GPU.
-        # Now, I need to do the following:
-        # 1) Find the bug in neighbor list rebuilds since I am not getting the same energies from identical coordinates when NL is rebuilt
-        # 2) Start with the below since clearly some of the atoms do not have the right neighbors even though the size of the pairs tensor is right
-        # 3) Once this is fixed, write a test which runs 20 steps of NVE simulation, serializes the state after 10 steps, then test if we
-        #    can get back to the same final positions as the first NVE simulations when restarting from the serialized state. Should be EXACT!!
-        # TODO: Still need to implement the above.
 
-        # NOTE(JOE): So, I need to get some simulations running so I can get data. Currently, I have hacked a bunch of stuff to make it work
-        # I'm rebuilding the neighbor list on each step along with finding the topology pairs and re-parameterizing at each step.
-        # This is all screaming for me to turn the CoordinateManager into a class which has the neighbor list and topology.
-        # The parameters need to be a part of the force field for technical reasons even though the simplest thing to do is put
-        # the parameterizer with the system. I think force field + parameters = ForceField and coordinates, neighbor list, and topology = System.
-        # The System will also have some kind of data class specifying what type of calculation we are doing so that we can respond appropriately.
         if True: #self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
             # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
@@ -627,7 +621,7 @@ class CMM(ForceField):
         switch_start_sr = switch_start_sr if switch_start_sr > 0.0 else 0.0
         switch_sr = switch_543(dists_sr, switch_start_sr, self.cutoff_sr)
 
-        if topology.angle_pairs.size(0) > 0:
+        if topology.angle_pairs.numel() > 0:
             angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # All pairs forming an angle #
@@ -642,6 +636,7 @@ class CMM(ForceField):
         axis_types = params.get_atomic_parameters("axistypes")
 
         # Polarizability #
+        eta = params.get_atomic_parameters("eta")
         alpha = params.get_atomic_parameters("alpha")
         alpha_damp_exponent = params.get_atomic_parameters("alpha_damp_exponent")
         alpha_damp_max = params.get_atomic_parameters("alpha_damp_max")
@@ -664,9 +659,6 @@ class CMM(ForceField):
         Kdipo_ct_don = params.get_atomic_parameters('Kdipo_ct_don')
         Kquad_ct_don = params.get_atomic_parameters('Kquad_ct_don')
 
-        # Dispersion Multipoles #
-        C6_disp = params.get_atomic_parameters('C6_disp')
-
         # Electric Multipoles #
         rotation_matrices = cm.compute_rotation_matrices(topology.zatoms, topology.xatoms, topology.yatoms, axis_types)
 
@@ -676,7 +668,58 @@ class CMM(ForceField):
         b_disp = params.get_atomic_parameters('b_disp')
         b_xpol = params.get_atomic_parameters('b_xpol')
         b_ct = params.get_atomic_parameters('b_ct')
-        eta = params.get_atomic_parameters('eta')
+
+        b_ij_cp_sr_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_elec', all_intermolecular_pairs_sr, pairs_sr
+        )
+        b_ij_pauli_sr_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_pauli', all_intermolecular_pairs_sr, pairs_sr
+        )
+        b_ij_xpol_sr_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_xpol', all_intermolecular_pairs_sr, pairs_sr
+        )
+        b_ij_ct_sr_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_ct', all_intermolecular_pairs_sr, pairs_sr
+        )
+        b_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_disp', topology.all_intermolecular_pairs, pairs_vdw
+        )
+        C6_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+            'C6_disp', topology.all_intermolecular_pairs, pairs_vdw
+        )
+        eps = params.get_pair_parameters_with_optional_combination_rule('eps', all_intermolecular_pairs_sr, pairs[all_intermolecular_pairs_sr])
+
+        if topology.bonded_pairs.numel() > 0:
+            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
+            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
+            D_p = params.get_pair_parameters('D', topology.bonded_pairs)
+            dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
+            dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
+            ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
+            ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
+            j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
+            j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
+            k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
+        
+        # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
+        # Currently, we don't have parameters for a non-symmetric angle but they will come up with
+        # organic molecules.
+        if topology.angle_pairs.numel() > 0:
+            r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
+            r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
+            r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
+
+            k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+            k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
+            k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+
+            theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
+            k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
+            j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
+            k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
+            k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
         # Get width parameters in appropriate pair spaces #
         b_i_elec_p = b_elec[pairs_sr_i_a]
@@ -690,13 +733,12 @@ class CMM(ForceField):
         b_i_disp_p = b_disp[pairs_vdw_i_a]
         b_j_disp_p = b_disp[pairs_vdw_j_a]
         
-        b_ij_cp_sr_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
-        b_ij_pauli_sr_p = torch.sqrt(b_i_pauli_p * b_j_pauli_p)
-        b_ij_xpol_sr_p = torch.sqrt(b_i_xpol_p * b_j_xpol_p)
-        b_ij_ct_sr_p = torch.sqrt(b_i_ct_p * b_j_ct_p)
-        b_ij_disp_vdw_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
-        C6_ij_disp_vdw_p = torch.sqrt(C6_disp[pairs_vdw_i_a] * C6_disp[pairs_vdw_j_a])
-
+        #b_ij_cp_sr_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
+        #b_ij_pauli_sr_p = torch.sqrt(b_i_pauli_p * b_j_pauli_p)
+        #b_ij_xpol_sr_p = torch.sqrt(b_i_xpol_p * b_j_xpol_p)
+        #b_ij_ct_sr_p = torch.sqrt(b_i_ct_p * b_j_ct_p)
+        #b_ij_disp_vdw_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
+        #C6_ij_disp_vdw_p = torch.sqrt(C6_disp[pairs_vdw_i_a] * C6_disp[pairs_vdw_j_a])
         # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
             self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
@@ -757,40 +799,6 @@ class CMM(ForceField):
         xpol_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, xpol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, xpol_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, xpol_damps_sr_2c_3)
         ct_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, ct_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, ct_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, ct_damps_sr_2c_3)
         pol_interaction_tensor_sr = torch.mul(undamped_tensor_1_pol_sr, pol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_pol_sr, pol_damps_sr_2c_2)
-
-        eps = params.get_pair_parameters('eps', all_intermolecular_pairs_sr)
-
-        if topology.bonded_pairs.numel() > 0:
-            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
-            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
-            D_p = params.get_pair_parameters('D', topology.bonded_pairs)
-            dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
-            dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
-            ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
-            ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
-            j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
-            j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
-            k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
-        
-        # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
-        # Currently, we don't have parameters for a non-symmetric angle but they will come up with
-        # organic molecules.
-        if topology.angle_pairs.numel() > 0:
-            r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
-            r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
-            r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
-
-            k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
-            k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
-
-            theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
-            k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
-            j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
-            k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
-            k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
 
         # Pauli charge flux #
         if topology.bonded_pairs.numel():
@@ -994,8 +1002,6 @@ class CMM(ForceField):
                 (elec_field)[topology.bonded_atoms[1]],
                 dq_a[topology.bonded_atoms[1]]
             )
-            # HERE: Either the bonded pairs or bonded atoms are getting out of sync
-            # when neighbor list rebuilds occur. This causes a crash getting FD Morse params.
 
             # morse-bond
             ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
