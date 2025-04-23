@@ -43,6 +43,9 @@ def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos
 
 def rotateDipoles(dipo: torch.Tensor, rotMatrix: torch.Tensor):
     return torch.bmm(dipo.unsqueeze(1), rotMatrix)
+def computeSphericaldipoles(dipo: torch.Tensor):
+    #[Z,X,Y] instead of [X,Y,Z]. Necessary for PME calculation
+    return torch.stack([dipo[...,2], dipo[...,0], dipo[...,1]], dim=-1)
 
 
 def rotateQuadrupoles(quad: torch.Tensor, rotMatrix: torch.Tensor):
