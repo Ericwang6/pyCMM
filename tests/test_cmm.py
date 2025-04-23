@@ -209,22 +209,27 @@ def test_total_energy_and_total_gradients_ion_water_cluster():
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, requires_grad=False, device=device)
     
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, 1024)
+    cm = CoordinateManager(coords, box, 20.0 / BOHR2ANG, labels, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_short_range=torch.tensor(10.0 / BOHR2ANG), use_ewald=False)
+    ff = CMM(cutoff_short_range=torch.tensor(15.0 / BOHR2ANG), use_ewald=False, solve_tolerance=torch.tensor(1e-10))
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters)
-    total_ref = torch.tensor([-28.231218043296266], device=device)
+    total_ref = torch.tensor([-192.01391054587654], device=device)
+    # ^^^ The induced bond polarization part is 0.03793419591828556
+    # but that doesn't work yet cause I don't have induced dipole derivatives yet.
+    # Note the above reference excludes the induced bond polarization part.
+    # To be extra clear that is the contribution from just the induced fields
+    # on the total deformation energy.
     total_energy = energies_ff['total'] * HARTREE2KCAL
-    # HERE: Get the actual reference data!!!!!!!!!!!!!
-    assert torch.allclose(total_energy, total_ref)
+    assert torch.allclose(total_energy, total_ref, atol=0.01)
+    # ^^^ This difference comes from slightly different unit conversions between the two codes.
 
-    energies_ff['bond'].backward()
+    energies_ff['total'].backward()
     grads_ad_1 = coords.grad.clone()
 
     def get_total_energy(coords: torch.Tensor):
@@ -237,7 +242,7 @@ def test_total_energy_and_total_gradients_ion_water_cluster():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
         energies_ff = ff.evaluate(cm, topology, parameters)
-        total_energy = energies_ff['bond']
+        total_energy = energies_ff['total']
         return total_energy
 
     grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5).to(device)
@@ -276,7 +281,7 @@ def test_total_energy_and_total_gradients_ion_water():
     total_energy = energies_ff['total'] * HARTREE2KCAL
     assert torch.allclose(total_energy, total_ref)
 
-    energies_ff['bond'].backward()
+    energies_ff['total'].backward()
     grads_ad_1 = coords.grad.clone()
 
     def get_total_energy(coords: torch.Tensor):
@@ -289,7 +294,7 @@ def test_total_energy_and_total_gradients_ion_water():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
         energies_ff = ff.evaluate(cm, topology, parameters)
-        total_energy = energies_ff['bond']
+        total_energy = energies_ff['total']
         return total_energy
 
     grads_fd_1 = finite_difference(coords_no_grad, get_total_energy, h=1e-5).to(device)

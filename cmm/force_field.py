@@ -308,7 +308,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.66054]),
                 "b_xpol": torch.tensor([2.42899]),
                 "b_ct": torch.tensor([1.68936]),
-                "eps": torch.tensor([4.16245e6]),
+                "eps": torch.tensor([1.0 / 4.16245e6]),
             },
             ("Li+", "Cl-"): {
                 "b_pauli": torch.tensor([1.81696]),
@@ -316,7 +316,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.50876]),
                 "b_xpol": torch.tensor([21.7689]),
                 "b_ct": torch.tensor([1.14099]),
-                "eps": torch.tensor([0.622129]),
+                "eps": torch.tensor([1.0 / 0.622129]),
             },
             ("Li+", "Br-"): {
                 "b_pauli": torch.tensor([1.78426]),
@@ -324,7 +324,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.42241]),
                 "b_xpol": torch.tensor([3.43206]),
                 "b_ct": torch.tensor([1.09604]),
-                "eps": torch.tensor([0.556197]),
+                "eps": torch.tensor([1.0 / 0.556197]),
             },
             ("Li+", "I-"): {
                 "b_pauli": torch.tensor([1.76695]),
@@ -332,7 +332,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([2.0152]),
                 "b_xpol": torch.tensor([2.6963]),
                 "b_ct": torch.tensor([0.911407]),
-                "eps": torch.tensor([0.493998]),
+                "eps": torch.tensor([1.0 / 0.493998]),
             },
             ("Na+", "F-"): {
                 "b_pauli": torch.tensor([2.23085]),
@@ -340,7 +340,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.52165]),
                 "b_xpol": torch.tensor([24.3618]),
                 "b_ct": torch.tensor([2.12257]),
-                "eps": torch.tensor([5.59222e6]),
+                "eps": torch.tensor([1.0 / 5.59222e6]),
             },
             ("Na+", "Cl-"): {
                 "b_pauli": torch.tensor([1.96851]),
@@ -348,7 +348,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.37519]),
                 "b_xpol": torch.tensor([13.9896]),
                 "b_ct": torch.tensor([0.981402]),
-                "eps": torch.tensor([0.92137]),
+                "eps": torch.tensor([1.0 / 0.92137]),
             },
             ("Na+", "Br-"): {
                 "b_pauli": torch.tensor([1.90723]),
@@ -356,7 +356,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.32684]),
                 "b_xpol": torch.tensor([13.7141]),
                 "b_ct": torch.tensor([0.948933]),
-                "eps": torch.tensor([0.834803]),
+                "eps": torch.tensor([1.0 / 0.834803]),
             },
             ("Na+", "I-"): {
                 "b_pauli": torch.tensor([1.87522]),
@@ -364,7 +364,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.63812]),
                 "b_xpol": torch.tensor([13.5543]),
                 "b_ct": torch.tensor([0.911423]),
-                "eps": torch.tensor([0.634873]),
+                "eps": torch.tensor([1.0 / 0.634873]),
             },
             ("K+", "F-"): {
                 "b_pauli": torch.tensor([2.0344]),
@@ -372,7 +372,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.39697]),
                 "b_xpol": torch.tensor([2.77048]),
                 "b_ct": torch.tensor([1.92339]),
-                "eps": torch.tensor([1.30686e7]),
+                "eps": torch.tensor([1.0 / 1.30686e7]),
             },
             ("K+", "Cl-"): {
                 "b_pauli": torch.tensor([1.79779]),
@@ -380,7 +380,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.28869]),
                 "b_xpol": torch.tensor([13.5339]),
                 "b_ct": torch.tensor([1.56964]),
-                "eps": torch.tensor([1.41644]),
+                "eps": torch.tensor([1.0 / 1.41644]),
             },
             ("K+", "Br-"): {
                 "b_pauli": torch.tensor([1.74843]),
@@ -388,7 +388,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.24628]),
                 "b_xpol": torch.tensor([13.2437]),
                 "b_ct": torch.tensor([1.47289]),
-                "eps": torch.tensor([0.975592]),
+                "eps": torch.tensor([1.0 / 0.975592]),
             },
             ("K+", "I-"): {
                 "b_pauli": torch.tensor([1.70111]),
@@ -396,7 +396,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.66612]),
                 "b_xpol": torch.tensor([12.9938]),
                 "b_ct": torch.tensor([1.34706]),
-                "eps": torch.tensor([0.621612]),
+                "eps": torch.tensor([1.0 / 0.621612]),
             },
             ("Rb+", "F-"): {
                 "b_pauli": torch.tensor([2.07856]),
@@ -404,7 +404,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([0.989019]),
                 "b_xpol": torch.tensor([15.3797]),
                 "b_ct": torch.tensor([1.97104]),
-                "eps": torch.tensor([4.07063]),
+                "eps": torch.tensor([1.0 / 4.07063]),
             },
             ("Rb+", "Cl-"): {
                 "b_pauli": torch.tensor([1.79968]),
@@ -412,7 +412,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.58976]),
                 "b_xpol": torch.tensor([13.8017]),
                 "b_ct": torch.tensor([1.43009]),
-                "eps": torch.tensor([0.997574]),
+                "eps": torch.tensor([1.0 / 0.997574]),
             },
             ("Rb+", "Br-"): {
                 "b_pauli": torch.tensor([1.74034]),
@@ -420,7 +420,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.62445]),
                 "b_xpol": torch.tensor([13.8468]),
                 "b_ct": torch.tensor([1.34474]),
-                "eps": torch.tensor([0.833069]),
+                "eps": torch.tensor([1.0 / 0.833069]),
             },
             ("Rb+", "I-"): {
                 "b_pauli": torch.tensor([1.71241]),
@@ -428,7 +428,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([3.90536]),
                 "b_xpol": torch.tensor([12.3616]),
                 "b_ct": torch.tensor([1.29478]),
-                "eps": torch.tensor([0.626737]),
+                "eps": torch.tensor([1.0 / 0.626737]),
             },
             ("Cs+", "F-"): {
                 "b_pauli": torch.tensor([1.94985]),
@@ -436,7 +436,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.17374]),
                 "b_xpol": torch.tensor([14.339]),
                 "b_ct": torch.tensor([1.80732]),
-                "eps": torch.tensor([1.10774]),
+                "eps": torch.tensor([1.0 / 1.10774]),
             },
             ("Cs+", "Cl-"): {
                 "b_pauli": torch.tensor([1.70545]),
@@ -444,7 +444,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.49986]),
                 "b_xpol": torch.tensor([12.9929]),
                 "b_ct": torch.tensor([1.39542]),
-                "eps": torch.tensor([0.819386]),
+                "eps": torch.tensor([1.0 / 0.819386]),
             },
             ("Cs+", "Br-"): {
                 "b_pauli": torch.tensor([1.64889]),
@@ -452,7 +452,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([1.47483]),
                 "b_xpol": torch.tensor([12.7337]),
                 "b_ct": torch.tensor([1.33849]),
-                "eps": torch.tensor([0.748004]),
+                "eps": torch.tensor([1.0 / 0.748004]),
             },
             ("Cs+", "I-"): {
                 "b_pauli": torch.tensor([1.64008]),
@@ -460,7 +460,7 @@ class CMM(ForceField):
                 "b_disp": torch.tensor([2.21299]),
                 "b_xpol": torch.tensor([12.6147]),
                 "b_ct": torch.tensor([1.31385]),
-                "eps": torch.tensor([0.577828]),
+                "eps": torch.tensor([1.0 / 0.577828]),
             },
         }
 
@@ -664,11 +664,6 @@ class CMM(ForceField):
 
         # Atomic widths #
         b_elec = params.get_atomic_parameters('b_elec')
-        b_pauli = params.get_atomic_parameters('b_pauli')
-        b_disp = params.get_atomic_parameters('b_disp')
-        b_xpol = params.get_atomic_parameters('b_xpol')
-        b_ct = params.get_atomic_parameters('b_ct')
-
         b_ij_cp_sr_p = params.get_pair_parameters_with_optional_combination_rule(
             'b_elec', all_intermolecular_pairs_sr, pairs_sr
         )
@@ -720,25 +715,7 @@ class CMM(ForceField):
             j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
             k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
             k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
-
-        # Get width parameters in appropriate pair spaces #
-        b_i_elec_p = b_elec[pairs_sr_i_a]
-        b_j_elec_p = b_elec[pairs_sr_j_a]
-        b_i_pauli_p = b_pauli[pairs_sr_i_a]
-        b_j_pauli_p = b_pauli[pairs_sr_j_a]
-        b_i_xpol_p = b_xpol[pairs_sr_i_a]
-        b_j_xpol_p = b_xpol[pairs_sr_j_a]
-        b_i_ct_p = b_ct[pairs_sr_i_a]
-        b_j_ct_p = b_ct[pairs_sr_j_a]
-        b_i_disp_p = b_disp[pairs_vdw_i_a]
-        b_j_disp_p = b_disp[pairs_vdw_j_a]
         
-        #b_ij_cp_sr_p = torch.sqrt(b_i_elec_p * b_j_elec_p)
-        #b_ij_pauli_sr_p = torch.sqrt(b_i_pauli_p * b_j_pauli_p)
-        #b_ij_xpol_sr_p = torch.sqrt(b_i_xpol_p * b_j_xpol_p)
-        #b_ij_ct_sr_p = torch.sqrt(b_i_ct_p * b_j_ct_p)
-        #b_ij_disp_vdw_p = torch.sqrt(b_i_disp_p * b_j_disp_p)
-        #C6_ij_disp_vdw_p = torch.sqrt(C6_disp[pairs_vdw_i_a] * C6_disp[pairs_vdw_j_a])
         # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
             self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
@@ -761,6 +738,8 @@ class CMM(ForceField):
             erfc_damps = torch.ones((5, dists_lr.size(0)))
             erf_damps = torch.zeros((5, dists_excl.size(0)))
 
+        b_i_elec_p = b_elec[pairs_sr_i_a]
+        b_j_elec_p = b_elec[pairs_sr_j_a]
         cp_damps_sr_1c_i = -computeShortRangeOneCenterDampFactors(dists_sr, b_i_elec_p)
         cp_damps_sr_1c_j = -computeShortRangeOneCenterDampFactors(dists_sr, b_j_elec_p)
         cp_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_cp_sr_p)
@@ -978,7 +957,7 @@ class CMM(ForceField):
                 )
                 #print(f"Solved polarization in {info['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
-            self.last_induced_multipoles = self.last_induced_multipoles.clone().detach()
+            self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
 
         # NOTE(JOE): There is a problem with the gradients here when induced
         # fields are included. Basically, the partial derivatives of the induced
