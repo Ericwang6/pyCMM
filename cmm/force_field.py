@@ -566,7 +566,7 @@ class CMM(ForceField):
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
-        self.cutoff_vdw = cm.cutoff-0.05
+        self.cutoff_vdw = cm.cutoff
 
         if True: #self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt

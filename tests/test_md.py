@@ -22,7 +22,8 @@ from ase.md.npt import NPT
 from ase.md.langevin import Langevin
 from ase.io import Trajectory
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
-from ase.units import fs, bar, GPa
+from ase.units import fs, bar, GPa, kcal, mol
+from ase.stress import full_3x3_to_voigt_6_stress
 
 def calculate_virial_finite_difference(atoms, epsilon=0.001):
     """
@@ -38,7 +39,6 @@ def calculate_virial_finite_difference(atoms, epsilon=0.001):
     """
     virial = np.zeros((3, 3))
     orig_cell = atoms.get_cell().copy()
-    #orig_volume = atoms.get_volume()
     
     # Loop over the 6 independent components of the stress tensor
     for i in range(3):
@@ -46,7 +46,6 @@ def calculate_virial_finite_difference(atoms, epsilon=0.001):
             # Create strain tensor (identity + small strain)
             strain = np.eye(3)
             strain[i, j] += epsilon
-            #strain[j, i] += epsilon
             
             # Apply strain to the cell
             atoms.set_cell(np.dot(orig_cell, strain), scale_atoms=True)
@@ -57,7 +56,6 @@ def calculate_virial_finite_difference(atoms, epsilon=0.001):
             # Apply negative strain
             strain = np.eye(3)
             strain[i, j] -= epsilon
-            #strain[j, i] -= epsilon
             
             # Apply strain to the cell
             atoms.set_cell(np.dot(orig_cell, strain), scale_atoms=True)
@@ -69,9 +67,7 @@ def calculate_virial_finite_difference(atoms, epsilon=0.001):
             atoms.set_cell(orig_cell, scale_atoms=True)
             
             # Central difference formula for the stress component
-            # Extra factor of 2 since applying strain symmetrically
             virial[i, j] = (energy_plus - energy_minus) / (2.0 * epsilon)
-            #virial[j, i] = virial[i, j]  # Stress tensor is symmetric
     
     return virial
 
@@ -104,11 +100,8 @@ def test_virial_tensor():
     # This is equivalent to taking the outer product of each particle gradient with the particle position
     # plus each box gradient with the box vector. (i.e. sum over F cross R) Note that the box is just
     # another degree of freedom in the simulation.
-    print(torch.matmul(coords.grad.T, coords))
-    print(torch.matmul(box.grad.T, box))
     virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
     stress = virial / box_volume
-    print(stress)
 
     coords, atom_types, bonds, _ = read_from_tinker_xyz(system_file, requires_grad=False, device=device)
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
@@ -187,11 +180,74 @@ def test_virial_tensor_translational_invariance():
     assert torch.allclose(stress, stress_2)
     assert torch.isclose(energies['total'], energies_2['total'])
 
+def test_kinetic_stress():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
+
+    velocities_ref = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/water_216_velocities.txt"))
+    kinetic_energy_tensor_ref = np.array(
+        [[184.070278950081, 11.441292245682, 3.491837665282],
+        [11.441292245682, 202.882792736441, -0.844740236485],
+        [3.491837665282, -0.844740236485, 190.565661644341]]
+    )
+    kinetic_energy_ref = 577.518733330862 # kcal/mol
+    assert np.isclose(np.trace(kinetic_energy_tensor_ref), kinetic_energy_ref)
+    def get_kinetic_tensor(velocities, masses):
+        return 0.5 * np.sum(masses[:, np.newaxis, np.newaxis] * np.array([np.outer(velocities[i], velocities[i]) for i in range(len(velocities))]), axis=0)
+    
+    conv_fac = 418.4 # I don't know why these are the mchem units?
+    kinetic_energy_tensor = get_kinetic_tensor(velocities_ref, ff_ase.atoms.get_masses())
+    kinetic_energy_ase_masses = np.trace(kinetic_energy_tensor) / conv_fac # in kcal/mol
+    ff_ase.atoms.set_velocities(velocities_ref)
+    velocity_conversion = np.sqrt(ff_ase.atoms.get_kinetic_energy() / (kcal / mol) / (kinetic_energy_ase_masses))
+    ff_ase.atoms.set_velocities(velocities_ref / velocity_conversion)
+    assert np.isclose(ff_ase.atoms.get_kinetic_energy() / (kcal / mol), kinetic_energy_ase_masses)
+    kinetic_energy_tensor = get_kinetic_tensor(ff_ase.atoms.get_velocities(), ff_ase.atoms.get_masses())
+    kinetic_stress = -2 * kinetic_energy_tensor / (ff_ase.atoms.get_volume())
+    kinetic_stress_ase = ff_ase.atoms.get_kinetic_stress()
+    assert np.allclose(full_3x3_to_voigt_6_stress(kinetic_stress), kinetic_stress_ase)
+    temperature=300
+    dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
+               taut=100 * fs, pressure_au=1.01325 * bar,
+               taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+    def log_step(atoms=ff_ase.atoms):
+        energy = atoms.get_potential_energy()
+        kinetic = atoms.get_kinetic_energy()
+        temperature = atoms.get_temperature()
+        print(atoms.get_kinetic_stress())
+        stress_total = atoms.get_stress(voigt=True, include_ideal_gas=True)
+        stress_virial = atoms.get_stress(voigt=True, include_ideal_gas=False)
+        pressure = (-(stress_total[0] + stress_total[1] + stress_total[2]) / 3) / (bar * 1.01325)
+        print(stress_total)
+        print(stress_virial)
+        print(pressure)
+        #kinetic_pressure = 2 * kinetic / (3 * atoms.get_volume()) / (bar * 1.01325)
+        #print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Virial Press.: {pressure:.2f} atm, Kinetic Press. {kinetic_pressure:.2f}")
+
+    dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
+    dyn.run(1)
+
 def test_md():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True, device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True, device=device)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
@@ -237,7 +293,7 @@ def test_md():
         ]
     )
 
-    temperature = 270.0
+    temperature = 300.0
     MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
     Stationary(ff_ase.atoms)
 
@@ -258,6 +314,7 @@ def test_md():
         energy = atoms.get_potential_energy()
         kinetic = atoms.get_kinetic_energy()
         temperature = atoms.get_temperature()
+        print(atoms.get_kinetic_stress())
         stress = atoms.get_stress(voigt=True, include_ideal_gas=True)
         pressure = (-(stress[0] + stress[1] + stress[2]) / 3) / (bar * 1.01325)
         kinetic_pressure = 2 * kinetic / (3 * atoms.get_volume()) / (bar * 1.01325)

@@ -42,9 +42,9 @@ class CoordinateManager:
         self.box_lengths = torch.diagonal(self.box)
         self.box_volume = torch.det(self.box)
         if self.cutoff > 0.5 * min(self.box_lengths):
-            #print(f"Requested cutoff of {self.cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
-            self.cutoff = 0.5 * min(self.box_lengths).detach()
-            self.neighbor_list.cutoff = self.cutoff
+            print(f"WARNING: Requested cutoff of {self.cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}.")
+            #self.cutoff = 0.5 * min(self.box_lengths).detach()
+            #self.neighbor_list.cutoff = self.cutoff
             #self.neighbor_list.verlet_cutoff = self.cutoff + self.neighbor_list.cutoff_padding
         
         self._check_for_nl_update = True

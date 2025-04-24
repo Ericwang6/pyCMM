@@ -35,8 +35,8 @@ class CMM_ASE(Calculator):
         self._checkpoint_counter = 0
         
         self.atoms = Atoms(
-            positions=cm.coords.detach().cpu().numpy() * Bohr,
-            cell=cm.box.detach().cpu().numpy() * Bohr,
+            positions=cm.coords.cpu().numpy() * Bohr,
+            cell=cm.box.cpu().numpy() * Bohr,
             pbc=[ff.use_ewald, ff.use_ewald, ff.use_ewald],
             symbols=cm.labels
         )
@@ -61,12 +61,12 @@ class CMM_ASE(Calculator):
 
         # Create a dictionary with all the necessary information
         state = {
-            'positions': self._cm.coords.detach().cpu().numpy().tolist(),
+            'positions': self._cm.coords.cpu().numpy().tolist(),
             'velocities': self.atoms.get_velocities().tolist(),  # Save velocities
-            'cell': self._cm.box.detach().cpu().numpy().tolist(),
+            'cell': self._cm.box.cpu().numpy().tolist(),
             'atom_labels': self._cm.labels,
             'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
-            'bonds': self._topology.bonded_atoms.detach().cpu().numpy().tolist(),
+            'bonds': self._topology.bonded_atoms.cpu().numpy().tolist(),
             'cutoff_max': float(self._cm.cutoff.item()),
             'cutoff_ewald': float(self._ff.cutoff_ewald.item()),
             'cutoff_short_range': float(self._ff.cutoff_sr.item()),
@@ -76,8 +76,8 @@ class CMM_ASE(Calculator):
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
             'output_folder': str(self.output_folder),
-            'solve_tolerance': self._ff.solve_tolerance.detach().cpu().numpy().tolist(),
-            'ewald_tolerance': self._ff.ewald_tolerance.detach().cpu().numpy().tolist(),
+            'solve_tolerance': self._ff.solve_tolerance.cpu().numpy().tolist(),
+            'ewald_tolerance': self._ff.ewald_tolerance.cpu().numpy().tolist(),
             'use_ewald': self._ff.use_ewald,
             'use_polarization': self._ff.use_polarization,
         }
@@ -241,15 +241,17 @@ class CMM_ASE(Calculator):
         self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
         self._energies['total'].backward()
 
-        self.results['energy'] = float(self._energies['total'].detach().cpu()) * Hartree
-        self.results['forces'] = -self._cm.coords.grad.detach().cpu().numpy() * (Hartree / Bohr)
-        self.results['stress'] = (
-            torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
-        ).detach().cpu().numpy() * (Hartree / Bohr**3)
-        if self._cm.box.grad is not None:
-            self.results['stress'] = self.results['stress'] + ((
-                torch.matmul(self._cm.box.grad.T, self._cm.box)
-             ) / self._cm.box_volume).detach().cpu().numpy() * (Hartree / Bohr**3)
+        # Store results so that ASE can access them #
+        self.results['energy'] = float(self._energies['total'].cpu()) * Hartree
+        if self._cm.coords.grad is not None:
+            self.results['forces'] = -self._cm.coords.grad.cpu().numpy() * (Hartree / Bohr)
+            self.results['stress'] = (
+                torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
+            ).cpu().numpy() * (Hartree / Bohr**3)
+            if self._cm.box.grad is not None:
+                self.results['stress'] = self.results['stress'] + ((
+                    torch.matmul(self._cm.box.grad.T, self._cm.box)
+                 ) / self._cm.box_volume).cpu().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=None, system_changes=['positions', 'cell']):
         if properties is None:
@@ -263,12 +265,6 @@ class CMM_ASE(Calculator):
         current_hash = self._get_configuration_hash(self.atoms)
         if self._last_atoms_hash == current_hash:
             return
-        if self._last_positions is not None:
-            # NOTE(JOE): I am not sure if this is right or not...
-            # We might just have to eat the two evaluations per step with NPT.
-            pos_ratio = self.atoms.get_positions() / self._last_positions
-            if np.max(pos_ratio - pos_ratio[0]) < 1e-12:
-                return
         positions_tensor = torch.from_numpy(self.atoms.get_positions() / Bohr).to(self._cm.coords.device)
         box_tensor = torch.from_numpy(self.atoms.get_cell().array / Bohr).to(self._cm.coords.device)
         self._cm.update_coordinates(positions_tensor)
@@ -301,7 +297,7 @@ class CMM_ASE(Calculator):
     
     def get_dipole_moment(self, include_induced_moments: bool = True):
         dipole_moment = self._ff.get_dipole_moment(self._cm.coords, include_induced_moments=include_induced_moments)
-        return dipole_moment.detach().cpu().numpy()
+        return dipole_moment.cpu().numpy()
     
     def _get_configuration_hash(self, atoms):
         """Generate a hash that uniquely identifies the atomic configuration"""

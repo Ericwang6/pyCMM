@@ -111,8 +111,8 @@ class VerletList(NeighborList):
         """
         self.device = positions.device
         self.natoms = positions.shape[0]
-        self._reference_positions = positions.detach().clone()
-        self._reference_box = box.detach().clone()
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
         self._cutoff_verlet = cutoff + padding
         self._padding = padding
         self._neighbor_list_verlet = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
@@ -159,8 +159,8 @@ class VerletList(NeighborList):
         self.n_neighbors.zero_()
 
         # Store new reference positions and box
-        self._reference_positions = positions.detach().clone()
-        self._reference_box = box.detach().clone()
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
 
         # Reshape positions for broadcasting
         pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
