@@ -16,7 +16,7 @@ from cmm.parameters import Parameterizer
 from cmm.force_field import CMM
 from cmm.interfaces import CMM_ASE
 
-from ase.units import kcal, mol, Hartree, Bohr, Angstrom
+from ase.units import kcal, mol, Hartree, Bohr, Angstrom, Pascal, bar
 
 def test_ase_basic():
     torch.set_default_dtype(torch.float64)
@@ -99,7 +99,7 @@ def test_optimize_dimers_via_ase():
 
     box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
@@ -165,7 +165,7 @@ def test_optimize_water_box_and_cell_via_ase():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)
     with torch.no_grad():
@@ -175,7 +175,7 @@ def test_optimize_water_box_and_cell_via_ase():
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
-    fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True)
+    fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
     opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')
     opt.run(fmax=1e-2)
     ff_ase.save_state("water216_cell_opt.json")
