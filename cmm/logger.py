@@ -169,7 +169,7 @@ class Logger:
         
         elif prop == "pressure" and self.ase_calculator is not None:
             if hasattr(self.ase_calculator, 'results') and 'stress' in self.ase_calculator.results:
-                stress = self.ase_calculator.results['stress']# + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
+                stress = self.ase_calculator.results['stress'] + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
                 pressure = -(stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3  # Negative trace of stress tensor
                 return (pressure / (bar * 1.01325))
             return None
@@ -183,16 +183,16 @@ class Logger:
                 # Convert from amu to g
                 total_mass_g = total_mass_amu * 1.66053886e-24
                 # Get volume in cm^3 (bohr^3 to cm^3)
-                volume_cm3 = float(self.cm.box_volume.detach().cpu().numpy()) * (BOHR2ANG * 1e-8)**3
+                volume_cm3 = float(self.cm.box_volume.cpu().detach().numpy()) * (BOHR2ANG * 1e-8)**3
                 # Return density in g/cm^3
                 return total_mass_g / volume_cm3
         
         # System properties
         elif prop == "volume":
-            return float(self.cm.box_volume.detach().cpu().numpy() * BOHR2ANG**3)
+            return float(self.cm.box_volume.cpu().detach().numpy() * BOHR2ANG**3)
         
         elif prop == "box_lengths":
-            return (self.cm.box_lengths.detach().cpu().numpy() * BOHR2ANG).tolist()
+            return (self.cm.box_lengths.cpu().detach().numpy() * BOHR2ANG).tolist()
         
         # Energy components - extract from the latest calculation
         elif prop.startswith("energy_"):
