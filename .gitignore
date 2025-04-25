@@ -175,3 +175,4 @@ cython_debug/
 
 .DS_Store
 nacl_opt.traj
+water216_cell_opt_no_lr_disp.json

@@ -87,7 +87,7 @@ def test_virial_tensor():
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True, use_lr_dispersion_correction=True)
+    ff = CMM(use_ewald=True, use_lr_dispersion=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -109,7 +109,7 @@ def test_virial_tensor():
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True, use_lr_dispersion_correction=True)
+    ff = CMM(use_ewald=True, use_lr_dispersion=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -339,7 +339,7 @@ def test_long_range_dispersion_correction():
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True,use_lr_dispersion_correction=True)
+    ff = CMM(use_ewald=True, use_lr_dispersion=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params

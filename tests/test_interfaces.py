@@ -167,7 +167,7 @@ def test_optimize_water_box_and_cell_via_ase():
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True)
+    ff = CMM(use_ewald=True, use_lr_dispersion=True)
     with torch.no_grad():
         topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
