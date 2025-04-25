@@ -5,7 +5,7 @@ from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
 from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
-from .dispersion import computeDispersionFromPairs
+from .dispersion import computeDispersionFromPairs, compute_long_range_dispersion_correction
 from .coordinate_manager import CoordinateManager
 from .axis_types import AxisTypes
 from .parameters import Parameterizer
@@ -28,7 +28,7 @@ class CMM(ForceField):
                  cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG, dtype=torch.float64),
                  cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG, dtype=torch.float64),
                  ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64),
-                 use_ewald: bool=False, use_polarization: bool=True,
+                 use_ewald: bool=False, use_lr_dispersion_correction: bool=False, use_polarization: bool=True,
                  pol_solver_type="conjugate_gradient", max_iterations=400,
                  solve_tolerance: torch.Tensor=torch.tensor(1e-7, dtype=torch.float64)) -> None:
         super().__init__()
@@ -45,6 +45,8 @@ class CMM(ForceField):
         self.cutoff_ewald = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.cutoff_vdw = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.use_ewald = use_ewald
+
+        self.use_lr_dispersion_correction = use_lr_dispersion_correction
 
         self.use_polarization = use_polarization
         self.polarization_solver = None
@@ -1018,6 +1020,13 @@ class CMM(ForceField):
         )
         ene_disp = torch.sum(disp_pairwise) / 2
 
+        ene_disp_lr = torch.tensor(0.0)
+        if self.use_lr_dispersion_correction:
+            ene_disp_lr = compute_long_range_dispersion_correction(
+                C6_ij_disp_vdw_p, self.cutoff_vdw,
+                torch.tensor(cm.coords.size(0)), cm.box_volume
+            )
+
         ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
         energies = {
             "perm_elec": ene_perm_elec,
@@ -1037,5 +1046,10 @@ class CMM(ForceField):
         if self.use_ewald:
             energies["ewald"] = ene_ewald
             energies["total"] = ene_tot + ene_ewald
+
+        if self.use_lr_dispersion_correction:
+            energies["disp_lr"] = ene_disp_lr
+            energies["total"] = ene_tot + ene_disp_lr
+
 
         return energies
