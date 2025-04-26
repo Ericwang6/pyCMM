@@ -3,7 +3,7 @@ from torch_scatter import segment_csr
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
-from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix
+from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix, compute_product_with_polarization_matrix_local
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs, compute_long_range_dispersion_correction
 from .coordinate_manager import CoordinateManager
@@ -13,7 +13,7 @@ from .topology import Topology
 from .terms import *
 from .units import *
 from .switching_functions import switch_543
-from.polarization_solver import PolarizationSolver, cg_solve
+from.polarization_solver import cg_solve, CG
 
 from copy import copy
 
@@ -29,8 +29,8 @@ class CMM(ForceField):
                  cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG, dtype=torch.float64),
                  ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64),
                  use_ewald: bool=False, use_lr_dispersion: bool=False, use_polarization: bool=True,
-                 pol_solver_type="conjugate_gradient", max_iterations=400,
-                 solve_tolerance: torch.Tensor=torch.tensor(1e-7, dtype=torch.float64)) -> None:
+                 max_iterations=400, solve_tolerance: torch.Tensor=torch.tensor(1e-7, dtype=torch.float64),
+                 cutoff_local_iterations: torch.Tensor=torch.tensor(4.0 / BOHR2ANG, dtype=torch.float64)) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -41,6 +41,7 @@ class CMM(ForceField):
             "Mg2+": 11, "Ca2+": 12
         }
         self.cutoff_sr = cutoff_short_range if torch.is_tensor(cutoff_short_range) else torch.tensor(cutoff_short_range, dtype=torch.float64)
+        self.cutoff_local = cutoff_local_iterations if torch.is_tensor(cutoff_local_iterations) else torch.tensor(cutoff_local_iterations, dtype=torch.float64)
         self.ewald_tolerance = ewald_tolerance if torch.is_tensor(ewald_tolerance) else torch.tensor(ewald_tolerance, dtype=torch.float64)
         self.cutoff_ewald = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.cutoff_vdw = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
@@ -51,12 +52,9 @@ class CMM(ForceField):
         self.use_polarization = use_polarization
         self.polarization_solver = None
         if self.use_polarization:
-            self.solver_type = pol_solver_type
             self.max_iterations = max_iterations
             self.solve_tolerance = solve_tolerance if torch.is_tensor(solve_tolerance) else torch.tensor(solve_tolerance, dtype=torch.float64)
-            self.polarization_solver = PolarizationSolver(
-                max_iter=self.max_iterations, tol=self.solve_tolerance, solver_type=self.solver_type
-            )
+            self.polarization_solver = CG(None, None, rtol=self.solve_tolerance, atol=self.solve_tolerance, verbose=False)
         
         self.last_induced_multipoles = None
         self.last_permanent_multipoles = None
@@ -623,6 +621,17 @@ class CMM(ForceField):
         switch_start_sr = switch_start_sr if switch_start_sr > 0.0 else 0.0
         switch_sr = switch_543(dists_sr, switch_start_sr, self.cutoff_sr)
 
+        # Get pairs, dists, and vectors for local iteration of nonbonded potential #
+        indices_vdw_to_local = torch.where(dists_vdw <= self.cutoff_local, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
+        indices_vdw_to_local = indices_vdw_to_local[indices_vdw_to_local >= 0]
+        all_intermolecular_pairs_local = topology.all_intermolecular_pairs[indices_vdw_to_local]
+
+        pairs_local = pairs_vdw[indices_vdw_to_local, :]
+        pairs_local_i_a = pairs_local[:, 0]
+        pairs_local_j_a = pairs_local[:, 1]
+        dists_local = dists_vdw[indices_vdw_to_local]
+        dist_vecs_local = dist_vecs_vdw[indices_vdw_to_local]
+
         if topology.angle_pairs.numel() > 0:
             angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
@@ -668,6 +677,9 @@ class CMM(ForceField):
         b_elec = params.get_atomic_parameters('b_elec')
         b_ij_cp_sr_p = params.get_pair_parameters_with_optional_combination_rule(
             'b_elec', all_intermolecular_pairs_sr, pairs_sr
+        )
+        b_ij_cp_local_p = params.get_pair_parameters_with_optional_combination_rule(
+            'b_elec', all_intermolecular_pairs_local, pairs_local
         )
         b_ij_pauli_sr_p = params.get_pair_parameters_with_optional_combination_rule(
             'b_pauli', all_intermolecular_pairs_sr, pairs_sr
@@ -737,8 +749,8 @@ class CMM(ForceField):
             # to dispatch batches to kernels which consider the smallest maximum rank allowable. In that
             # case, this 5 would not be hard-coded. The code is going to be so different at that point this
             # comment is hardly worth writing, but at least now you know why there is a 5 here.
-            erfc_damps = torch.ones((5, dists_lr.size(0)))
-            erf_damps = torch.zeros((5, dists_excl.size(0)))
+            erfc_damps = torch.ones((5, dists_lr.size(0)), device=dists_lr.device)
+            erf_damps = torch.zeros((5, dists_excl.size(0)), device=dists_excl.device)
 
         b_i_elec_p = b_elec[pairs_sr_i_a]
         b_j_elec_p = b_elec[pairs_sr_j_a]
@@ -749,13 +761,19 @@ class CMM(ForceField):
         xpol_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_xpol_sr_p)
         ct_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_ct_sr_p)
         pol_damps_sr_2c = -computeShortRangePolarizationDampFactors(dists_sr, b_ij_cp_sr_p)
+        pol_damps_local_2c = -computeShortRangePolarizationDampFactors(dists_local, b_ij_cp_local_p)
 
         # Get all undamped and damped interactions needed for multipolar interactions #
+        # @SPEED: There are a lot of overlapping calculations here which can be avoided by pulling
+        # the interactions tensors out of the long-range one.
         undamped_tensor_1_lr, undamped_tensor_2_lr, undamped_tensor_3_lr = computeUndampedInteractionTensorBlocks(dist_vecs_lr, dists_lr)
         undamped_tensor_1_sr, undamped_tensor_2_sr, undamped_tensor_3_sr = computeUndampedInteractionTensorBlocks(dist_vecs_sr, dists_sr)
+        undamped_tensor_1_local, undamped_tensor_2_local, undamped_tensor_3_local = computeUndampedInteractionTensorBlocks(dist_vecs_local, dists_local)
         undamped_tensor_1_excl, undamped_tensor_2_excl, undamped_tensor_3_excl = computeUndampedInteractionTensorBlocks(dist_vecs_excl, dists_excl)
         undamped_tensor_1_pol_sr = undamped_tensor_1_sr[:, :4, :4]
         undamped_tensor_2_pol_sr = undamped_tensor_2_sr[:, :4, :4]
+        undamped_tensor_1_pol_local = undamped_tensor_1_local[:, :4, :4]
+        undamped_tensor_2_pol_local = undamped_tensor_2_local[:, :4, :4]
 
         ewald_damps_lr_1, ewald_damps_lr_2, ewald_damps_lr_3 = formDampingFactorBlocksRank2(erfc_damps)
         ewald_damps_excl_1, ewald_damps_excl_2, ewald_damps_excl_3 = formDampingFactorBlocksRank2(erf_damps)
@@ -766,6 +784,7 @@ class CMM(ForceField):
         xpol_damps_sr_2c_1, xpol_damps_sr_2c_2, xpol_damps_sr_2c_3 = formDampingFactorBlocksRank2(xpol_damps_sr_2c)
         ct_damps_sr_2c_1, ct_damps_sr_2c_2, ct_damps_sr_2c_3 = formDampingFactorBlocksRank2(ct_damps_sr_2c)
         pol_damps_sr_2c_1, pol_damps_sr_2c_2 = formDampingFactorBlocksRank1(pol_damps_sr_2c)
+        pol_damps_local_2c_1, pol_damps_local_2c_2 = formDampingFactorBlocksRank1(pol_damps_local_2c)
 
         direct_field_tensor_lr = torch.mul(undamped_tensor_1_lr, ewald_damps_lr_1) + torch.mul(undamped_tensor_2_lr, ewald_damps_lr_2) + torch.mul(undamped_tensor_3_lr, ewald_damps_lr_3)
         direct_field_tensor_excl = torch.mul(undamped_tensor_1_excl, ewald_damps_excl_1) + torch.mul(undamped_tensor_2_excl, ewald_damps_excl_2) + torch.mul(undamped_tensor_3_excl, ewald_damps_excl_3)
@@ -780,6 +799,7 @@ class CMM(ForceField):
         xpol_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, xpol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, xpol_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, xpol_damps_sr_2c_3)
         ct_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, ct_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, ct_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, ct_damps_sr_2c_3)
         pol_interaction_tensor_sr = torch.mul(undamped_tensor_1_pol_sr, pol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_pol_sr, pol_damps_sr_2c_2)
+        pol_interaction_tensor_local = torch.mul(undamped_tensor_1_pol_local, pol_damps_local_2c_1) + torch.mul(undamped_tensor_2_pol_local, pol_damps_local_2c_2)
 
         # Pauli charge flux #
         if topology.bonded_pairs.numel():
@@ -920,11 +940,6 @@ class CMM(ForceField):
         long_range_induced_potential_function = None
         if self.use_ewald:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(cm.coords, charges, dipoles, cm.box, self.alpha_ewald, self.k_max)
-        
-        # TODO: To accelerate convergence of the polarization calculation, try the following:
-        # Implement local iterations using a 4 angstrom cutoff. Use that as the preconditioner
-        # as described in https://pubs.acs.org/doi/10.1021/acs.jctc.3c00226
-        # Plus, implement some of the other tricks there.
 
         def A_mm(x: torch.Tensor):
             return compute_product_with_polarization_matrix(
@@ -938,26 +953,41 @@ class CMM(ForceField):
                 long_range_potential_function=long_range_induced_potential_function
             )
 
-        def M_mm(x: torch.Tensor):
+        def M_mm_direct(x: torch.Tensor):
             return direct_polarization_guess(
                 x, natoms, topology.n_pol_groups, polarizabilities
             )
+        
+        #def A_mm_local(x: torch.Tensor):
+        #    return compute_product_with_polarization_matrix_local(
+        #        x,
+        #        natoms,
+        #        pairs_local_i_a, pairs_local_j_a,
+        #        pol_interaction_tensor_local,
+        #        eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
+        #        topology.pol_group_segment_indices, topology.pol_group_lengths_g
+        #    )
 
-        # TODO: Implement least-squares extrapolation for generating induced dipole guess.
+        #def M_mm_local(x: torch.Tensor):
+        #    solver_local = CG(A_mm_local, M_mm_direct, rtol=self.solve_tolerance, atol=self.solve_tolerance, verbose=False, maxiter=4)
+        #    local_induced_multipoles = solver_local.solve(B=x, X0=None)
+        #    return local_induced_multipoles
+
         # Solve polarization equations by preconditioned conjugate gradient #
         ene_pol = torch.tensor(0.0)
         if self.use_polarization:
             b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
+            self.b_vector = b_vector.clone().detach()
             with torch.no_grad():
                 # Evaluate the initial guess #
                 if self.last_induced_multipoles is None:
                     self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-                self.last_induced_multipoles, info = cg_solve(
-                    A_mm, b_vector,
-                    X0=self.last_induced_multipoles, M_mm=M_mm,
-                    atol=self.solve_tolerance, rtol=self.solve_tolerance
-                )
-                #print(f"Solved polarization in {info['niter']} iterations")
+                
+                self.polarization_solver.A_mm = A_mm
+                self.polarization_solver.M_mm = M_mm_direct
+                self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
+                #print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
+
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
             self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
 

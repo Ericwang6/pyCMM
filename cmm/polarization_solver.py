@@ -75,19 +75,18 @@ def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, ver
             Z_k1 = Z_k
             X_k1 = X_k
             denominator = torch.dot(R_k2, Z_k2)
-            #denominator[denominator == 0] = 1e-8
             beta = torch.dot(R_k1, Z_k1) / denominator
             P_k = Z_k1 + beta * P_k1
 
         AP_k = A_mm(P_k)
         denominator = torch.dot(P_k, AP_k)
-        #denominator[denominator == 0] = 1e-8
         alpha = torch.dot(R_k1, Z_k1) / denominator
         X_k = X_k1 + alpha * P_k
         R_k = R_k1 - alpha * AP_k
         end_iter = time.perf_counter()
 
-        residual_norm = torch.norm(R_k)
+        #residual_norm = torch.norm(R_k)
+        residual_norm = torch.max(torch.abs(R_k))
 
         if verbose:
             print("%03d | %8.4e %4.2f" %
@@ -101,11 +100,11 @@ def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, ver
     end = time.perf_counter()
 
     if verbose:
-        if optimal:
+        if not optimal:
             print("Terminated in %d steps (reached maxiter). Took %.3f ms." %
                   (k, (end - start) * 1000))
         else:
-            print("Terminated in %d steps (optimal). Took %.3f ms." %
+            print("Terminated in %d steps (success). Took %.3f ms." %
                   (k, (end - start) * 1000))
 
     info = {
@@ -117,126 +116,176 @@ def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, ver
 
 
 class CG(torch.autograd.Function):
-
-    def __init__(self, A_mm, M_mm=None, rtol=1e-7, atol=1e-7, maxiter=400, verbose=False):
-        self.A_bmm = A_mm
-        self.M_bmm = M_mm
+    # TODO: This doesn't actually work properly when going through the apply method
+    # since we need to store some tensors or something. I still don't really understand
+    # where the ctx variable comes from. Try doing this with backward hooks.
+    def __init__(self, A_mm, M_mm=None, rtol=1e-7, atol=1e-7, maxiter=400, n_extrapolate_from=10, verbose=False):
+        self.A_mm = A_mm
+        self.M_mm = M_mm
         self.rtol = rtol
         self.atol = atol
         self.maxiter = maxiter
         self.verbose = verbose
+        self.info_forward = None
+        self.info_backward = None
+
+        self.n_extrapolate_from = n_extrapolate_from
+        self.n_solves = 0
+        self.n_extrapolations = 0
+        self.input_cache = None
+        self.output_cache = None
+        self.extrapolated_input_cache = None
+        self.extrapolated_output_cache = None
+
+    def store_input(self, b_vector: torch.Tensor):
+        index = self.n_solves
+        if self.n_solves == 0:
+            self.input_cache = torch.zeros((self.n_extrapolate_from, b_vector.size(0)), dtype=b_vector.dtype, device=b_vector.device)
+        elif self.n_solves >= self.n_extrapolate_from:
+            # roll everything so that the first cached entry is dropped
+            # (or really wrapped around to the back to be replaced)
+            self.input_cache = torch.roll(self.input_cache, shifts=-1, dims=0)
+            index = self.n_extrapolate_from - 1
+        
+        # Store newest input-output pair in the caches #
+        self.input_cache[index, :] = b_vector
+    
+    def store_output(self, solution_vector: torch.Tensor):
+        index = self.n_solves
+        if self.n_solves == 0:
+            self.output_cache = torch.zeros((self.n_extrapolate_from, solution_vector.size(0)), dtype=solution_vector.dtype, device=solution_vector.device)
+        elif self.n_solves >= self.n_extrapolate_from:
+            # roll everything so that the first in-out pair is dropped
+            # (or really wrapped around to the back to be replaced)
+            self.output_cache = torch.roll(self.output_cache, shifts=-1, dims=0)
+            index = self.n_extrapolate_from - 1
+        
+        # Store newest input-output pair in the caches #
+        self.output_cache[index, :] = solution_vector
+        self.n_solves += 1
+    
+    def store_extrapolated_output(self, guess_solution_vector: torch.Tensor):
+        index = self.n_extrapolations
+        if self.n_extrapolations == 0:
+            self.extrapolated_output_cache = torch.zeros((self.n_extrapolate_from, guess_solution_vector.size(0)), dtype=guess_solution_vector.dtype, device=guess_solution_vector.device)
+        elif self.n_extrapolations >= self.n_extrapolate_from:
+            # roll everything so that the first in-out pair is dropped
+            # (or really wrapped around to the back to be replaced)
+            self.extrapolated_output_cache = torch.roll(self.extrapolated_output_cache, shifts=-1, dims=0)
+            index = self.n_extrapolate_from - 1
+        
+        # Store newest input-output pair in the caches #
+        self.extrapolated_output_cache[index, :] = guess_solution_vector
+        self.n_extrapolations += 1
+
+    def get_extrapolated_guess_from_inputs(self):
+        # @SPEED: Can avoid recomputing the matmuls for every extrapolation.
+        # Basically, we fill in the extrapolations for only the most recently updated
+        # vectors once we have done one extrapolation. Need to store the data which
+        # currently gets allocated each time.
+
+        # TODO: Clean up the sizes of things. Explicitly store the most recent inputs
+        # and solutions as attributes. Then once we have a new solution move the
+        # previous solution into the cache. Currently we actually extrapolate with
+        # one less solution than promised since we store the inputs in the cache immediately.
+        if self.n_solves >= self.n_extrapolate_from:
+            # Extrapolate using the full set of solutions #
+            extrapolation_matrix = torch.zeros((self.n_extrapolate_from-1, self.n_extrapolate_from-1),
+                                               dtype=self.input_cache[0].dtype,
+                                               device=self.input_cache[0].device)
+            extrapolation_target = torch.zeros(self.n_extrapolate_from-1,
+                                   dtype=self.input_cache[0].dtype,
+                                   device=self.input_cache[0].device)
+            for i in range(self.n_extrapolate_from-1):
+                extrapolation_target[i] = torch.matmul(self.input_cache[i], self.input_cache[-1])
+                for j in range(i, self.n_extrapolate_from-1):
+                    extrapolation_matrix[i, j] = torch.matmul(self.input_cache[i], self.input_cache[j])
+                    extrapolation_matrix[j, i] = extrapolation_matrix[i, j]
+            
+            extrapolation_coeffs = torch.linalg.lstsq(extrapolation_matrix, extrapolation_target).solution
+            # TODO: Store the extrapolated inputs and outputs for second-order correction.
+            guess_input = torch.matmul(self.input_cache[:-1, :].T, extrapolation_coeffs)
+            guess_solution = torch.matmul(self.output_cache[1:, :].T, extrapolation_coeffs)
+            return guess_solution
+        return None
+    
+    def get_extrapolated_guess_from_outputs(self):
+        guess_solution = None
+        guess_error = None
+        if self.n_solves >= self.n_extrapolate_from:
+            # Extrapolate using the full set of solutions #
+            extrapolation_matrix = torch.zeros((self.n_extrapolate_from-1, self.n_extrapolate_from-1),
+                                               dtype=self.output_cache[0].dtype,
+                                               device=self.output_cache[0].device)
+            extrapolation_target = torch.zeros(self.n_extrapolate_from-1,
+                                   dtype=self.output_cache[0].dtype,
+                                   device=self.output_cache[0].device)
+            for i in range(self.n_extrapolate_from-1):
+                extrapolation_target[i] = torch.matmul(self.output_cache[i], self.output_cache[-1])
+                for j in range(i, self.n_extrapolate_from-1):
+                    extrapolation_matrix[i, j] = torch.matmul(self.output_cache[i], self.output_cache[j])
+                    extrapolation_matrix[j, i] = extrapolation_matrix[i, j]
+            
+            extrapolation_coeffs = torch.linalg.lstsq(extrapolation_matrix, extrapolation_target).solution
+            # TODO: Store the extrapolated inputs and outputs for second-order correction.
+            #guess_input = torch.matmul(self.input_cache[:-1, :].T, extrapolation_coeffs)
+            guess_solution = torch.matmul(self.output_cache[1:, :].T, extrapolation_coeffs)
+            
+        # If we have enough extrapolation data, try a second-order extrapolation #
+        if self.n_extrapolations >= self.n_extrapolate_from:
+            # Extrapolate using the full set of solutions #
+            extrapolation_matrix = torch.zeros((self.n_extrapolate_from-1, self.n_extrapolate_from-1),
+                                               dtype=self.extrapolated_output_cache[0].dtype,
+                                               device=self.extrapolated_output_cache[0].device)
+            extrapolation_target = torch.zeros(self.n_extrapolate_from-1,
+                                   dtype=self.extrapolated_output_cache[0].dtype,
+                                   device=self.extrapolated_output_cache[0].device)
+            for i in range(self.n_extrapolate_from-1):
+                extrapolation_target[i] = torch.matmul(self.extrapolated_output_cache[i], self.extrapolated_output_cache[-1])
+                for j in range(i, self.n_extrapolate_from-1):
+                    extrapolation_matrix[i, j] = torch.matmul(self.extrapolated_output_cache[i], self.extrapolated_output_cache[j])
+                    extrapolation_matrix[j, i] = extrapolation_matrix[i, j]
+            
+            extrapolation_coeffs = torch.linalg.lstsq(extrapolation_matrix, extrapolation_target).solution
+            guess_error = torch.matmul(self.extrapolated_output_cache[1:, :].T, extrapolation_coeffs)
+
+        # TODO: Clean up the guess solution by ensuring that we exactly respect the constraints
+        return guess_solution, guess_error
+
+    # NOTE(JOE): This method is here in case you want to solve without doing
+    # the backward pass to get derivatives of the induced dipoles.
+    def solve(self, B, X0=None):
+        self.store_input(B)
+        # TODO: Can also try an extrapolation based on input-output pairs
+        #guess_solution = self.get_extrapolated_guess_from_inputs()
+        # NOTE(JOE): Second-order extrapolation isn't helping at all. Not sure if I implemented it wrong or what.
+        guess_solution, guess_error = self.get_extrapolated_guess_from_outputs()
+        if guess_solution is None:
+            guess_solution = X0
+        #if guess_error is not None:
+        #    guess_solution += guess_error
+        X, self.info_forward = cg_solve(self.A_mm, B, M_mm=self.M_mm, X0=guess_solution, rtol=self.rtol,
+            atol=self.atol, maxiter=self.maxiter, verbose=self.verbose)
+        #print(f"Rel. Error: {torch.norm(guess_solution - X) / torch.norm(X):.5f}, Abs. Error: {torch.max(torch.abs(guess_solution - X)):.5f}")
+        self.store_output(X)
+        if self.n_solves >= self.n_extrapolate_from:
+            if guess_error is None:
+                self.store_extrapolated_output(guess_solution - X)
+            else:
+                self.store_extrapolated_output(guess_solution - guess_error - X)
+        #X.register_hook(lambda dX : cg_solve(self.A_mm, dX, M_mm=self.M_mm, rtol=self.rtol,
+        #             atol=self.atol, maxiter=self.maxiter, verbose=self.verbose))
+        return X
 
     @staticmethod
     def forward(self, B, X0=None):
-        X, _ = cg_solve(self.A_mm, B, M_mm=self.M_bmm, X0=X0, rtol=self.rtol,
+        X, self.info_forward = cg_solve(self.A_mm, B, M_mm=self.M_mm, X0=X0, rtol=self.rtol,
                      atol=self.atol, maxiter=self.maxiter, verbose=self.verbose)
         return X
 
     @staticmethod
     def backward(self, dX):
-        dB, _ = cg_solve(self.A_mm, dX, M_mm=self.M_mm, rtol=self.rtol,
+        dB, self.info_backward = cg_solve(self.A_mm, dX, M_mm=self.M_mm, rtol=self.rtol,
                       atol=self.atol, maxiter=self.maxiter, verbose=self.verbose)
         return dB
-
-class PolarizationSolver:
-    def __init__(self, max_iter=400, tol=torch.tensor(1e-7, dtype=torch.float64), solver_type="conjugate_gradient"):
-        """
-        Initialize the PolarizationSolver.
-        
-        Args:
-            max_iter: Maximum number of iterations for the solver
-            tol: Convergence tolerance
-            solver_type: "conjugate_gradient" is only option for now
-        """
-        self.iterations_to_solve = 0
-        self.max_iter = max_iter
-        self.tol = tol
-        self.solver_type = solver_type
-
-    def solve_by_conjugate_gradient(self, initial_guess, b_vector, n_charges,
-                           pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-                           pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
-                           pol_interaction_tensor_sr, direct_field_tensor_excl,
-                           eta, inverse_polarizabilities, pol_group_indices_a,
-                           pol_group_segment_indices, pol_group_lengths_g,
-                           long_range_potential_function=None):
-        # Precondition using whatever was put in the guess_vector
-        TM0, _, _ = compute_product_with_polarization_matrix(
-            initial_guess, n_charges,
-            pairs_lr_i_a, pairs_lr_j_a,
-            pairs_sr_i_a, pairs_sr_j_a,
-            pairs_excl_i_a, pairs_excl_j_a,
-            direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
-            eta, inverse_polarizabilities,
-            pol_group_indices_a,
-            pol_group_segment_indices,
-            pol_group_lengths_g,
-            long_range_potential_function
-        )
-        residual = b_vector - TM0
-        P = residual.clone()
-        solution_vector = initial_guess.clone()
-        
-        for i_iter in range(self.max_iter):
-            TP, _, _ = compute_product_with_polarization_matrix(
-                P, n_charges,
-                pairs_lr_i_a, pairs_lr_j_a,
-                pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a,
-                direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl,
-                eta, inverse_polarizabilities,
-                pol_group_indices_a,
-                pol_group_segment_indices,
-                pol_group_lengths_g,
-                long_range_potential_function
-            )
-            gamma = torch.dot(residual, residual) / torch.dot(P, TP)
-            solution_vector = solution_vector + gamma * P
-            beta = 1.0 / torch.dot(residual, residual)
-            residual = residual - gamma * TP
-            if torch.norm(residual) < self.tol:
-                self.iterations_to_solve = i_iter
-                return solution_vector
-            beta = beta * torch.dot(residual, residual)
-            P = residual + beta * P
-        
-        return solution_vector
     
-    def solve(self, initial_guess, elec_potential, elec_field, dq_groups, n_charges,
-            pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-            pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
-            pol_interaction_tensor_sr, direct_field_tensor_excl,
-            eta, inverse_polarizabilities, pol_group_indices_a,
-            pol_group_segment_indices, pol_group_lengths_g,
-            long_range_potential_function=None):
-        
-        # Solve the system using the selected method
-        b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
-        with torch.no_grad():
-            if self.solver_type == "conjugate_gradient":
-                solution = self.solve_by_conjugate_gradient(
-                    initial_guess, b_vector, n_charges,
-                    pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-                    pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
-                    pol_interaction_tensor_sr, direct_field_tensor_excl,
-                    eta, inverse_polarizabilities, pol_group_indices_a,
-                    pol_group_segment_indices, pol_group_lengths_g,
-                    long_range_potential_function
-                )
-
-        # Cache the solution for next time
-        #self.last_induced_multipoles = solution.clone().detach()
-
-        # Compute the induced fields
-        TM, induced_potential, induced_field = compute_product_with_polarization_matrix(
-            solution, n_charges,
-            pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
-            pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_lr,
-            pol_interaction_tensor_sr, direct_field_tensor_excl,
-            eta, inverse_polarizabilities, pol_group_indices_a,
-            pol_group_segment_indices, pol_group_lengths_g,
-            long_range_potential_function
-        )
-        ene_pol = torch.dot(solution, (0.5 * TM - b_vector))
-
-        return ene_pol, solution, induced_potential, induced_field

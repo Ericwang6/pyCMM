@@ -104,3 +104,47 @@ def compute_product_with_polarization_matrix(
             constraints
         ))
         return residual
+
+def compute_product_with_polarization_matrix_local(
+    vec_in: torch.Tensor, n_charges: torch.Tensor,
+    pairs_local_i_a: torch.Tensor, pairs_local_j_a: torch.Tensor,
+    pol_interaction_tensor_local: torch.Tensor,
+    eta: torch.Tensor, alpha_inv: torch.Tensor,
+    pol_group_indices_a: torch.Tensor,
+    pol_group_segment_indices: torch.Tensor,
+    pol_group_lengths_g: torch.Tensor):
+
+        induced_charges = torch.narrow(vec_in, 0, 0, n_charges)
+        induced_dipoles = torch.narrow(vec_in, 0, n_charges, 3 * n_charges).reshape(n_charges, 3)
+        lagrange_muls = torch.narrow(vec_in, 0, n_charges + 3 * n_charges, vec_in.size(0) - n_charges - 3 * n_charges)
+        induced_multipoles_a = torch.cat([induced_charges.unsqueeze(1), induced_dipoles], dim=1)
+
+        induced_multipoles_i_local_p = induced_multipoles_a[pairs_local_i_a]
+
+        # Get real field data
+        edata_ss_pairwise = torch.bmm(pol_interaction_tensor_local, induced_multipoles_i_local_p.unsqueeze(2))
+
+        # Accumulate the total potentials and fields
+        induced_field_data = torch.zeros(n_charges, 4, device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype, requires_grad=False)
+        induced_field_data.scatter_add_(0, pairs_local_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+        
+        induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_local_i_a.device).reshape(1, -1))
+        induced_electric_potential = induced_field_data[:, 0]
+        induced_electric_field = induced_field_data[:, 1:4]
+
+        # Get sum of induced charges in every polarization group
+        constraints = segment_csr(induced_charges[pol_group_indices_a], pol_group_segment_indices, reduce='sum')
+
+        # Expand lagrange multipliers from group index space to atomic index space
+        expanded_lagrange_muls = lagrange_muls.repeat_interleave(pol_group_lengths_g)
+
+        # Scatter these values back to the atomic indices
+        lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device, requires_grad=False)
+        lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
+
+        residual = torch.concat((
+            eta * induced_charges + lagrange_muls_a + induced_electric_potential,
+            torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(),
+            constraints
+        ))
+        return residual

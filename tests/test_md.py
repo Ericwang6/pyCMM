@@ -346,3 +346,74 @@ def test_long_range_dispersion_correction():
     )
     energies = ff.evaluate(cm, topology, parameters)
     print(energies)
+
+def test_polarization_solve_strategies():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True, use_lr_dispersion=True, solve_tolerance=1e-5)
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
+
+    temperature = 300.0
+    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
+    Stationary(ff_ase.atoms)
+
+    dyn = VelocityVerlet(ff_ase.atoms, 1.0 * fs)
+    #dyn = Langevin(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, friction=0.01 / fs)
+
+    def log_step(ff_ase):
+        print(ff_ase._ff.polarization_solver.n_solves)
+
+    #dyn.attach(lambda : log_step(ff_ase), interval=1)  # Log at every step
+    dyn.run(60)
+
+def test_induced_multipole_derivatives():
+    torch.set_default_dtype(torch.float64)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True, device=device)
+    
+    # Normally, the parser should enforce just returning the names of atom types
+    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 100.0 / BOHR2ANG, requires_grad=True, device=device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
+    ff = CMM(solve_tolerance=torch.tensor(1e-12))
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    energies = ff.evaluate(cm, topology, parameters)
+    print(energies)
+    print(ff.b_vector)
+    ff.solver.solve(B=ff.b_vector)
+
+    def finite_difference_solve(ff, h=1e-6):
+        dsolve = torch.zeros_like(ff.last_induced_multipoles, requires_grad=False)
+        for i in range(len(dsolve)):
+            ff.last_induced_multipoles[i] += h
+            solve_plus_h = ff.solver.solve(B=ff.last_induced_multipoles)
+            ff.last_induced_multipoles[i] -= 2 * h
+            solve_minus_h = ff.solver.solve(B=ff.last_induced_multipoles)
+            ff.last_induced_multipoles[i] += h
+            dsolve += (solve_plus_h - solve_minus_h) / (2 * h)
+        return dsolve
+    
+    dsolve = finite_difference_solve(ff)
+    print(dsolve)
+    print(ff.induced_multipole_derivatives)
