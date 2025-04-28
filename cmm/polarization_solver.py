@@ -4,7 +4,7 @@ from .polarization import compute_product_with_polarization_matrix
 import torch
 import time
 
-def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=1e-7, maxiter=400, verbose=False):
+def cg_solve(A_mm, b, M_mm=None, X0=None, rtol=1e-7, atol=0, maxiter=400, verbose=False):
     """Solves positive-definite matrix linear system using the preconditioned CG algorithm.
     This implementation is a modified version of that available at: https://github.com/sbarratt/torch_cg/
     which is MIT licensed.
@@ -119,7 +119,7 @@ class CG(torch.autograd.Function):
     # TODO: This doesn't actually work properly when going through the apply method
     # since we need to store some tensors or something. I still don't really understand
     # where the ctx variable comes from. Try doing this with backward hooks.
-    def __init__(self, A_mm, M_mm=None, rtol=1e-7, atol=1e-7, maxiter=400, n_extrapolate_from=10, verbose=False):
+    def __init__(self, A_mm, M_mm=None, rtol=1e-7, atol=0, maxiter=400, n_extrapolate_from=10, verbose=False):
         self.A_mm = A_mm
         self.M_mm = M_mm
         self.rtol = rtol

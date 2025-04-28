@@ -54,7 +54,7 @@ class CMM(ForceField):
         if self.use_polarization:
             self.max_iterations = max_iterations
             self.solve_tolerance = solve_tolerance if torch.is_tensor(solve_tolerance) else torch.tensor(solve_tolerance, dtype=torch.float64)
-            self.polarization_solver = CG(None, None, rtol=self.solve_tolerance, atol=self.solve_tolerance, verbose=False)
+            self.polarization_solver = CG(None, None, rtol=self.solve_tolerance, atol=0, verbose=False)
         
         self.last_induced_multipoles = None
         self.last_permanent_multipoles = None
