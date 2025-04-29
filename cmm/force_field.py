@@ -595,10 +595,13 @@ class CMM(ForceField):
         dists_vdw = dists[topology.all_intermolecular_pairs]
         dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
 
+        # NOTE(JOE): Using switching functions for the vdw interactions will be a long-range
+        # option but for now it is preferable to use the long-range correction. Onec PME dispersion
+        # is implemented, that will be the obvious preference.
         # Get switching function values for long-range nonbonded potential #
-        switch_start_vdw = self.cutoff_vdw - 3.0
-        switch_start_vdw = switch_start_vdw if switch_start_vdw > 0.0 else 0.0
-        switch_vdw = switch_543(dists_vdw, switch_start_vdw, self.cutoff_vdw)
+        #switch_start_vdw = self.cutoff_vdw - 3.0
+        #switch_start_vdw = switch_start_vdw if switch_start_vdw > 0.0 else 0.0
+        #switch_vdw = switch_543(dists_vdw, switch_start_vdw, self.cutoff_vdw)
 
         # Get pairs, dists, and vectors for long-range nonbonded potential #
         indices_vdw_to_lr = torch.where(dists_vdw <= self.cutoff_ewald, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
@@ -1050,8 +1053,7 @@ class CMM(ForceField):
         # dispersion
         disp_pairwise = computeDispersionFromPairs(
             dists_vdw,
-            C6_ij_disp_vdw_p, b_ij_disp_vdw_p,
-            switch_vdw
+            C6_ij_disp_vdw_p, b_ij_disp_vdw_p
         )
         ene_disp = torch.sum(disp_pairwise) / 2
 
