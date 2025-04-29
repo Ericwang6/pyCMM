@@ -62,7 +62,7 @@ def test_md_logger_basic():
             ase_calculator=calculator,
             log_interval=1,  # Log every step for testing
             output_folder=temp_dir,
-            properties=["step", "time", "temperature", "energy_total", "dipole_magnitude", "max_force"],
+            properties=["step", "time", "temperature", "V_total", "max_force"],
             custom_properties=custom_properties
         )
         
@@ -148,9 +148,8 @@ def test_md_logger_water_box():
             log_interval=2,
             output_folder=temp_dir,
             properties=[
-                "step", "temperature", "energy_total",
-                "kinetic_energy", "volume", "density", "pressure",
-                "dipole_magnitude"
+                "step", "temperature", "V_total",
+                "kinetic_energy", "volume", "density", "pressure"
             ]
         )
         
@@ -163,12 +162,6 @@ def test_md_logger_water_box():
                    taup=1000 * fs, compressibility_au=4.57e-5 / bar)
         logger.attach_to_ase_dynamics(dyn)
         dyn.run(6)
-
-        # HERE: Add in logging for dipole moment of the cell.
-        # Then submit NVT calculations at a range of temperatures.
-        # Copmute dielectric constant.
-        # Question: Are the pressure calculations going to be wrong
-        # if an atom is not in the primitve cell?
         
         # Check that logging worked
         log_file = os.path.join(temp_dir, "md_log.txt")

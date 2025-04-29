@@ -573,7 +573,7 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff
 
-        if self.parameters_have_changed:
+        if True: #self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
             # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
             # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.

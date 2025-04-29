@@ -9,7 +9,7 @@ from ase.units import GPa, bar
 
 from .coordinate_manager import CoordinateManager
 from .force_field import CMM, ForceField
-from .units import BOHR2ANG
+from .units import BOHR2ANG, HARTREE2EV
 
 
 class Logger:
@@ -106,10 +106,10 @@ class Logger:
             "step", "time", "wall_time",
             
             # Energy components from CMM
-            "energy_total", "energy_perm_elec", "energy_pol", "energy_ct_direct",
-            "energy_xpol", "energy_pauli", "energy_disp", "energy_deformation",
-            "energy_bond", "energy_angle", "energy_bond_bond", "energy_bond_angle",
-            "energy_ewald",
+            "V_total", "V_perm_elec", "V_pol", "V_ct_direct",
+            "V_xpol", "V_pauli", "V_disp", "V_deformation",
+            "V_bond", "V_angle", "V_bond_bond", "V_bond_angle",
+            "V_ewald",
 
             # Properties from CMM
             "dipole_moment", "dipole_magnitude",
@@ -195,10 +195,10 @@ class Logger:
             return (self.cm.box_lengths.cpu().detach().numpy() * BOHR2ANG).tolist()
         
         # Energy components - extract from the latest calculation
-        elif prop.startswith("energy_"):
-            energy_type = prop[7:]  # Remove "energy_" prefix
+        elif prop.startswith("V_"):
+            energy_type = prop[2:]  # Remove "V_" prefix
             if hasattr(self.ase_calculator, '_energies') and energy_type in self.ase_calculator._energies:
-                return float(self.ase_calculator._energies[energy_type].detach().cpu().numpy())
+                return float(self.ase_calculator._energies[energy_type].detach().cpu().numpy()) * HARTREE2EV
             return None
         
         # Custom properties
