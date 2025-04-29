@@ -29,7 +29,9 @@ class SPCfw(ForceField):
         self.mono = torch.tensor([
             -0.82, 0.41, # Water
         ])
-
+        self._raw_atomic_params = {
+            "mono": self.mono,
+        }
         self.pair_params = {
             ("O_water", "H_water"): {
                 "k_b": torch.tensor([1059.162 / HARTREE2KCAL * BOHR2ANG * BOHR2ANG]),
@@ -47,6 +49,20 @@ class SPCfw(ForceField):
                 "k_theta": torch.tensor([75.90 / HARTREE2KCAL]),
             }
         }
+
+        with torch.no_grad():
+            self.atomic_params = {}
+            for type_key in self._types_to_index.keys():
+                these_atomic_params = {}
+                for param_key in self._raw_atomic_params.keys():
+                    these_atomic_params[param_key] = self._raw_atomic_params[param_key][self._types_to_index[type_key]]
+                    self.atomic_params[type_key] = these_atomic_params
+            
+            # Symmetrize the parameter dictionaries for convenience when making parameter arrays #
+            for key in list(self.pair_params.keys()):
+                self.pair_params[(key[1], key[0])] = self.pair_params[key]
+            for key in list(self.angle_params.keys()):
+                self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
 
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
@@ -103,14 +119,14 @@ class SPCfw(ForceField):
         # The reciprocal space calculation uses an erf(alpha*r) damping so the above is -erf(alpha*r)
 
         mono_lr = mono
+        # HERE: Implement the long_range_potential_rank_0 kernel and finish writing everything else as well.
 
-        if self.use_ewald:
-            # Get reciprocal space and self contributions to field variables
-            # and corresponding electrostatic interactions.
-            ewald_potential, ewald_field, ewald_field_gradient = long_range_potential_rank_0(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
-            ene_ewald = 0.5 * (
-                torch.einsum("n,n->", mono_lr, ewald_potential)
-            )
+        # Get reciprocal space and self contributions to field variables
+        # and corresponding electrostatic interactions.
+        ewald_potential, ewald_field, ewald_field_gradient = long_range_potential_rank_0(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
+        ene_ewald = 0.5 * (
+            torch.einsum("n,n->", mono_lr, ewald_potential)
+        )
         
         # Real Space Electrostatic Interactions #
         # TOOD: Just hard-code the implementation here. Need to get erfc damped interactions for the actual pairs
