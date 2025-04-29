@@ -28,7 +28,7 @@ class CMM(ForceField):
                  cutoff_short_range: torch.Tensor=torch.tensor(5.0 / BOHR2ANG, dtype=torch.float64),
                  cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG, dtype=torch.float64),
                  ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64),
-                 use_ewald: bool=False, use_lr_dispersion: bool=False, use_polarization: bool=True,
+                 use_ewald: bool=True, use_lr_dispersion: bool=True, use_polarization: bool=True,
                  max_iterations=400, solve_tolerance: torch.Tensor=torch.tensor(1e-7, dtype=torch.float64),
                  cutoff_local_iterations: torch.Tensor=torch.tensor(4.0 / BOHR2ANG, dtype=torch.float64)) -> None:
         super().__init__()
