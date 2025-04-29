@@ -552,12 +552,17 @@ class CMM(ForceField):
         
             self.parameters_have_changed = True
 
-    def get_dipole_moment(self, coords: torch.Tensor, include_induced_moments: bool = True):
+    def get_dipole_moment(self, coords: torch.Tensor, box: torch.Tensor, include_induced_moments: bool = True):
+        # TODO: This is broken right now. Need to account for PBCs correctly and make sure that each atom
+        # is correctly wrapped into the box or something. If I don't wrap the coordinates, the non-PBC
+        # dipole moment is right.
         natoms = self.last_permanent_multipoles.size(0)
-        dipole_moment = torch.matmul(coords.T, self.last_permanent_multipoles[:, 0])
+        boxsize = box.diag() # assume orthorhombic cell
+        wrapped_coords = coords - torch.floor(coords / boxsize) * boxsize
+        dipole_moment = torch.matmul(wrapped_coords.T, self.last_permanent_multipoles[:, 0])
         dipole_moment = dipole_moment + torch.sum(self.last_permanent_multipoles[:, 1:4], dim=0)
         if self.last_induced_multipoles is not None and include_induced_moments:
-            dipole_moment = dipole_moment + torch.matmul(coords.T, self.last_induced_multipoles[0:natoms])
+            dipole_moment = dipole_moment + torch.matmul(wrapped_coords.T, self.last_induced_multipoles[0:natoms])
             dipole_moment = dipole_moment + torch.sum(self.last_induced_multipoles[natoms:4*natoms].view(-1, 3), dim=0)
         
         return dipole_moment
@@ -568,7 +573,7 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff
 
-        if True: #self.parameters_have_changed:
+        if self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
             # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
             # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.

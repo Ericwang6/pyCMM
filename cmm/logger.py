@@ -169,8 +169,8 @@ class Logger:
         
         elif prop == "pressure" and self.ase_calculator is not None:
             if hasattr(self.ase_calculator, 'results') and 'stress' in self.ase_calculator.results:
-                stress = self.ase_calculator.results['stress'] + self.ase_calculator.atoms.get_kinetic_stress(voigt=False)
-                pressure = -(stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3  # Negative trace of stress tensor
+                stress = self.ase_calculator.atoms.get_stress(voigt=True, include_ideal_gas=True)
+                pressure = -(stress[0] + stress[1] + stress[2]) / 3  # Negative trace of stress tensor
                 return (pressure / (bar * 1.01325))
             return None
         

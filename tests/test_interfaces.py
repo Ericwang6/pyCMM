@@ -5,6 +5,7 @@ import numpy as np
 from ase.filters import FrechetCellFilter
 from ase.optimize import LBFGS
 from ase.md import VelocityVerlet
+from ase.md.nptberendsen import NPTBerendsen
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 from ase.units import fs
 
@@ -179,3 +180,45 @@ def test_optimize_water_box_and_cell_via_ase():
     opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')
     opt.run(fmax=1e-2)
     ff_ase.save_state("water216_cell_opt.json")
+
+#def test_ideal_gas():
+#    torch.set_default_dtype(torch.float64)
+#
+#    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+#    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device)
+#    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
+#    bonds[0] = bonds[0][permutation]
+#    bonds[1] = bonds[1][permutation]
+#    
+#    # Normally, the parser should enforce just returning the names of atom types
+#    atom_indices_to_names = {0: "O_water", 1: "H_water"}
+#    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+#    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
+#    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+#    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+#    ff = CMM(use_ewald=True, solve_tolerance=1e-10, ewald_tolerance=1e-10)
+#    with torch.no_grad():
+#        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+#        parameters = Parameterizer(
+#            atom_type_names, pairs, topology.angle_atoms,
+#            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+#        )
+#
+#    ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
+#
+#    temperature = 1000.0  # K
+#    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
+#
+#    dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
+#               taut=100 * fs, pressure_au=1013.25 * bar,#1.01325 * bar,
+#               taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+#    def log_step(atoms=ff_ase.atoms):
+#        energy = atoms.get_potential_energy()
+#        kinetic = atoms.get_kinetic_energy()
+#        temperature = atoms.get_temperature()
+#        stress_total = atoms.get_stress(voigt=True, include_ideal_gas=True)
+#        pressure = (-(stress_total[0] + stress_total[1] + stress_total[2]) / 3) / (bar * 1.01325)
+#        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Virial Press.: {pressure:.2f} atm, Volume. {atoms.get_volume():.2f}")
+#
+#    dyn.attach(lambda : log_step(ff_ase.atoms), interval=1000)  # Log at every step
+#    dyn.run(1000000)

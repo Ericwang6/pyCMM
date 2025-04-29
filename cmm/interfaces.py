@@ -287,12 +287,14 @@ class CMM_ASE(Calculator):
 
     def get_stress(self, voigt=False, include_ideal_gas=True):
         """Get stress for current atomic configuration"""
+        # Note: The ideal gas part is added internally by ASE.
+        # By turning off all interaction terms, I have validated that
+        # we reproduce the volume predicted by the ideal gas law for
+        # particular choices of N,P, and T.
         self.calculate(self.atoms, properties=['stress'])
         stress = self.results['stress']
         if voigt:
             stress = full_3x3_to_voigt_6_stress(stress)
-        if include_ideal_gas:
-            return stress + self.atoms.get_kinetic_stress(voigt=voigt)
         return stress
     
     def get_dipole_moment(self, include_induced_moments: bool = True):

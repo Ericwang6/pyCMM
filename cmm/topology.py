@@ -167,7 +167,6 @@ class Topology:
         else:
             self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind()), device=self.device, requires_grad=False)
         
-
         # NOTE(JOE): The below code should still work for scattering between groups and atoms
         # even when the groups are overlapping. The code above this comment is not general.
         # The point is, only the code for finding the groups needs to be changed. The below

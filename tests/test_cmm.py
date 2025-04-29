@@ -322,6 +322,7 @@ def test_total_energy_and_total_gradients():
 
 def test_dipole_moment():
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
@@ -338,31 +339,26 @@ def test_dipole_moment():
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters)
-    dipole_moment = ff.get_dipole_moment(cm.coords)
+    dipole_moment = ff.get_dipole_moment(cm.coords, box)
     assert torch.allclose(dipole_moment, torch.tensor([ -0.0198134931, -1.05513346, 0.00294907]))
 
-def test_dipole_moment_water_box():
-    torch.set_default_dtype(torch.float64)
-
-    system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True)
-    
-    # Normally, the parser should enforce just returning the names of atom types
+    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
-
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, device=device)
+    
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM(use_ewald=True, use_lr_dispersion=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
     energies_ff = ff.evaluate(cm, topology, parameters)
-    dipole_moment = ff.get_dipole_moment(cm.coords)
+    dipole_moment = ff.get_dipole_moment(cm.coords, box)
+    print(dipole_moment)
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)
