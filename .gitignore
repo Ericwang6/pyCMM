@@ -4,7 +4,7 @@
 *.xyz
 checkpoint*.json
 tests/scratch/*
-water216_cell_opt.json
+water216_cell_*.json
 
 # Notebooks
 notebooks/
