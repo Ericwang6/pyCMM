@@ -330,6 +330,7 @@ def test_md():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.set_default_device(device)
     coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True, device=device)
     
     # Normally, the parser should enforce just returning the names of atom types
@@ -354,7 +355,7 @@ def test_md():
         output_folder=ff_ase.output_folder,
         log_file="water216_npt_270K.log",
         properties=[
-            "step", "temperature", "energy_total",
+            "step", "temperature", "V_total",
             "kinetic_energy", "volume", "density", "pressure",
             "dipole_magnitude"
         ]
@@ -377,10 +378,11 @@ def test_md():
     )
 
     temperature = 300.0
-    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
+    seed = 42
+    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True, rng=np.random.RandomState(seed))
     Stationary(ff_ase.atoms)
 
-    traj = Trajectory('water216_npt_270K.traj', 'a', ff_ase.atoms)
+    traj = Trajectory('water216_temp.traj', 'a', ff_ase.atoms)
 
     #dyn = NPT(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, externalstress=1.01325 * bar)
     #dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
@@ -404,7 +406,7 @@ def test_md():
         print(f"Step: {dyn.nsteps}, E_tot: {energy+kinetic:.6f}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Press.: {pressure:.2f} atm")
 
     dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
-    dyn.run(100)
+    dyn.run(50)
 
 def test_long_range_dispersion_correction():
     torch.set_default_dtype(torch.float64)

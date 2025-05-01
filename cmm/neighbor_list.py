@@ -62,7 +62,7 @@ class NSquaredList(NeighborList):
         pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
         pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
         # Calculate direct differences and apply minimum image convention
-        distance_vecs = pos_i - pos_j  # Shape: N x N x 3
+        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
         distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
         # Calculate distances
         distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
@@ -166,7 +166,7 @@ class VerletList(NeighborList):
         pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
         pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
         # Calculate direct differences and apply minimum image convention
-        distance_vecs = pos_i - pos_j  # Shape: N x N x 3
+        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
         distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
         # Calculate distances
         distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
