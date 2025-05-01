@@ -1064,7 +1064,18 @@ class CMM(ForceField):
                 torch.tensor(cm.coords.size(0)), cm.box_volume
             )
 
-        ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs
+        ene_tot = (
+            ene_perm_elec
+            + ene_pol
+            + ene_xpol
+            + ene_pauli
+            + ene_disp
+            + ene_ct_direct
+            + ene_bonds
+            + ene_angles
+            + ene_bas
+            + ene_bbs
+        )
         energies = {
             "perm_elec": ene_perm_elec,
             "pol": ene_pol,

@@ -18,10 +18,6 @@ def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos
     0 - Identity
     1 - Z-Then-X
     2 - Bisector
-
-    TODO: Need to explicitly deal with the axis types for ions (Identity). Currently, we
-    assume the two possible types are really Z-Then-X and Bisector. Basically, torch select
-    on the axis type.
     """
     # ZThenX
     if (box is not None) and (boxInv is not None):

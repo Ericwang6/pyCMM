@@ -65,7 +65,7 @@ class NSquaredList(NeighborList):
         distance_vecs = pos_i - pos_j  # Shape: N x N x 3
         distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
         # Calculate distances
-        distances = torch.sqrt(torch.sum(distance_vecs * distance_vecs, dim=-1))
+        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
         
         pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero()
         neighbors = [pairs_inside_cutoff[pairs_inside_cutoff[:, 0] == i][:, 1] for i in range(self.natoms)]
@@ -169,8 +169,7 @@ class VerletList(NeighborList):
         distance_vecs = pos_i - pos_j  # Shape: N x N x 3
         distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
         # Calculate distances
-        distances = torch.sqrt(torch.sum(distance_vecs * distance_vecs, dim=-1))
-        
+        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
         pairs_inside_verlet = torch.where((distances < self._cutoff_verlet) & (distances > 0.0), True, False).nonzero()
         neighbors = [pairs_inside_verlet[pairs_inside_verlet[:, 0] == i][:, 1] for i in range(self.natoms)]
         self._neighbor_list_verlet = torch.nested.nested_tensor(neighbors)

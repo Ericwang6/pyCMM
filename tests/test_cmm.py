@@ -146,7 +146,7 @@ def test_total_energy_and_total_gradients_ion_ion():
     torch.set_default_dtype(torch.float64)
 
     coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=False)
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
     atom_indices_to_names = {
         0: "O_water", 1: "H_water",
         2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
@@ -156,7 +156,7 @@ def test_total_energy_and_total_gradients_ion_ion():
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
     ff = CMM()

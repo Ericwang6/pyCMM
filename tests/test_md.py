@@ -71,6 +71,87 @@ def calculate_virial_finite_difference(atoms, epsilon=0.001):
     
     return virial
 
+def test_pbc():
+    torch.set_default_dtype(torch.float64)
+
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/na_cl.xyz"), requires_grad=True)
+    atom_indices_to_names = {
+        0: "O_water", 1: "H_water",
+        2: "F-", 3: "Cl-", 4: "Br-", 5: "I-",
+        6: "Li+", 7: "Na+", 8: "K+", 9: "Rb+", 10: "Cs+",
+        11: "Mg2+", 12: "Ca2+"
+    }
+    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
+    box = torch.tensor(np.eye(3) * 20, requires_grad=False)
+    
+    cm = CoordinateManager(coords, box, 10.0, labels)
+    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    pairs, _, _ = cm.get_distances_vectors_and_pairs()
+    ff = CMM()
+    parameters = Parameterizer(
+        atom_type_names, pairs, topology.angle_atoms,
+        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
+    )
+    ff_ase = CMM_ASE(ff, cm, topology, parameters)
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+    ff_ase.atoms.set_positions(ff_ase.atoms.get_positions() + np.array([[0.0, 0.0, 0.0],[BOHR2ANG, 0.0, 0.0]]))
+    ff_ase.calculate()
+
 def test_virial_tensor():
     torch.set_default_dtype(torch.float64)
 
@@ -102,6 +183,7 @@ def test_virial_tensor():
     # another degree of freedom in the simulation.
     virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
     stress = virial / box_volume
+    print(stress)
 
     coords, atom_types, bonds, _ = read_from_tinker_xyz(system_file, requires_grad=False, device=device)
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
@@ -116,11 +198,9 @@ def test_virial_tensor():
     )
 
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
-
     virial_fd = torch.from_numpy(calculate_virial_finite_difference(ff_ase.atoms, epsilon=1e-6) / HARTREE2EV).to(device)
     stress_fd = virial_fd / box_volume
 
-    print(stress)
     print(stress_fd)
 
     assert torch.allclose(stress_fd, stress)
@@ -289,10 +369,10 @@ def test_md():
         log_file="water216_npt_270K_energies.log",
         properties=[
             "step", "kinetic_energy",
-            "energy_total", "energy_perm_elec", "energy_pol", "energy_ct_direct",
-            "energy_xpol", "energy_pauli", "energy_disp", "energy_deformation",
-            "energy_bond", "energy_angle", "energy_bond_bond", "energy_bond_angle",
-            "energy_ewald",
+            "V_total", "V_perm_elec", "V_pol", "V_ct_direct",
+            "V_xpol", "V_pauli", "V_disp", "V_deformation",
+            "V_bond", "V_angle", "V_bond_bond", "V_bond_angle",
+            "V_ewald",
         ]
     )
 
@@ -303,25 +383,25 @@ def test_md():
     traj = Trajectory('water216_npt_270K.traj', 'a', ff_ase.atoms)
 
     #dyn = NPT(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, externalstress=1.01325 * bar)
-    dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
-                   taut=100 * fs, pressure_au=1.01325 * bar,
-                   taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+    #dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
+    #               taut=100 * fs, pressure_au=1.01325 * bar,
+    #               taup=1000 * fs, compressibility_au=4.57e-5 / bar)
     #dyn = NVTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, taut=0.5*1000*fs)
-    #dyn = VelocityVerlet(ff_ase.atoms, 1.0 * fs)
+    dyn = VelocityVerlet(ff_ase.atoms, 1.0 * fs)
     #dyn = Langevin(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature, friction=0.01 / fs)
-    dyn.attach(traj.write, interval=1)
-    logger.attach_to_ase_dynamics(dyn)
-    energy_logger.attach_to_ase_dynamics(dyn)
+    #dyn.attach(traj.write, interval=1)
+    #logger.attach_to_ase_dynamics(dyn)
+    #energy_logger.attach_to_ase_dynamics(dyn)
 
     def log_step(atoms=ff_ase.atoms):
         energy = atoms.get_potential_energy()
         kinetic = atoms.get_kinetic_energy()
         temperature = atoms.get_temperature()
-        print(atoms.get_kinetic_stress())
+        #print(atoms.get_kinetic_stress())
         stress = atoms.get_stress(voigt=True, include_ideal_gas=True)
         pressure = (-(stress[0] + stress[1] + stress[2]) / 3) / (bar * 1.01325)
         kinetic_pressure = 2 * kinetic / (3 * atoms.get_volume()) / (bar * 1.01325)
-        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Virial Press.: {pressure:.2f} atm, Kinetic Press. {kinetic_pressure:.2f}")
+        print(f"Step: {dyn.nsteps}, E_tot: {energy+kinetic:.6f}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Press.: {pressure:.2f} atm")
 
     dyn.attach(lambda : log_step(ff_ase.atoms), interval=1)  # Log at every step
     dyn.run(100)

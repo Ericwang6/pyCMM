@@ -239,7 +239,8 @@ class CMM_ASE(Calculator):
     
     def _evaluate_ff(self):
         self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
-        self._energies['total'].backward()
+        if self._cm._need_coordinate_grads:
+            self._energies['total'].backward()
 
         # Store results so that ASE can access them #
         self.results['energy'] = float(self._energies['total'].cpu()) * Hartree
