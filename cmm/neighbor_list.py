@@ -1,21 +1,9 @@
 import torch
 from abc import ABC, abstractmethod
+from typing import Optional
+from .pbc import applyPBC
 
-"""
-This file defines the interface and concrete types of NeighborList.
-Any NeighborList should define three methods.
-    _build: Build the neighbor list from scratch given positions and a box.
-    update: Update the neighbor list without a full rebuild if possible. Otherwise call _build.
-    get_neighbors: Return a torch.Tensor of integers specifying all neighbors with the cutoff
-    for a particular atom index.
-
-Features that are not currently supported but should be in the future:
-1) Non-orthorhombic boxes
-2) Half neighbor lists. That is, ones where only unique pairs are stored (i<j).
-3) Filtering of neighbors using a masked list. Usually this will mean filtering
-out neighbors within a certain a number of bonds which will be much easier to
-implement once the topology object is sorted out.
-"""
+__all__ = ['NeighborList', 'NSquaredList', 'VerletList']
 
 class NeighborList(ABC):
 
@@ -31,266 +19,198 @@ class NeighborList(ABC):
     def get_neighbors(self, atom_idx: int):
         pass
 
+    @abstractmethod
+    def get_n_neighbors(self):
+        pass
+
+    @abstractmethod
+    def get_pairs(self):
+        pass
+
 class NSquaredList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float):
+    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor):
         """
         Initialize NSquaredList structure which computes all pairwise distances,
-        respecting PBCs. This gives the exact neighbor list without any cutoff.
+        respecting PBCs. This gives the exact neighbor list within a cutoff.
         It should only be used for very small systems and for testing that other
         neighbor lists are being constructed correctly.
 
         Args:
             positions (torch.Tensor): (N, 3) array of atomic positions
-            box_lengths (torch.Tensor): (3,) array of periodic box lengths
+            box (torch.Tensor): (3, 3) tensor representing unit cell
+            cutoff (torch.Tensor): (1,) cutoff distance
         """
-        self.cutoff = cutoff
-        self.box_lengths = box_lengths
+        self.device = positions.device
         self.natoms = positions.shape[0]
-        self.neighbor_list = torch.full((self.natoms, self.natoms), -1, dtype=torch.long, device=positions.device)
-        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=positions.device)
+        
+        self.cutoff = cutoff
+        self.neighbor_list = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
+        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
+        self.pairs = None
+        
+        self._build(positions, box)
 
-        self._build(positions)
-
-    def _build(self, positions: torch.Tensor):
+    def _build(self, positions: torch.Tensor, box: torch.Tensor):
         """
         Calculate the distance matrix between atoms with periodic boundary conditions
-        for an orthorhombic cell, following the minimum image convention.
-
-        Args:
-            positions (torch.Tensor): Nx3 tensor of atomic positions
-
-        Returns:
-            torch.Tensor: NxN tensor of minimum image distances
+        for a general cell, following the minimum image convention.
         """
         # Reset neighbor counts
         self.n_neighbors.zero_()
-        self.neighbor_list.fill_(-1)
 
         # Reshape positions for broadcasting
         pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
         pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
-
-        # Calculate direct differences
-        diff = pos_i - pos_j  # Shape: N x N x 3
-
-        # Apply minimum image convention
-        # First wrap differences into range [-L/2, L/2]
-        diff = diff - torch.round(diff / self.box_lengths) * self.box_lengths
-
+        # Calculate direct differences and apply minimum image convention
+        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
         # Calculate distances
-        distances = torch.sqrt(torch.sum(diff * diff, dim=-1))
-        indices = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero()
+        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
+        
+        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero()
+        neighbors = [pairs_inside_cutoff[pairs_inside_cutoff[:, 0] == i][:, 1] for i in range(self.natoms)]
+        self.neighbor_list = torch.nested.nested_tensor(neighbors)
+
         for i in range(self.natoms):
-            neighbors_i = indices[indices[:, 0] == i][:, 1]
-            self.n_neighbors[i] = neighbors_i.size(0)
-            self.neighbor_list[i, :][:self.n_neighbors[i]] = neighbors_i
+            self.n_neighbors[i] = self.neighbor_list.unbind()[i].size(0)
     
-    def update(self, positions: torch.Tensor):
-        self._build(positions)
+        all_pairs_0 = []
+        all_pairs_1 = []
+        for i in range(self.natoms):
+            all_pairs_0.append(torch.full((self.n_neighbors[i],), i, device=self.device),)
+            all_pairs_1.append(self.neighbor_list[i])
+        self.pairs = torch.stack((torch.cat(all_pairs_0), torch.cat(all_pairs_1)), dim=1)
+
+    def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
+        if cutoff:
+            self.cutoff = cutoff
+        self._build(positions, box)
 
     def get_neighbors(self, atom_idx: int):
-        return self.neighbor_list[atom_idx, :self.n_neighbors[atom_idx]]
+        return self.neighbor_list[atom_idx]
+    
+    def get_n_neighbors(self):
+        return self.n_neighbors
 
+    def get_pairs(self):
+        return self.pairs
 
-class CellList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box_lengths: torch.Tensor, cutoff: float, max_neighbors: int=2048):
+class VerletList(NeighborList):
+    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, padding: torch.Tensor):
         """
-        Initialize cell list structure.
-        
+        Initialize NSquaredList structure which computes all pairwise distances,
+        respecting PBCs. This gives the exact neighbor list within a cutoff.
+        It should only be used for very small systems and for testing that other
+        neighbor lists are being constructed correctly.
+
         Args:
             positions (torch.Tensor): (N, 3) array of atomic positions
-            box_lengths (torch.Tensor): (3,) array of periodic box lengths
-            cutoff (float): Interaction cutoff distance
-            max_neighbors (int): Maximum number of neighbors per atom
+            box (torch.Tensor): (3, 3) tensor representing unit cell
+            cutoff (torch.Tensor): (1,) cutoff distance
+            padding (torch.Tensor): (1,) padding added to cutoff to prevent rebuilds
         """
-        self.minimum_vector, _ = torch.min(positions, dim=0)
+        self.device = positions.device
+        self.natoms = positions.shape[0]
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
+        self._cutoff_verlet = cutoff + padding
+        self._padding = padding
+        self._neighbor_list_verlet = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
+        self._n_neighbors_verlet = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
+        self._pairs_verlet = None
+        
         self.cutoff = cutoff
-        self.box_lengths = box_lengths
-        self.max_neighbors = max_neighbors
-        self.num_updates_since_last_build = 0
-        self.last_positions = positions.detach().clone()
-        
-        # Compute cell grid dimensions
-        if cutoff > min(box_lengths):
-            assert False, "You requested a cutoff that is larger than the smallest box direction. We can't handle this currently. Set the cutoff to the smallest box direction or smaller."
-        
-        # Find number of cells in each direction then compute all valid cells.
-        self.n_cells = torch.floor(box_lengths / cutoff).long()
-        self.cell_size = box_lengths / self.n_cells
-        
-        # Initialize cell assignments
-        self.n_atoms = positions.shape[0]
-        
-        # Initialize neighbor list storage
-        self.neighbor_list = torch.full((self.n_atoms, max_neighbors), -1, 
-                                      dtype=torch.long, device=positions.device)
-        self.n_neighbors = torch.zeros(self.n_atoms, dtype=torch.long, 
-                                     device=positions.device)
-        
-        # Build cell structure
-        self._build(positions)
+        self.neighbor_list = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
+        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
+        self.pairs = None
+
+        self._build(positions, box)
     
-    def _build(self, positions: torch.Tensor):
-        """
-        Build cell list structure from scratch.
+    def _needs_update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None):
+        # If the cutoff changes, always rebuild
+        if cutoff is not None and torch.isclose(cutoff, self.cutoff) == False:
+            # Update cutoff for NSquaredList
+            self._cutoff_verlet = cutoff + self._padding
+            self.cutoff = cutoff
+            return True
         
-        Args:
-            positions (torch.Tensor): (N, 3) array of atomic positions
-        """
-        # Convert positions to cell indices
-        self._positions_to_cell_indices(positions - self.minimum_vector)
-        
-        # Update the fixed-size neighbor lists
-        self._update_neighbor_lists(positions)
+        max_displacement =  torch.max(torch.abs(positions - self._reference_positions))
+        max_displacement += torch.max(torch.abs(torch.linalg.qr(box - self._reference_box).R)) # Compute maximum change in eigenvalue
+        # NOTE(JOE): ^^^ Strcitly speaking, I think this contribution depends on the type of box.
+        # I think that for a cubic box, the box sides need to be moved by sqrt(2)/2 = 0.707...
+        # in order to guarantee a rebuild. If only one side were shrinking, then the images
+        # move half the distance that the side length shrinks
+        # (since both sides move toward the center of the box). In that case the rebuild occurs at
+        # the verlet cutoff (not half of it). The images in a diagonally connected cell move towards
+        # the center of the box faster than that.
+        # To be conservative, I just sum these contributions and use half the padding since that
+        # is what applies to changes in atomic positions.
+        # The point of this comment is to say that we can be more efficient about when the NL
+        # needs to be updated with respect to changes in the cell if we want to specialize
+        # the rules for the type of box we are using.
+        return max_displacement > 0.5 * self._padding
     
-    def _update_neighbor_lists(self, positions: torch.Tensor):
+    def _build(self, positions: torch.Tensor, box: torch.Tensor):
         """
-        Update the fixed-size neighbor lists for all atoms.
-        
-        Args:
-            positions (torch.Tensor): (N, 3) array of atomic positions
+        Calculate the distance matrix between atoms with periodic boundary conditions
+        for a general cell, following the minimum image convention.
         """
         # Reset neighbor counts
         self.n_neighbors.zero_()
-        self.neighbor_list.fill_(-1)
-        
-        # Update neighbors for each atom
-        for i in range(self.n_atoms):
-            # Get potential neighbors
-            neighbors = self._get_cell_neighbors(i)
-            if len(neighbors) == 0:
-                continue
-                
-            # Calculate distances to all potential neighbors
-            pos_i = positions[i]
-            pos_j = positions[neighbors]
-            
-            # Apply minimum image convention
-            dr = pos_j - pos_i
-            dr = dr - torch.round(dr / self.box_lengths) * self.box_lengths
-            dist2 = torch.sum(dr * dr, dim=1)
-            
-            # Select neighbors within cutoff ignoring atoms on top of this atom (likely the atom itself).
-            mask = (dist2 < self.cutoff * self.cutoff) & (dist2 > 0)
-            valid_neighbors = neighbors[mask]
-            
-            # Store up to max_neighbors closest neighbors
-            n_valid = min(len(valid_neighbors), self.max_neighbors)
-            if n_valid > 0:
-                self.n_neighbors[i] = n_valid
-                self.neighbor_list[i, :n_valid] = valid_neighbors[:n_valid]
-    
-    def _get_cell_neighbors(self, atom_idx: int):
-        """
-        Get potential neighbors from neighboring cells for a given atom.
-        
-        Args:
-            atom_idx (int): Index of atom to get neighbors for
-            
-        Returns:
-            torch.Tensor: Array of neighbor indices
-        """
-        cell_i = self.cell_indices[atom_idx]
-        
-        cell_x = cell_i[0]
-        cell_y = cell_i[1]
-        cell_z = cell_i[2]
 
-        # Get neighboring cells (including periodic images)
-        # @SPEED: Can vectorize this in some way probably.
-        # This also uses the CPU since we accumulate into the
-        # neighbor cells below. Vectorizing would allow this to
-        # all occur on the GPU.
-        neighbor_cells = []
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                for dz in [-1, 0, 1]:
-                    # Apply periodic boundary conditions to cell indices
-                    nx = (cell_x + dx) % self.n_cells[0]
-                    ny = (cell_y + dy) % self.n_cells[1]
-                    nz = (cell_z + dz) % self.n_cells[2]
-                    test_cell = torch.Tensor([nx, ny, nz]).expand(self.cell_indices.size(0), 3)
+        # Store new reference positions and box
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
 
-                    neighbor_indices = torch.nonzero(torch.all(torch.eq(test_cell, self.cell_indices), 1)).flatten()
-                    if neighbor_indices.numel() != 0:
-                        neighbor_cells.append(neighbor_indices)
-        
-        # Combine all neighbors and remove the atom itself
-        if neighbor_cells:
-            neighbors = torch.cat(neighbor_cells).unique()
-            neighbors = neighbors[neighbors != atom_idx]
-            return neighbors
-        
-        return torch.tensor([], dtype=torch.long)
-    
-    def _positions_to_cell_indices(self, positions: torch.Tensor) -> None:
-        """
-        Figure out which cells each atom belongs to and store the result.
-        We then store the atom indices which are in each cell.
-        Note that the positions
-        are shifted so that all atoms lie at positive positions which simplifies
-        this calculation. Stores the result in self.cell_indices
-        """
-        scaled_coords = (positions / self.cell_size).long()
-        self.cell_indices = scaled_coords % self.n_cells
-    
-    def _needs_rebuild(self, positions: torch.Tensor):
-        # Find max displacement along a particular axis and see if it exceeds
-        # half the smallest cell size. If so, we have to rebuild. We could
-        # technically do this matching the cell directions and rebuild less often.
-        max_displacement = torch.max(torch.abs(positions - self.last_positions))
-        return max_displacement > 0.5 * torch.min(self.cell_size)
+        # Reshape positions for broadcasting
+        pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
+        pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
+        # Calculate direct differences and apply minimum image convention
+        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+        # Calculate distances
+        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
+        pairs_inside_verlet = torch.where((distances < self._cutoff_verlet) & (distances > 0.0), True, False).nonzero()
+        neighbors = [pairs_inside_verlet[pairs_inside_verlet[:, 0] == i][:, 1] for i in range(self.natoms)]
+        self._neighbor_list_verlet = torch.nested.nested_tensor(neighbors)
 
-    def update(self, positions: torch.Tensor) -> None:
-        """
-        Update cell list with new positions if needed.
-        Increments a counter that keeps track of how many updates
-        succeeded without requiring a rebuild. Rebuilds are only
-        needed when an atom moves more than half the cell length.
-        
-        Args:
-            positions (torch.Tensor): (N, 3) array of new positions
-        """
-        # Check if a rebuild of the cells is needed
-        if self._needs_rebuild(positions):
-            self._build(positions)
-            self.last_positions = positions.detach().clone()
-            self.num_updates_since_last_build = 0
-            return
-        
-        # Update cell assignments
-        self._positions_to_cell_indices(positions)
-        
-        # Update neighbor lists with new positions
-        self._update_neighbor_lists(positions)
-        
-        self.last_positions = positions.detach().clone()
-        self.num_updates_since_last_build += 1
-        return
-    
+        for i in range(self.natoms):
+            self._n_neighbors_verlet[i] = self._neighbor_list_verlet.unbind()[i].size(0)
+
+        all_pairs_0 = []
+        all_pairs_1 = []
+        for i in range(self.natoms):
+            all_pairs_0.append(torch.full((self._n_neighbors_verlet[i],), i, device=self.device),)
+            all_pairs_1.append(self._neighbor_list_verlet[i])
+        self._verlet_pairs = torch.stack((torch.cat(all_pairs_0), torch.cat(all_pairs_1)), dim=1)
+
+        self._update_from_verlet_pairs(positions, box)
+
+    def _update_from_verlet_pairs(self, positions: torch.Tensor, box: torch.Tensor):
+        # If we are here, it means that we have all of the needed pairs in the list of pairs
+        # inside the verlet cutoff. We just need to pull the appropriate pairs from there.
+        distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+        distances = torch.linalg.vector_norm(distance_vecs, dim=1)
+        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
+        self.pairs = self._verlet_pairs[pairs_inside_cutoff]
+        neighbors = [self.pairs[self.pairs[:, 0] == i][:, 1] for i in range(self.natoms)]
+        self.neighbor_list = torch.nested.nested_tensor(neighbors)
+
+        for i in range(self.natoms):
+            self.n_neighbors[i] = self.neighbor_list.unbind()[i].size(0)
+
+    def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
+        if self._needs_update(positions, box, cutoff):
+            self._build(positions, box)
+        else:
+            self._update_from_verlet_pairs(positions, box)
+
     def get_neighbors(self, atom_idx: int):
-        """
-        Get neighbors for a given atom from the pre-computed neighbor list.
-        
-        Args:
-            atom_idx (int): Index of atom to get neighbors for
-            
-        Returns:
-            torch.Tensor: Array of neighbor indices (padded with -1)
-        """
-        return self.neighbor_list[atom_idx, :self.n_neighbors[atom_idx]]
-
-if __name__ == "__main__":
-    grid = torch.linspace(-10.0, 10.0, 10)
-    positions = torch.cartesian_prod(grid, grid, grid)
-    box_lengths = torch.tensor([20.1, 20.1, 20.1])
-    cutoff = 6.0
+        return self.neighbor_list[atom_idx]
     
-    # Create cell list
-    cell_list = CellList(positions, box_lengths, cutoff)
+    def get_n_neighbors(self):
+        return self.n_neighbors
 
-    # Create NSquareList
-    nsq_list = NSquaredList(positions, box_lengths, cutoff)
-    print(cell_list.n_neighbors)
-    print(cell_list.get_neighbors(0, True))
-    
+    def get_pairs(self):
+        return self.pairs

@@ -7,9 +7,18 @@ from pprint import pprint
 import torch
 import openmm as mm
 import openmm.app as app
+from openmm.app import *
+from openmm import *
+from openmm.unit import nanometer, picosecond, picoseconds, kelvin
+import numpy as np
 
-from cmm.units import BOHR2NM, HARTREE2KJ
-from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, computePairwisePermElecEnergyNoDamp
+from cmm.units import BOHR2NM, HARTREE2KJ, BOHR2ANG
+from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, computePairwisePermElecEnergyNoDamp, computeSphericalQuadrupoles, computeCartesianQuadrupoles
+from cmm.misc_utils import read_from_tinker_xyz
+from cmm.coordinate_manager import CoordinateManager
+from cmm.topology import Topology
+from cmm.parameters import Parameterizer
+from cmm.force_field import CMM
 
 
 def forcegroupify(system):
@@ -30,7 +39,7 @@ def getEnergyDecomposition(system, context):
 
 
 def test_mpoles():
-    water_dimer_pdb = os.path.join(os.path.dirname(__file__), 'water_dimer.pdb')
+    water_dimer_pdb = os.path.join(os.path.dirname(__file__), 'data/water_dimer_2.pdb')
     ff = app.ForceField('amoeba2018.xml')
     pdb = app.PDBFile(water_dimer_pdb)
     system = ff.createSystem(pdb.topology)
@@ -83,3 +92,13 @@ def test_mpoles():
     mPoles_i, mPoles_j = mpoles[water_dimer_pairs[0]], mpoles[water_dimer_pairs[1]]
     ene = torch.sum(computePairwisePermElecEnergyNoDamp(drVec, mPoles_i, mPoles_j)) / 2 * HARTREE2KJ
     assert torch.allclose(ene, ene_ref)
+
+def test_example():
+    input_pdb = os.path.join(os.path.dirname(__file__), 'data/input.pdb')
+    pdb = PDBFile(input_pdb)
+    forcefield = ForceField('amber14-all.xml', 'amber14/tip3pfb.xml')
+    system = forcefield.createSystem(pdb.topology, nonbondedMethod=PME, nonbondedCutoff=1*nanometer, constraints=HBonds)
+    integrator = LangevinMiddleIntegrator(300*kelvin, 1/picosecond, 0.004*picoseconds)
+    simulation = Simulation(pdb.topology, system, integrator)
+    simulation.context.setPositions(pdb.positions)
+    simulation.minimizeEnergy()
