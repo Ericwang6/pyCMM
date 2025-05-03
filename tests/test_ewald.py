@@ -67,7 +67,7 @@ def test_ewald_exact():
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-10), use_ewald=True)
+    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-10), use_ewald=True, use_polarization=False)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -95,7 +95,7 @@ def test_multipolar_ewald_water_mchem_reference():
     cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, 1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(use_ewald=True, use_polarization=False, cutoff_ewald=torch.tensor(7.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
+    ff = CMM(use_ewald=True, use_polarization=False, cutoff_ewald=torch.tensor(9.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params

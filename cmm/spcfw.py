@@ -1,8 +1,7 @@
 import torch, math
-from torch_scatter import segment_csr
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
-from .ewald import long_range_potential, long_range_potential_rank_1
-from .dispersion import computeDispersionFromPairs, compute_long_range_dispersion_correction
+from .ewald import long_range_potential_rank_0
+from .dispersion import computeLennardJonesFromPairs, compute_long_range_lennard_jones_correction
 from .coordinate_manager import CoordinateManager
 from .parameters import Parameterizer
 from .topology import Topology
@@ -67,37 +66,31 @@ class SPCfw(ForceField):
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
-        
+
         # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
         pairs_excl = pairs[topology.all_intramolecular_pairs, :]
         pairs_excl_i_a = pairs_excl[:, 0]
         pairs_excl_j_a = pairs_excl[:, 1]
         dists_excl = dists[topology.all_intramolecular_pairs]
-        dist_vecs_excl = dist_vecs[topology.all_intramolecular_pairs]
 
         # Get pairs, dists, and vectors for real-space potential #
         pairs_lr = pairs[topology.all_intermolecular_pairs, :]
         pairs_lr_i_a = pairs_lr[:, 0]
         pairs_lr_j_a = pairs_lr[:, 1]
         dists_lr = dists[topology.all_intermolecular_pairs]
-        dist_vecs_lr = dist_vecs[topology.all_intermolecular_pairs]
 
-        if topology.angle_pairs.numel() > 0:
-            angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
-
-        # All pairs forming an angle #
-        pairs_angles_p = topology.angle_pairs.T.flatten()
+        angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
 
         # Electric Multipoles #
         mono = params.get_atomic_parameters('mono')
         natoms = torch.tensor(mono.size(0), device=pairs.device)
 
         # Lennard-Jones parameters
-        b_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'b_disp', topology.all_intermolecular_pairs, pairs_lr
+        eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+            'eps_lj', topology.all_intermolecular_pairs, pairs_lr
         )
-        C6_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'C6_disp', topology.all_intermolecular_pairs, pairs_lr
+        sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+            'sigma_lj', topology.all_intermolecular_pairs, pairs_lr
         )
 
         r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
@@ -113,78 +106,54 @@ class SPCfw(ForceField):
             if error_estimate < self.ewald_tolerance:
                 self.k_max = i
                 break
-        erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
+        erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
         erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
-        # ^^^ for removing excluded interactions that are implicitly included in long-range summation
-        # The reciprocal space calculation uses an erf(alpha*r) damping so the above is -erf(alpha*r)
-
-        mono_lr = mono
-        # HERE: Implement the long_range_potential_rank_0 kernel and finish writing everything else as well.
 
         # Get reciprocal space and self contributions to field variables
         # and corresponding electrostatic interactions.
-        ewald_potential, ewald_field, ewald_field_gradient = long_range_potential_rank_0(cm.coords, mono_lr, dipo_lr, quad_lr, cm.box, self.alpha_ewald, self.k_max)
-        ene_ewald = 0.5 * (
-            torch.einsum("n,n->", mono_lr, ewald_potential)
-        )
+        mono_lr = mono
+        #ewald_potential = long_range_potential_rank_0(cm.coords, mono_lr, cm.box, self.alpha_ewald, self.k_max)
+        #elec_point_excl_pairwise = erf_damps * mono[pairs_excl_i_a] * mono[pairs_excl_j_a] / dists_excl
+        #ene_ewald = 0.5 * (
+        #    torch.einsum("n,n->", mono_lr, ewald_potential) +
+        #    torch.sum(elec_point_excl_pairwise)
+        #)
+        ene_ewald = torch.tensor(0.0)
         
         # Real Space Electrostatic Interactions #
-        # TOOD: Just hard-code the implementation here. Need to get erfc damped interactions for the actual pairs
-        # and erf-damped with the exluded list.
-        elec_point_pairwise = torch.bmm(multipoles_real_j_p.unsqueeze(1), edata_point_pairwise).flatten()
-        #elec_point_excl_pairwise = ...
-
+        elec_point_pairwise = mono_lr[pairs_lr_i_a] * mono_lr[pairs_lr_j_a] / dists_lr
+        #elec_point_pairwise = mono_lr[pairs[:, 0]] * mono_lr[pairs[:, 1]] / dists
         ene_perm_elec = 0.5 * (
             torch.sum(elec_point_pairwise)
         )
-        ene_perm_elec = ene_perm_elec + 0.5 * torch.sum(elec_point_excl_pairwise)
 
-        # NOTE(JOE): There is a problem with the gradients here when induced
-        # fields are included. Basically, the partial derivatives of the induced
-        # multipoles with respect to the cartesian coordinates are needed for the
-        # FD morse derivatives. Unfortunately, if gradient tracking is on when the
-        # polarization equations are solved, then things become very slow and
-        # use a lot of memory (but the gradients are right!). If we have gradient
-        # tracking off then everything is much more efficient but the FD morse
-        # gradients are wrong. So, we need to compute the field gradients
-        # due to the induced multipoles and properly incorporate them into the
-        # pytorch computational graph. This is possible, but I am going to
-        # figure that out once we are in a better position to actually run MD.
-        ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
-        if topology.bonded_pairs.numel() > 0:
-            # TODO: Change to a harmonic bonding potential
-            # morse-bond
-            ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
-            ene_bonds = torch.sum(ene_bond_list)
+        ene_bond_list = computeHarmonicBondPotential(dists[topology.bonded_pairs], r_eq, k_b_p)
+        ene_bonds = torch.sum(ene_bond_list)
 
-        ene_angles = torch.zeros(1, dtype=dists.dtype, device=dists.device)
-        if topology.angle_atoms.numel() > 0:
-            # TODO: Change to a harmonic angle potential
-            # angles
-            ene_angles_list = computeCosAnglePotential(
-                angles, theta_eq, k_theta
-            )
-            ene_angles = torch.sum(ene_angles_list)
+        ene_angles_list = computeHarmonicAnglePotential(
+            angles, theta_eq, k_theta
+        )
+        ene_angles = torch.sum(ene_angles_list)
 
         # dispersion
-        # TODO: Change to Leannrd-Jones potential
-        lj_pairwise = computeDispersionFromPairs(
-            dists_lr,
-            C6_ij_disp_vdw_p, b_ij_disp_vdw_p,
-            switch_lr
+        lj_pairwise = computeLennardJonesFromPairs(
+            dists_lr, sigma_ij_vdw_p, eps_ij_vdw_p
         )
         ene_lj = torch.sum(lj_pairwise) / 2
 
-        # TODO: Change to long-range LJ correction (which might be identical actually)
-        ene_lj_lr = torch.tensor(0.0)
-        ene_lj_lr = compute_long_range_dispersion_correction(
-            C6_ij_disp_vdw_p, self.cutoff_ewald,
-            torch.tensor(cm.coords.size(0)), cm.box_volume
+        # NOTE(JOE): Technically what we are doing is slightly different than
+        # the derived LRC formula since we do not include all pairs,
+        # we compute the average LJ parameters respecting exclusions.
+        # Should really re-derive the formula for the case of exclusions.
+        ene_lj_lr = compute_long_range_lennard_jones_correction(
+            sigma_ij_vdw_p, eps_ij_vdw_p, self.cutoff_ewald,
+            natoms, cm.box_volume
         )
 
         ene_tot = ene_perm_elec + ene_lj + ene_lj_lr + ene_bonds + ene_angles + ene_ewald
         energies = {
             "perm_elec": ene_perm_elec,
+            "total_elec": ene_perm_elec + ene_ewald,
             "deformation": ene_bonds + ene_angles,
             "bond": ene_bonds,
             "angle": ene_angles,
