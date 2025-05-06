@@ -192,21 +192,18 @@ class Parameterizer:
         return self._pair_param_arrays[name][self._pair_types[pairs_p]]
 
     def get_pair_parameters_with_optional_combination_rule(self, name: str, pairs_p: torch.Tensor, pairs_a: torch.Tensor, combination_rule=torch.sqrt):
-        # HERE: I have the atomic parameters when they are available. What I need to do now is get
-        # the pair parameters and then determine which parameters were not actually filled in due
-        # to not having a pair-specific entry. Those will have a value of zero. Form a mask out
-        # of those entries in the pairs array. Grab the appropriate atomic indices from pairs_a
-        # and fill those entries, using the mask, with the pair parameters formed by a combination
-        # rule.
 
         pair_types = self._pair_types[pairs_p]
-        pair_params = torch.zeros_like(pair_types, device=self.device, dtype=torch.get_default_dtype()) # Add dtype argument
+        pair_params = torch.ones_like(pair_types, device=self.device, dtype=torch.get_default_dtype()) * -123456789.0
+        # ^^^ I am guessing there will not be any force field with the parameter -123456789
+        # but if there is, then the code will break. Both 1 and 0 are quite likely to be actual
+        # pair parameter values.
         if name in self._pair_param_arrays.keys():
             pair_params = self._pair_param_arrays[name][pair_types]
         
-        mask = torch.nonzero(pair_params).flatten()
+        mask = torch.where(pair_params != -123456789.0)[0].flatten()
         pair_specific_params = pair_params[mask]
-        if name in self._atomic_param_arrays.keys():
+        if name in self._atomic_param_arrays.keys() and mask.size() != pair_params.size():
             atomic_params_1 = self._atomic_param_arrays[name][self._atom_types].squeeze_()[pairs_a[:,0]]
             atomic_params_2 = self._atomic_param_arrays[name][self._atom_types].squeeze_()[pairs_a[:,1]]
             pair_params = combination_rule(atomic_params_1 * atomic_params_2)

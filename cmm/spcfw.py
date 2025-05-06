@@ -64,6 +64,7 @@ class SPCfw(ForceField):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         cutoff_ewald = cm.cutoff
+        params.rebuild(pairs, self.atomic_params, self.pair_params, {}, {}, self.angle_params)
 
         # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
         pairs_excl = pairs[topology.all_intramolecular_pairs, :]
