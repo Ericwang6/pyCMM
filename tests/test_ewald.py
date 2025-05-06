@@ -57,17 +57,20 @@ def test_ewald_exact():
     coords = torch.tensor(positions / BOHR2NM, requires_grad=True)
     bonds = np.array([], dtype=np.float64)
     atom_type_names = ["" for i in range(coords.size(0))]
+    labels = ["" for i in range(coords.size(0))]
     for i in range(coords.size(0) // 2):
         atom_type_names[i] = "Na+"
+        labels[i] = "Na"
     for i in range(coords.size(0) // 2, coords.size(0)):
         atom_type_names[i] = "Cl-"
+        labels[i] = "Cl"
 
     box = torch.tensor(np.eye(3) * boxSize / BOHR2ANG, requires_grad=True)
 
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 2048)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(cutoff_ewald=torch.tensor(10.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-10), use_ewald=True, use_polarization=False)
+    ff = CMM(ewald_tolerance=torch.tensor(1e-15), use_ewald=True, use_polarization=False)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -75,8 +78,11 @@ def test_ewald_exact():
 
     ff.alpha[3] = torch.diag(torch.tensor([0.0000000001 for _ in range(3)]))
     ff.alpha[7] = torch.diag(torch.tensor([0.0000000001 for _ in range(3)]))
-    ff._raw_atomic_params['b_elec'][3] = 10000000000.0
-    ff._raw_atomic_params['b_elec'][7] = 10000000000.0
+    ff._raw_atomic_params['b_elec'][3] = torch.tensor([10000000000.0])
+    ff._raw_atomic_params['b_elec'][7] = torch.tensor([10000000000.0])
+    ff.pair_params[("Na+", "Cl-")]['b_elec'] = torch.tensor([10000000000.0])
+    ff._raw_atomic_params['Z'][3] = 0.0
+    ff._raw_atomic_params['Z'][7] = 0.0
     ff.rebuild_atomic_params()
 
     energies = ff.evaluate(cm, topology, parameters)

@@ -70,14 +70,14 @@ class CoordinateManager:
 
         # Get pairs from neighbor list (no gradients needed)
         with torch.no_grad():
-            self.pairs = self.neighbor_list.get_pairs()
+            pairs = self.neighbor_list.get_pairs()
 
         # These operations are part of the computational graph and will track gradients
-        distance_vecs = self.coords[self.pairs[:, 1]] - self.coords[self.pairs[:, 0]]
-        self.distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
-        self.dists = torch.linalg.vector_norm(self.distance_vecs, dim=1)
+        distance_vecs = self.coords[pairs[:, 1]] - self.coords[pairs[:, 0]]
+        distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
+        dists = torch.linalg.vector_norm(distance_vecs, dim=1)
 
-        return self.pairs, self.dists, self.distance_vecs
+        return pairs, dists, distance_vecs
 
     def compute_rotation_matrices(self, z_atoms: torch.Tensor, x_atoms: torch.Tensor, y_atoms: torch.Tensor, axis_types: torch.Tensor):
         """

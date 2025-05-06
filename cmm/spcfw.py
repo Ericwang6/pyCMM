@@ -44,8 +44,8 @@ class SPCfw(ForceField):
 
         self.angle_params = {
             ("H_water", "O_water", "H_water"): {
-                "theta_eq": torch.tensor([113.24 * math.pi / 180.0]),
                 "k_theta": torch.tensor([75.90 / HARTREE2KCAL]),
+                "theta_eq": torch.tensor([113.24 * math.pi / 180.0]),
             }
         }
 
@@ -112,17 +112,15 @@ class SPCfw(ForceField):
         # Get reciprocal space and self contributions to field variables
         # and corresponding electrostatic interactions.
         mono_lr = mono
-        #ewald_potential = long_range_potential_rank_0(cm.coords, mono_lr, cm.box, self.alpha_ewald, self.k_max)
-        #elec_point_excl_pairwise = erf_damps * mono[pairs_excl_i_a] * mono[pairs_excl_j_a] / dists_excl
-        #ene_ewald = 0.5 * (
-        #    torch.einsum("n,n->", mono_lr, ewald_potential) +
-        #    torch.sum(elec_point_excl_pairwise)
-        #)
-        ene_ewald = torch.tensor(0.0)
-        
+        ewald_potential = long_range_potential_rank_0(cm.coords, mono_lr, cm.box, self.alpha_ewald, self.k_max)
+        elec_point_excl_pairwise = erf_damps[0, :] * mono[pairs_excl_i_a] * mono[pairs_excl_j_a] / dists_excl
+        ene_ewald = 0.5 * (
+            torch.einsum("n,n->", mono_lr, ewald_potential) +
+            torch.sum(elec_point_excl_pairwise)
+        )
+
         # Real Space Electrostatic Interactions #
-        elec_point_pairwise = mono_lr[pairs_lr_i_a] * mono_lr[pairs_lr_j_a] / dists_lr
-        #elec_point_pairwise = mono_lr[pairs[:, 0]] * mono_lr[pairs[:, 1]] / dists
+        elec_point_pairwise = erfc_damps[0, :] * mono_lr[pairs_lr_i_a] * mono_lr[pairs_lr_j_a] / dists_lr
         ene_perm_elec = 0.5 * (
             torch.sum(elec_point_pairwise)
         )
@@ -145,12 +143,13 @@ class SPCfw(ForceField):
         # the derived LRC formula since we do not include all pairs,
         # we compute the average LJ parameters respecting exclusions.
         # Should really re-derive the formula for the case of exclusions.
-        ene_lj_lr = compute_long_range_lennard_jones_correction(
-            sigma_ij_vdw_p, eps_ij_vdw_p, self.cutoff_ewald,
-            natoms, cm.box_volume
-        )
+        #ene_lj_lr = compute_long_range_lennard_jones_correction(
+        #    sigma_ij_vdw_p, eps_ij_vdw_p, self.cutoff_ewald,
+        #    natoms, cm.box_volume
+        #)
+        ene_lj = ene_lj #+ ene_lj_lr
 
-        ene_tot = ene_perm_elec + ene_lj + ene_lj_lr + ene_bonds + ene_angles + ene_ewald
+        ene_tot = ene_perm_elec + ene_lj + ene_bonds + ene_angles + ene_ewald
         energies = {
             "perm_elec": ene_perm_elec,
             "total_elec": ene_perm_elec + ene_ewald,
@@ -159,7 +158,7 @@ class SPCfw(ForceField):
             "angle": ene_angles,
             "ewald": ene_ewald,
             "lj": ene_lj,
-            "lj_lr_correction": ene_lj_lr,
+            #"lj_lr_correction": ene_lj_lr,
             "total": ene_tot
         }
 
