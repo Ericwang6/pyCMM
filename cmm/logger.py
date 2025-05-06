@@ -109,7 +109,7 @@ class Logger:
             "V_total", "V_perm_elec", "V_pol", "V_ct_direct",
             "V_xpol", "V_pauli", "V_disp", "V_deformation",
             "V_bond", "V_angle", "V_bond_bond", "V_bond_angle",
-            "V_ewald",
+            "V_ewald", "V_lj"
 
             # Properties from CMM
             "dipole_moment", "dipole_magnitude",
