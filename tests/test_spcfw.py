@@ -21,7 +21,7 @@ def test_spcfw_vs_openmm():
     pdb = PDBFile(system_file)
     modeller = Modeller(pdb.topology, pdb.positions)
 
-    def create_spcfw_system(box_vectors):
+    def create_spcfw_system(box_vectors, use_lj_lr=True):
         system = mm.System()
         system.setDefaultPeriodicBoxVectors(*box_vectors)
 
@@ -93,14 +93,14 @@ def test_spcfw_vs_openmm():
         nonbonded_force.setCutoffDistance(0.9 * unit.nanometer)
         nonbonded_force.setNonbondedMethod(mm.NonbondedForce.PME)
         nonbonded_force.setEwaldErrorTolerance(1e-8)
-        nonbonded_force.setUseDispersionCorrection(False)
+        nonbonded_force.setUseDispersionCorrection(use_lj_lr)
 
         system.addForce(bond_force)
         system.addForce(angle_force)
         system.addForce(nonbonded_force)
         return system
 
-    system = create_spcfw_system(pdb.topology.getPeriodicBoxVectors())
+    system = create_spcfw_system(pdb.topology.getPeriodicBoxVectors(), use_lj_lr=True)
 
     integrator = mm.VerletIntegrator(0.001 * unit.picoseconds)
     context = mm.Context(system, integrator)
@@ -138,10 +138,10 @@ def test_spcfw_vs_openmm():
 
     energies = ff.evaluate(cm, topology, parameters)
     energies['total'].backward()
-    virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
-    print(torch.matmul(box.grad.T, box) * HARTREE2KJ)
-    stress = virial / (torch.det(cm.box) * BOHR2ANG**3)
-    print(virial * HARTREE2KJ)
+    #virial = torch.matmul(coords.grad.T, coords) + torch.matmul(box.grad.T, box)
+    #print(torch.matmul(box.grad.T, box) * HARTREE2KJ)
+    #stress = virial / (torch.det(cm.box) * BOHR2ANG**3)
+    #print(virial * HARTREE2KJ)
 
     #print("perm_elec: ", energies['perm_elec'] * HARTREE2KCAL)
     #print("ewald: ", energies['ewald'] * HARTREE2KCAL)
@@ -152,6 +152,6 @@ def test_spcfw_vs_openmm():
     #print(f"Bond Energy: {bond_energy.value_in_unit(unit.kilocalorie_per_mole):.4f} kcal/mol / {energies['bond'] * HARTREE2KCAL:.4f} kcal/mol")
     #print(f"Angle Energy: {angle_energy.value_in_unit(unit.kilocalorie_per_mole):.4f} kcal/mol / {energies['angle'] * HARTREE2KCAL:.4f} kcal/mol")
     #print(f"Nonbonded Energy: {nonbonded_energy.value_in_unit(unit.kilocalorie_per_mole):.4f} kcal/mol / {(energies['total_elec'] + energies['lj']) * HARTREE2KCAL:.4f} kcal/mol")
-    assert np.isclose(bond_energy.value_in_unit(unit.kilocalorie_per_mole), energies['bond'].clone().detach().numpy() * HARTREE2KCAL)
-    assert np.isclose(angle_energy.value_in_unit(unit.kilocalorie_per_mole), energies['angle'].clone().detach().numpy() * HARTREE2KCAL)
-    assert np.isclose(nonbonded_energy.value_in_unit(unit.kilocalorie_per_mole), (energies['total_elec'] + energies['lj']).clone().detach().numpy() * HARTREE2KCAL)
+    assert np.isclose(bond_energy.value_in_unit(unit.kilocalorie_per_mole), energies['bond'].clone().detach().cpu().numpy() * HARTREE2KCAL)
+    assert np.isclose(angle_energy.value_in_unit(unit.kilocalorie_per_mole), energies['angle'].clone().detach().cpu().numpy() * HARTREE2KCAL)
+    assert np.isclose(nonbonded_energy.value_in_unit(unit.kilocalorie_per_mole), (energies['total_elec'] + energies['lj']).clone().detach().cpu().numpy() * HARTREE2KCAL)

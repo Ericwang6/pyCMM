@@ -71,6 +71,6 @@ def compute_long_range_lennard_jones_correction(
 ):
     # See: http://docs.openmm.org/latest/userguide/theory/02_standard_forces.html#lennard-jones-interaction
     # or DOI: 10.1021/jp0735987 J. Phys. Chem. B 2007, 111, 13052-13063
-    eu12 = torch.mean(eps_ij_p * sigma_ij_p**12)
-    eu6 = torch.mean(eps_ij_p * sigma_ij_p**6)
+    eu12 = torch.mean(eps_ij_p * torch.pow(sigma_ij_p, 12))
+    eu6 = torch.mean(eps_ij_p * torch.pow(sigma_ij_p, 6))
     return 8 * torch.pi * natoms * natoms * (eu12 / (9 * cutoff_vdw**9) - eu6 / (3 * cutoff_vdw**3)) / box_volume

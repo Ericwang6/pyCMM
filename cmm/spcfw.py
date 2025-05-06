@@ -11,9 +11,7 @@ from .switching_functions import switch_543
 from .force_field import ForceField
 
 class SPCfw(ForceField):
-    def __init__(self,
-                 cutoff_ewald: torch.Tensor=torch.tensor(9.0 / BOHR2ANG, dtype=torch.float64),
-                 ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64)) -> None:
+    def __init__(self, ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64)) -> None:
         super().__init__()
         # These are local indices for the atom types, not the actual
         # atom type indices which are decided by the Parameterizer.
@@ -21,7 +19,6 @@ class SPCfw(ForceField):
             "O_water": 0, "H_water": 1
         }
         self.ewald_tolerance = ewald_tolerance if torch.is_tensor(ewald_tolerance) else torch.tensor(ewald_tolerance, dtype=torch.float64)
-        self.cutoff_ewald = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self._build()
     
     def _build(self):
@@ -66,6 +63,7 @@ class SPCfw(ForceField):
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
+        cutoff_ewald = cm.cutoff
 
         # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
         pairs_excl = pairs[topology.all_intramolecular_pairs, :]
@@ -99,7 +97,7 @@ class SPCfw(ForceField):
         k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
         
         # Find appropriate ewald parameters. This should really be done by the CM.
-        self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+        self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / cutoff_ewald
         self.k_max = 50
         for i in range(2, 50):
             error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
@@ -143,11 +141,11 @@ class SPCfw(ForceField):
         # the derived LRC formula since we do not include all pairs,
         # we compute the average LJ parameters respecting exclusions.
         # Should really re-derive the formula for the case of exclusions.
-        #ene_lj_lr = compute_long_range_lennard_jones_correction(
-        #    sigma_ij_vdw_p, eps_ij_vdw_p, self.cutoff_ewald,
-        #    natoms, cm.box_volume
-        #)
-        ene_lj = ene_lj #+ ene_lj_lr
+        ene_lj_lr = compute_long_range_lennard_jones_correction(
+            sigma_ij_vdw_p, eps_ij_vdw_p, cutoff_ewald,
+            natoms, cm.box_volume
+        )
+        ene_lj = ene_lj + ene_lj_lr
 
         ene_tot = ene_perm_elec + ene_lj + ene_bonds + ene_angles + ene_ewald
         energies = {
@@ -158,7 +156,7 @@ class SPCfw(ForceField):
             "angle": ene_angles,
             "ewald": ene_ewald,
             "lj": ene_lj,
-            #"lj_lr_correction": ene_lj_lr,
+            "lj_lr_correction": ene_lj_lr,
             "total": ene_tot
         }
 

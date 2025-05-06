@@ -197,7 +197,7 @@ def long_range_potential_rank_0(coords: torch.Tensor, q: torch.Tensor,
     sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
 
     F_l_real = q.expand(kvectors.size(0), -1)
-    F_l_imag = torch.zeros(kvectors.size(0), q.size(0))
+    F_l_imag = torch.zeros(kvectors.size(0), q.size(0), device=q.device, dtype=q.dtype)
     
     exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
     exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
