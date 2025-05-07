@@ -8,6 +8,7 @@ from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
 from cmm.spcfw import SPCfw
 from cmm.units import BOHR2ANG
+from cmm.timing_context import TimingContext
 import numpy as np
 import torch
 import os
@@ -222,21 +223,24 @@ class SPCfw_ASE(Calculator):
         return json_filename
     
     def _evaluate_ff(self):
-        self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
-        if self._cm._need_coordinate_grads:
-            self._energies['total'].backward()
+        with TimingContext("Eval/Forward"):
+            self._energies = self._ff.evaluate(self._cm, self._topology, self._params, reset_grads=True)
+        with TimingContext("Eval/Backward"):
+            if self._cm._need_coordinate_grads:
+                self._energies['total'].backward()
 
-        # Store results so that ASE can access them #
-        self.results['energy'] = float(self._energies['total'].cpu()) * Hartree
-        if self._cm.coords.grad is not None:
-            self.results['forces'] = -self._cm.coords.grad.cpu().numpy() * (Hartree / Bohr)
-            self.results['stress'] = (
-                torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
-            ).cpu().detach().numpy() * (Hartree / Bohr**3)
-            if self._cm.box.grad is not None:
-                self.results['stress'] = self.results['stress'] + ((
-                    torch.matmul(self._cm.box.grad.T, self._cm.box)
-                 ) / self._cm.box_volume).cpu().detach().numpy() * (Hartree / Bohr**3)
+        with TimingContext("Eval/GPU_to_CPU"):
+            # Store results so that ASE can access them #
+            self.results['energy'] = float(self._energies['total'].cpu()) * Hartree
+            if self._cm.coords.grad is not None:
+                self.results['forces'] = -self._cm.coords.grad.cpu().numpy() * (Hartree / Bohr)
+                self.results['stress'] = (
+                    torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
+                ).cpu().detach().numpy() * (Hartree / Bohr**3)
+                if self._cm.box.grad is not None:
+                    self.results['stress'] = self.results['stress'] + ((
+                        torch.matmul(self._cm.box.grad.T, self._cm.box)
+                     ) / self._cm.box_volume).cpu().detach().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=None, system_changes=['positions', 'cell']):
         if properties is None:
@@ -256,7 +260,8 @@ class SPCfw_ASE(Calculator):
         self._cm.update_box(box_tensor)
 
         # Calculate forces, energy, and stress then store hash for this configuration #
-        self._evaluate_ff()
+        with TimingContext("Eval"):
+            self._evaluate_ff()
         self._last_positions = self.atoms.get_positions()
         self._last_atoms_hash = current_hash
 

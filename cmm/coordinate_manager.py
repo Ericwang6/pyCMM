@@ -4,6 +4,7 @@ from typing import Dict, Tuple, List, Optional
 from .pbc import applyPBC
 from .axis_types import AxisTypes
 from .topology import Topology
+from .timing_context import TimingContext
 
 class CoordinateManager:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, cutoff: float, labels: List[str], max_neighbors: int = 1024) -> None:
@@ -54,28 +55,31 @@ class CoordinateManager:
         Get all indices of atom pairs, distances, distance vectors.
         """
 
-        # Only reset gradients if explicitly requested
-        if reset_grads: 
-            if self._need_coordinate_grads:
-                self.update_coordinates(self.coords)
-            if self._need_box_grads:
-                self.update_box(self.box)
+        with TimingContext("cm/reset_grads"):
+            # Only reset gradients if explicitly requested
+            if reset_grads: 
+                if self._need_coordinate_grads:
+                    self.update_coordinates(self.coords)
+                if self._need_box_grads:
+                    self.update_box(self.box)
 
-        # Check if neighbor list needs to be updated
-        if self._check_for_nl_update:
-            with torch.no_grad():
-                self.neighbor_list.update(self.coords, self.box)
-                topology.rebuild(self.neighbor_list)
-                self._check_for_nl_update = False
+        with TimingContext("cm/update"):
+            # Check if neighbor list needs to be updated
+            if self._check_for_nl_update:
+                with torch.no_grad():
+                    self.neighbor_list.update(self.coords, self.box)
+                    topology.rebuild(self.neighbor_list)
+                    self._check_for_nl_update = False
 
         # Get pairs from neighbor list (no gradients needed)
         with torch.no_grad():
             pairs = self.neighbor_list.get_pairs()
 
-        # These operations are part of the computational graph and will track gradients
-        distance_vecs = self.coords[pairs[:, 1]] - self.coords[pairs[:, 0]]
-        distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
-        dists = torch.linalg.vector_norm(distance_vecs, dim=1)
+        with TimingContext("cm/dists"):
+            # These operations are part of the computational graph and will track gradients
+            distance_vecs = self.coords[pairs[:, 1]] - self.coords[pairs[:, 0]]
+            distance_vecs = applyPBC(distance_vecs, self.box, self.box_inv)
+            dists = torch.linalg.vector_norm(distance_vecs, dim=1)
 
         return pairs, dists, distance_vecs
 

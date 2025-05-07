@@ -2,6 +2,7 @@ import torch
 from abc import ABC, abstractmethod
 from typing import Optional
 from .pbc import applyPBC
+from .timing_context import TimingContext
 
 __all__ = ['NeighborList', 'NSquaredList', 'VerletList']
 
@@ -173,9 +174,7 @@ class VerletList(NeighborList):
         pairs_inside_verlet = torch.where((distances < self._cutoff_verlet) & (distances > 0.0), True, False).nonzero()
         neighbors = [pairs_inside_verlet[pairs_inside_verlet[:, 0] == i][:, 1] for i in range(self.natoms)]
         self._neighbor_list_verlet = torch.nested.nested_tensor(neighbors)
-
-        for i in range(self.natoms):
-            self._n_neighbors_verlet[i] = self._neighbor_list_verlet.unbind()[i].size(0)
+        self._n_neighbors_verlet = torch.stack([torch.tensor(neighbors[i].size(0)) for i in range(self.natoms)])
 
         all_pairs_0 = []
         all_pairs_1 = []
@@ -189,22 +188,25 @@ class VerletList(NeighborList):
     def _update_from_verlet_pairs(self, positions: torch.Tensor, box: torch.Tensor):
         # If we are here, it means that we have all of the needed pairs in the list of pairs
         # inside the verlet cutoff. We just need to pull the appropriate pairs from there.
-        distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
-        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
-        distances = torch.linalg.vector_norm(distance_vecs, dim=1)
-        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
-        self.pairs = self._verlet_pairs[pairs_inside_cutoff]
-        neighbors = [self.pairs[self.pairs[:, 0] == i][:, 1] for i in range(self.natoms)]
-        self.neighbor_list = torch.nested.nested_tensor(neighbors)
-
-        for i in range(self.natoms):
-            self.n_neighbors[i] = self.neighbor_list.unbind()[i].size(0)
+        with TimingContext("nl/update/verlet_build/dists"):
+            distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
+            distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+            distances = torch.linalg.vector_norm(distance_vecs, dim=1)
+        with TimingContext("nl/update/verlet_build/find_neighbors"):
+            pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
+            self.pairs = self._verlet_pairs[pairs_inside_cutoff]
+            neighbors = [self.pairs[self.pairs[:, 0] == i][:, 1] for i in range(self.natoms)]
+            self.n_neighbors = torch.stack([torch.tensor(neighbors[i].size(0)) for i in range(self.natoms)])
+            self.neighbor_list = torch.nested.nested_tensor(neighbors, device=self.device)
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
-        if self._needs_update(positions, box, cutoff):
-            self._build(positions, box)
-        else:
-            self._update_from_verlet_pairs(positions, box)
+        with TimingContext("nl/update"):
+            if self._needs_update(positions, box, cutoff):
+                with TimingContext("nl/update/full_build"):
+                    self._build(positions, box)
+            else:
+                with TimingContext("nl/update/verlet_build"):
+                    self._update_from_verlet_pairs(positions, box)
 
     def get_neighbors(self, atom_idx: int):
         return self.neighbor_list[atom_idx]

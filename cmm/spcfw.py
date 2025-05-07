@@ -9,6 +9,7 @@ from .terms import *
 from .units import *
 from .switching_functions import switch_543
 from .force_field import ForceField
+from .timing_context import TimingContext
 
 class SPCfw(ForceField):
     def __init__(self, ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64)) -> None:
@@ -59,94 +60,101 @@ class SPCfw(ForceField):
                 self.pair_params[(key[1], key[0])] = self.pair_params[key]
             for key in list(self.angle_params.keys()):
                 self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
-
+    
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
-        pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
-        cutoff_ewald = cm.cutoff
-        params.rebuild(pairs, self.atomic_params, self.pair_params, {}, {}, self.angle_params)
+        with TimingContext("ff/cm"):
+            pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
+            cutoff_ewald = cm.cutoff
+        with TimingContext("ff/build_params"):
+            params.rebuild(pairs, self.atomic_params, self.pair_params, {}, {}, self.angle_params)
 
-        # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
-        pairs_excl = pairs[topology.all_intramolecular_pairs, :]
-        pairs_excl_i_a = pairs_excl[:, 0]
-        pairs_excl_j_a = pairs_excl[:, 1]
-        dists_excl = dists[topology.all_intramolecular_pairs]
+        with TimingContext("ff/get_subpairs"):
+            # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
+            pairs_excl = pairs[topology.all_intramolecular_pairs, :]
+            pairs_excl_i_a = pairs_excl[:, 0]
+            pairs_excl_j_a = pairs_excl[:, 1]
+            dists_excl = dists[topology.all_intramolecular_pairs]
 
-        # Get pairs, dists, and vectors for real-space potential #
-        pairs_lr = pairs[topology.all_intermolecular_pairs, :]
-        pairs_lr_i_a = pairs_lr[:, 0]
-        pairs_lr_j_a = pairs_lr[:, 1]
-        dists_lr = dists[topology.all_intermolecular_pairs]
+            # Get pairs, dists, and vectors for real-space potential #
+            pairs_lr = pairs[topology.all_intermolecular_pairs, :]
+            pairs_lr_i_a = pairs_lr[:, 0]
+            pairs_lr_j_a = pairs_lr[:, 1]
+            dists_lr = dists[topology.all_intermolecular_pairs]
 
-        angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
+        with TimingContext("ff/get_parameters"):
+            # Electric Multipoles #
+            mono = params.get_atomic_parameters('mono')
+            natoms = torch.tensor(mono.size(0), device=pairs.device)
 
-        # Electric Multipoles #
-        mono = params.get_atomic_parameters('mono')
-        natoms = torch.tensor(mono.size(0), device=pairs.device)
+            # Lennard-Jones parameters
+            eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+                'eps_lj', topology.all_intermolecular_pairs, pairs_lr
+            )
+            sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+                'sigma_lj', topology.all_intermolecular_pairs, pairs_lr
+            )
 
-        # Lennard-Jones parameters
-        eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'eps_lj', topology.all_intermolecular_pairs, pairs_lr
-        )
-        sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'sigma_lj', topology.all_intermolecular_pairs, pairs_lr
-        )
-
-        r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
-        k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
-        theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
-        k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
+            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
+            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
+            theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
+            k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
         
-        # Find appropriate ewald parameters. This should really be done by the CM.
-        self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / cutoff_ewald
-        self.k_max = 50
-        for i in range(2, 50):
-            error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-            if error_estimate < self.ewald_tolerance:
-                self.k_max = i
-                break
-        erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
-        erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
+        with TimingContext("ff/find_ewald_k_max"):
+            # Find appropriate ewald parameters. This should really be done by the CM.
+            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / cutoff_ewald
+            self.k_max = 50
+            for i in range(2, 50):
+                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                if error_estimate < self.ewald_tolerance:
+                    self.k_max = i
+                    break
+        with TimingContext("ff/elec"):
+            erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
+            erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
 
-        # Get reciprocal space and self contributions to field variables
-        # and corresponding electrostatic interactions.
-        mono_lr = mono
-        ewald_potential = long_range_potential_rank_0(cm.coords, mono_lr, cm.box, self.alpha_ewald, self.k_max)
-        elec_point_excl_pairwise = erf_damps[0, :] * mono[pairs_excl_i_a] * mono[pairs_excl_j_a] / dists_excl
-        ene_ewald = 0.5 * (
-            torch.einsum("n,n->", mono_lr, ewald_potential) +
-            torch.sum(elec_point_excl_pairwise)
-        )
+            with TimingContext("ff/elec/ewald"):
+                # Get reciprocal space and self contributions to field variables
+                # and corresponding electrostatic interactions.
+                mono_lr = mono
+                ewald_potential = long_range_potential_rank_0(cm.coords, mono_lr, cm.box, self.alpha_ewald, self.k_max)
+                elec_point_excl_pairwise = erf_damps[0, :] * mono[pairs_excl_i_a] * mono[pairs_excl_j_a] / dists_excl
+                ene_ewald = 0.5 * (
+                    torch.einsum("n,n->", mono_lr, ewald_potential) +
+                    torch.sum(elec_point_excl_pairwise)
+                )
+            with TimingContext("ff/elec/real"):
+                # Real Space Electrostatic Interactions #
+                elec_point_pairwise = erfc_damps[0, :] * mono_lr[pairs_lr_i_a] * mono_lr[pairs_lr_j_a] / dists_lr
+                ene_perm_elec = 0.5 * (
+                    torch.sum(elec_point_pairwise)
+                )
+        with TimingContext("ff/bond"):
+            ene_bond_list = computeHarmonicBondPotential(dists[topology.bonded_pairs], r_eq, k_b_p)
+            ene_bonds = torch.sum(ene_bond_list)
+        with TimingContext("ff/angles"):
+            angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
+            ene_angles_list = computeHarmonicAnglePotential(
+                angles, theta_eq, k_theta
+            )
+            ene_angles = torch.sum(ene_angles_list)
 
-        # Real Space Electrostatic Interactions #
-        elec_point_pairwise = erfc_damps[0, :] * mono_lr[pairs_lr_i_a] * mono_lr[pairs_lr_j_a] / dists_lr
-        ene_perm_elec = 0.5 * (
-            torch.sum(elec_point_pairwise)
-        )
+        with TimingContext("ff/LJ"):
+            # dispersion
+            lj_pairwise = computeLennardJonesFromPairs(
+                dists_lr, sigma_ij_vdw_p, eps_ij_vdw_p
+            )
+            ene_lj = torch.sum(lj_pairwise) / 2
 
-        ene_bond_list = computeHarmonicBondPotential(dists[topology.bonded_pairs], r_eq, k_b_p)
-        ene_bonds = torch.sum(ene_bond_list)
-
-        ene_angles_list = computeHarmonicAnglePotential(
-            angles, theta_eq, k_theta
-        )
-        ene_angles = torch.sum(ene_angles_list)
-
-        # dispersion
-        lj_pairwise = computeLennardJonesFromPairs(
-            dists_lr, sigma_ij_vdw_p, eps_ij_vdw_p
-        )
-        ene_lj = torch.sum(lj_pairwise) / 2
-
-        # NOTE(JOE): Technically what we are doing is slightly different than
-        # the derived LRC formula since we do not include all pairs,
-        # we compute the average LJ parameters respecting exclusions.
-        # Should really re-derive the formula for the case of exclusions.
-        ene_lj_lr = compute_long_range_lennard_jones_correction(
-            sigma_ij_vdw_p, eps_ij_vdw_p, cutoff_ewald,
-            natoms, cm.box_volume
-        )
-        ene_lj = ene_lj + ene_lj_lr
+            # NOTE(JOE): Technically what we are doing is slightly different than
+            # the derived LRC formula since we do not include all pairs,
+            # we compute the average LJ parameters respecting exclusions.
+            # Should really re-derive the formula for the case of exclusions.
+            ene_lj_lr = compute_long_range_lennard_jones_correction(
+                sigma_ij_vdw_p, eps_ij_vdw_p, cutoff_ewald,
+                natoms, cm.box_volume
+            )
+            ene_lj = ene_lj + ene_lj_lr
 
         ene_tot = ene_perm_elec + ene_lj + ene_bonds + ene_angles + ene_ewald
         energies = {

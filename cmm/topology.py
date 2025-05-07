@@ -3,6 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Tuple
 from .neighbor_list import NeighborList
+from .timing_context import TimingContext
 
 # The purpose of the Topology object is to walk the molecular graph,
 # which is provided as user input in the form of connectivity,
@@ -28,7 +29,8 @@ class Topology:
         self._find_polarization_groups_and_scatter_indices()
         
     def rebuild(self, nl: NeighborList):
-        self.find_bond_and_angle_pair_indices(nl)
+        with TimingContext("topology/indices"):
+            self.find_bond_and_angle_pair_indices(nl)
 
     def _find_bond_indices_i(self, i: torch.Tensor, pairs_i: torch.Tensor, n_neighbors: torch.Tensor):
         """
@@ -38,13 +40,15 @@ class Topology:
         we only have to store the unique bond_indices (i<j). Currently nothing actually
         enforces that condition I am pretty sure.
         """
-        if self.bonded_atoms.size(0) == 0:
-            return torch.empty_like(self.bonded_atoms), torch.empty((0, 0), dtype=self.bonded_atoms.dtype, device=self.device)
+        # HERE: Need to do a rewrite involving the neighbor list and topology to speed everything up.
+        with TimingContext("topology/indices/bonded_pairs/bond_indices/impl"):
+            if self.bonded_atoms.size(0) == 0:
+                return torch.empty_like(self.bonded_atoms), torch.empty((0, 0), dtype=self.bonded_atoms.dtype, device=self.device)
 
-        half_bond_starting_with_i = self.bonded_atoms[1, (self.bonded_atoms[0] == i)]
-        half_bond_matches_1 = torch.nonzero(torch.sum((half_bond_starting_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
-        bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i])
-        angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
+            half_bond_starting_with_i = self.bonded_atoms[1, (self.bonded_atoms[0] == i)]
+            half_bond_matches_1 = torch.nonzero(torch.sum((half_bond_starting_with_i.unsqueeze(1) - pairs_i) == 0, dim=0)).flatten()
+            bonded_pairs_i = half_bond_matches_1 + torch.sum(n_neighbors[:i])
+            angle_pairs_i = torch.combinations(bonded_pairs_i, r=2)
 
         # Below will get the same bond pairs as above but will find them in the 
         # reverse order. I don't think we need them ever but I'm not sure yet so leaving the comment.
@@ -96,22 +100,27 @@ class Topology:
 
         # @SPEED Write a different version of this which updates the topology
         # for only those atoms which actually have a change in their neighbors.
-        neighbors_per_atom = nl.get_n_neighbors()
-        for i in torch.arange(self.natoms):
-            bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), neighbors_per_atom) 
-            self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
-            self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
+        with TimingContext("topology/indices/bonded_pairs"):
+            neighbors_per_atom = nl.get_n_neighbors()
+            for i in torch.arange(self.natoms):
+                with TimingContext("topology/indices/bonded_pairs/bond_indices"):
+                    bonded_pairs_i, angle_pairs_i = self._find_bond_indices_i(torch.tensor([i], device=nl.device), nl.get_neighbors(i), neighbors_per_atom) 
+                with TimingContext("topology/indices/bonded_pairs/concat"):
+                    self.bonded_pairs = torch.concat((self.bonded_pairs, bonded_pairs_i))
+                    self.angle_pairs = torch.concat((self.angle_pairs, angle_pairs_i))
         
-        # Below specifies which pairs form an angle. This is the same as coupled pairs of bonds.
-        # Note that each row of below also pulls out the pairs which are coupled to each angle.
-        # Because each pair of bonds automatically forms an angle and each pair in an angle
-        # will also be coupled to that angle, we can use self.angle_pairs to compute
-        # the angular, bond-bond coupling, and bond-angle coupling potentials.
-        self.angle_pairs = self.angle_pairs.t().contiguous()
-
-        pairs = nl.get_pairs()
-        self._find_all_intramolecular_pairs(pairs)
-        self._find_all_intermolecular_pairs(pairs.size(0))
+            # Below specifies which pairs form an angle. This is the same as coupled pairs of bonds.
+            # Note that each row of below also pulls out the pairs which are coupled to each angle.
+            # Because each pair of bonds automatically forms an angle and each pair in an angle
+            # will also be coupled to that angle, we can use self.angle_pairs to compute
+            # the angular, bond-bond coupling, and bond-angle coupling potentials.
+            self.angle_pairs = self.angle_pairs.t().contiguous()
+            pairs = nl.get_pairs()
+        
+        with TimingContext("topology/indices/intra"):
+            self._find_all_intramolecular_pairs(pairs)
+        with TimingContext("topology/indices/inter"):
+            self._find_all_intermolecular_pairs(pairs.size(0))
 
     def _find_all_intermolecular_pairs(self, n_pairs):
         """Compute set difference between intramolecular pairs array and torch.arange over n_pairs."""
