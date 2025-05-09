@@ -33,7 +33,7 @@ def evaluate_bond_and_angle_charge_flux(
 
     # Scatter flux charges to appropriate atom indices #
     bonded_atoms = pairs[bonded_pairs].T
-    flux_charges = torch.zeros_like(q) # @SPEED: Ideally we could do this without allocating.
+    flux_charges = torch.zeros_like(q)
     flux_charges.scatter_add_(0, bonded_atoms[0], charge_flux_bond_1)
     flux_charges.scatter_add_(0, bonded_atoms[1], charge_flux_bond_2)
 

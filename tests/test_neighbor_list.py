@@ -226,7 +226,7 @@ def test_verlet_neighbor_list():
     modified_cell = cell_1 - torch.eye(3) * 0.26
     nl_ref = NSquaredList(coords_inside_verlet_cutoff, modified_cell, cutoff)
     nl_verlet.update(coords_inside_verlet_cutoff, modified_cell)
-    assert check_neighbor_lists_match(nl_verlet, nl_ref, nl_verlet.natoms) == True    
+    assert check_neighbor_lists_match(nl_verlet, nl_ref, nl_verlet.natoms) == True
     assert torch.equal(nl_ref.get_pairs(), nl_verlet.get_pairs())
     assert torch.equal(nl_verlet._reference_positions, coords_inside_verlet_cutoff)
     assert torch.equal(nl_verlet._reference_box, modified_cell)
