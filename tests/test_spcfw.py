@@ -11,6 +11,7 @@ from cmm.topology import Topology, Topology2
 from cmm.parameters import Parameterizer
 from cmm.spcfw import SPCfw
 from cmm.spcfw_interface import SPCfw_ASE
+from cmm.neighbor_list import NSquaredList2
 
 from simtk.openmm import app
 import simtk.openmm as mm
@@ -191,13 +192,14 @@ def test_spcfw_new_nl():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
-    
-    topology_2 = Topology2(bonds, coords.size(0), device)
 
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
+
+    topology_2 = Topology2(bonds, coords.size(0), device)
+    nl_2 = NSquaredList2(coords, box, 9.0 / BOHR2ANG, topology_2.all_intramolecular_atomic_pairs)
 
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))

@@ -66,7 +66,7 @@ class Topology2:
         # Form the atomic pair tensors (in the atomic index space) #
         self.bonded_atoms = torch.tensor(bonded_atoms, dtype=torch.long, device=self.device, requires_grad=False).t().contiguous()
         self.angle_atoms = torch.tensor(angle_atoms, dtype=torch.long, device=self.device, requires_grad=False)
-        self.all_intramolecular_atomic_pairs = torch.tensor(intramolecular_atomic_pairs, dtype=torch.long, device=self.device, requires_grad=False)
+        self.all_intramolecular_pairs = torch.tensor(intramolecular_atomic_pairs, dtype=torch.long, device=self.device, requires_grad=False)
         
         # Assign a pair index to each pair of atoms in the full set of intramolecular pairs
         n_exclusions = 0
@@ -81,7 +81,6 @@ class Topology2:
             [(bonded_atoms_to_pair_index[bond_pair[0]], bonded_atoms_to_pair_index[bond_pair[1]]) for bond_pair in angle_bonds],
             dtype=torch.long, device=self.device, requires_grad=False
         ).t().contiguous()
-        self.all_intramolecular_pairs = torch.arange(n_exclusions, dtype=torch.long, device=self.device, requires_grad=False)
 
     def build_adjacency_list(self):
         adj_list = defaultdict(list)
