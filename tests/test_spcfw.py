@@ -199,7 +199,7 @@ def test_spcfw_new_nl():
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
 
     topology_2 = Topology2(bonds, coords.size(0), device)
-    nl_2 = NSquaredList2(coords, box, 9.0 / BOHR2ANG, topology_2.all_intramolecular_atomic_pairs)
+    nl_2 = NSquaredList2(coords, box, 9.0 / BOHR2ANG, topology_2.all_intramolecular_pairs)
 
     cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
     topology = Topology(bonds, cm.neighbor_list, coords.size(0))

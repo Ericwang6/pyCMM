@@ -17,11 +17,19 @@ class NeighborList(ABC):
         pass
 
     @abstractmethod
-    def get_pairs(self):
+    def get_all_pairs(self):
         pass
 
-class NSquaredList2(NeighborList):
-    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, excluded_atomic_pairs: torch.Tensor):
+    @abstractmethod
+    def get_excluded_pairs(self):
+        pass
+    
+    @abstractmethod
+    def get_included_pairs(self):
+        pass
+
+class NSquaredList(NeighborList):
+    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, excluded_atomic_pairs: Optional[torch.Tensor]=None):
         """
         Initialize NSquaredList structure which computes all pairwise distances,
         respecting PBCs. This gives the exact neighbor list within a cutoff.
@@ -36,9 +44,9 @@ class NSquaredList2(NeighborList):
         self.device = positions.device
         self.natoms = positions.shape[0]
         self.cutoff = cutoff
-        
-        self.pairs = None
         self.excluded_pairs = excluded_atomic_pairs
+        self.included_pairs = None
+        self.pairs = None
         
         self._build(positions, box)
 
@@ -62,87 +70,28 @@ class NSquaredList2(NeighborList):
         self.all_pairs = torch.concat([pairs_inside_cutoff[pairs_inside_cutoff[:, 0] == i] for i in range(self.natoms)], dim=0)
 
         # Remove excluded pairs and store as self.included_pairs #
-        included_pair_indices = (~torch.any(torch.all(self.all_pairs.unsqueeze(0) == self._excluded_atomic_pairs.unsqueeze(1), dim=2), dim=0)).nonzero().squeeze_()
-        self.included_pairs = self.all_pairs[included_pair_indices]
+        if self.excluded_pairs is not None:
+            included_pair_indices = (~torch.any(torch.all(self.all_pairs.unsqueeze(0) == self.excluded_pairs.unsqueeze(1), dim=2), dim=0)).nonzero().squeeze_()
+            self.included_pairs = self.all_pairs[included_pair_indices]
+        else:
+            self.included_pairs = self.all_pairs
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
         if cutoff:
             self.cutoff = cutoff
         self._build(positions, box)
 
-    def get_pairs(self):
-        return self.pairs
-
-class NSquaredList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor):
-        """
-        Initialize NSquaredList structure which computes all pairwise distances,
-        respecting PBCs. This gives the exact neighbor list within a cutoff.
-        It should only be used for very small systems and for testing that other
-        neighbor lists are being constructed correctly.
-
-        Args:
-            positions (torch.Tensor): (N, 3) array of atomic positions
-            box (torch.Tensor): (3, 3) tensor representing unit cell
-            cutoff (torch.Tensor): (1,) cutoff distance
-        """
-        self.device = positions.device
-        self.natoms = positions.shape[0]
-        
-        self.cutoff = cutoff
-        self.neighbor_list = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
-        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
-        self.pairs = None
-        
-        self._build(positions, box)
-
-    def _build(self, positions: torch.Tensor, box: torch.Tensor):
-        """
-        Calculate the distance matrix between atoms with periodic boundary conditions
-        for a general cell, following the minimum image convention.
-        """
-        # Reset neighbor counts
-        self.n_neighbors.zero_()
-
-        # Reshape positions for broadcasting
-        pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
-        pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
-        # Calculate direct differences and apply minimum image convention
-        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
-        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
-        # Calculate distances
-        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
-        
-        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero()
-        neighbors = [pairs_inside_cutoff[pairs_inside_cutoff[:, 0] == i][:, 1] for i in range(self.natoms)]
-        self.neighbor_list = torch.nested.nested_tensor(neighbors)
-
-        for i in range(self.natoms):
-            self.n_neighbors[i] = self.neighbor_list.unbind()[i].size(0)
+    def get_all_pairs(self):
+        return self.all_pairs
     
-        all_pairs_0 = []
-        all_pairs_1 = []
-        for i in range(self.natoms):
-            all_pairs_0.append(torch.full((self.n_neighbors[i],), i, device=self.device),)
-            all_pairs_1.append(self.neighbor_list[i])
-        self.pairs = torch.stack((torch.cat(all_pairs_0), torch.cat(all_pairs_1)), dim=1)
-
-    def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
-        if cutoff:
-            self.cutoff = cutoff
-        self._build(positions, box)
-
-    def get_neighbors(self, atom_idx: int):
-        return self.neighbor_list[atom_idx]
+    def get_excluded_pairs(self):
+        return self.excluded_pairs
     
-    def get_n_neighbors(self):
-        return self.n_neighbors
-
-    def get_pairs(self):
-        return self.pairs
+    def get_included_pairs(self):
+        return self.included_pairs
 
 class VerletList(NeighborList):
-    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, padding: torch.Tensor):
+    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, excluded_atomic_pairs: Optional[torch.Tensor]=None, padding: torch.Tensor=torch.tensor(1.5)):
         """
         Initialize NSquaredList structure which computes all pairwise distances,
         respecting PBCs. This gives the exact neighbor list within a cutoff.
@@ -157,19 +106,17 @@ class VerletList(NeighborList):
         """
         self.device = positions.device
         self.natoms = positions.shape[0]
+        self.cutoff = cutoff
+        self.excluded_pairs = excluded_atomic_pairs
+        self.included_pairs = None
+        self.pairs = None
+        
         self._reference_positions = positions.clone().detach()
         self._reference_box = box.clone().detach()
         self._cutoff_verlet = cutoff + padding
         self._padding = padding
-        self._neighbor_list_verlet = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
-        self._n_neighbors_verlet = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
         self._pairs_verlet = None
         
-        self.cutoff = cutoff
-        self.neighbor_list = torch.nested.nested_tensor([torch.empty(0, dtype=torch.long, device=self.device) for _ in range(self.natoms)])
-        self.n_neighbors = torch.zeros(self.natoms, dtype=torch.long, device=self.device)
-        self.pairs = None
-
         self._build(positions, box)
     
     def _needs_update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None):
@@ -201,8 +148,6 @@ class VerletList(NeighborList):
         Calculate the distance matrix between atoms with periodic boundary conditions
         for a general cell, following the minimum image convention.
         """
-        # Reset neighbor counts
-        self.n_neighbors.zero_()
 
         # Store new reference positions and box
         self._reference_positions = positions.clone().detach()
@@ -214,19 +159,10 @@ class VerletList(NeighborList):
         # Calculate direct differences and apply minimum image convention
         distance_vecs = pos_j - pos_i  # Shape: N x N x 3
         distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
-        # Calculate distances
         distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
+        
         pairs_inside_verlet = torch.where((distances < self._cutoff_verlet) & (distances > 0.0), True, False).nonzero()
-        neighbors = [pairs_inside_verlet[pairs_inside_verlet[:, 0] == i][:, 1] for i in range(self.natoms)]
-        self._neighbor_list_verlet = torch.nested.nested_tensor(neighbors)
-        self._n_neighbors_verlet = torch.stack([torch.tensor(neighbors[i].size(0)) for i in range(self.natoms)])
-
-        all_pairs_0 = []
-        all_pairs_1 = []
-        for i in range(self.natoms):
-            all_pairs_0.append(torch.full((self._n_neighbors_verlet[i],), i, device=self.device),)
-            all_pairs_1.append(self._neighbor_list_verlet[i])
-        self._verlet_pairs = torch.stack((torch.cat(all_pairs_0), torch.cat(all_pairs_1)), dim=1)
+        self._verlet_pairs = torch.concat([pairs_inside_verlet[pairs_inside_verlet[:, 0] == i] for i in range(self.natoms)], dim=0)
 
         self._update_from_verlet_pairs(positions, box)
 
@@ -237,12 +173,16 @@ class VerletList(NeighborList):
             distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
             distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
             distances = torch.linalg.vector_norm(distance_vecs, dim=1)
-        with TimingContext("nl/update/verlet_build/find_neighbors"):
+        with TimingContext("nl/update/verlet_build/find_pairs"):
             pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
-            self.pairs = self._verlet_pairs[pairs_inside_cutoff]
-            neighbors = [self.pairs[self.pairs[:, 0] == i][:, 1] for i in range(self.natoms)]
-            self.n_neighbors = torch.stack([torch.tensor(neighbors[i].size(0)) for i in range(self.natoms)])
-            self.neighbor_list = torch.nested.nested_tensor(neighbors, device=self.device)
+            self.all_pairs = self._verlet_pairs[pairs_inside_cutoff]
+            
+            # Remove excluded pairs and store as self.included_pairs #
+            if self.excluded_pairs is not None:
+                included_pair_indices = (~torch.any(torch.all(self.all_pairs.unsqueeze(0) == self.excluded_pairs.unsqueeze(1), dim=2), dim=0)).nonzero().squeeze_()
+                self.included_pairs = self.all_pairs[included_pair_indices]
+            else:
+                self.included_pairs = self.all_pairs
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
         with TimingContext("nl/update"):
@@ -253,11 +193,11 @@ class VerletList(NeighborList):
                 with TimingContext("nl/update/verlet_build"):
                     self._update_from_verlet_pairs(positions, box)
 
-    def get_neighbors(self, atom_idx: int):
-        return self.neighbor_list[atom_idx]
+    def get_all_pairs(self):
+        return self.all_pairs
     
-    def get_n_neighbors(self):
-        return self.n_neighbors
-
-    def get_pairs(self):
-        return self.pairs
+    def get_excluded_pairs(self):
+        return self.excluded_pairs
+    
+    def get_included_pairs(self):
+        return self.included_pairs
