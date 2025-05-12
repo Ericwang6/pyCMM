@@ -135,7 +135,7 @@ class SPCfw_ASE(Calculator):
         box = torch.tensor(state['cell'], dtype=dtype,
                           requires_grad=state['require_box_grads'],
                           device=device)
-        bonds = torch.tensor(state['bonds'], device=device)
+        bonds = np.array(state['bonds'])
         topology = Topology(bonds, positions.size(0), device)
         cm = CoordinateManager(positions, box, state['cutoff_max'],
                              state['atom_labels'], topology.all_intramolecular_pairs)
