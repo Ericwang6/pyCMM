@@ -49,7 +49,6 @@ class Parameterizer:
 
     def _get_angle_types_from_angle_atoms(self, angle_atoms: torch.Tensor):
         if angle_atoms.numel() > 0:
-            #return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]), self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]]))))
             return self._nonsymmetric_pairing_function_separate(
                 self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]),
                 self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]])
