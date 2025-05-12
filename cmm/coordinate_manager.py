@@ -21,8 +21,11 @@ class CoordinateManager:
             print(f"Requested cutoff of {cutoff:.4f} is larger than half of the smallest side length {0.5 * min(self.box_lengths):.4f}. Setting the cutoff to {0.5 * min(self.box_lengths):.4f}")
             self.cutoff = 0.5 * min(self.box_lengths).detach()
         with torch.no_grad():
-            self.neighbor_list = VerletList(coords, self.box, self.cutoff, excluded_atomic_pairs=excluded_atomic_pairs, padding=torch.tensor(1.5, device=self.coords.device))
-            #self.neighbor_list = NSquaredList(coords, self.box, self.cutoff, excluded_atomic_pairs=excluded_atomic_pairs)
+            self.neighbor_list = VerletList(
+                coords, self.box, self.cutoff,
+                excluded_atomic_pairs=excluded_atomic_pairs,
+                padding=torch.tensor(1.5, device=self.coords.device)
+            )
         self._check_for_nl_update = False
 
     def update_coordinates(self, new_coords: torch.Tensor):

@@ -22,6 +22,7 @@ class ForceField(torch.nn.Module):
         super().__init__()
         self._atomic_params = {}
         self._pair_params = {}
+        self.alpha_ewald = None
 
 class CMM(ForceField):
     def __init__(self,
@@ -572,6 +573,15 @@ class CMM(ForceField):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff
+        if self.alpha_ewald is None:
+            # Find appropriate ewald parameters. This should really be done by the CM.
+            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+            self.k_max = 50
+            for i in range(2, 50):
+                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                if error_estimate < self.ewald_tolerance:
+                    self.k_max = i
+                    break
 
         if True: #self.parameters_have_changed:
             # SPEED: Can of course do this per parameter type so that not everything is rebuilt
@@ -740,13 +750,6 @@ class CMM(ForceField):
         
         # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
-            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            self.k_max = 50
-            for i in range(2, 50):
-                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-                if error_estimate < self.ewald_tolerance:
-                    self.k_max = i
-                    break
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
             erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
             # ^^^ for removing excluded interactions that are implicitly included in long-range summation

@@ -66,6 +66,17 @@ class SPCfw(ForceField):
         with TimingContext("ff/cm"):
             pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
             cutoff_ewald = cm.cutoff
+        
+        with TimingContext("ff/find_ewald_k_max"):
+            if self.alpha_ewald is None:
+                # Find appropriate ewald parameters. This should really be done by the CM.
+                self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / cutoff_ewald
+                self.k_max = 50
+                for i in range(2, 50):
+                    error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                    if error_estimate < self.ewald_tolerance:
+                        self.k_max = i
+                        break
         with TimingContext("ff/build_params"):
             params.rebuild(pairs, self.atomic_params, self.pair_params, {}, {}, self.angle_params)
 
@@ -105,15 +116,6 @@ class SPCfw(ForceField):
             theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
             k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
         
-        with TimingContext("ff/find_ewald_k_max"):
-            # Find appropriate ewald parameters. This should really be done by the CM.
-            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / cutoff_ewald
-            self.k_max = 50
-            for i in range(2, 50):
-                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-                if error_estimate < self.ewald_tolerance:
-                    self.k_max = i
-                    break
         with TimingContext("ff/elec"):
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
             erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
