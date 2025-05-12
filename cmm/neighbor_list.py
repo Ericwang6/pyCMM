@@ -89,16 +89,19 @@ class NSquaredList(NeighborList):
         pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero()
         self.all_pairs = torch.concat([pairs_inside_cutoff[pairs_inside_cutoff[:, 0] == i] for i in range(self.natoms)], dim=0)
 
-        # Remove excluded pairs and store result as self.included_pairs #
-        if self.excluded_pairs is not None:
-            included_pair_indices = (~torch.any(torch.all(self.all_pairs.unsqueeze(0) == self.excluded_pairs.unsqueeze(1), dim=2), dim=0)).nonzero().squeeze_()
-            self.included_pairs = self.all_pairs[included_pair_indices]
-        else:
-            self.included_pairs = self.all_pairs
-
         # Compute the hash values for each pair #
         all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
         self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
+
+        # Remove excluded pairs and store as self.included_pairs #
+        if self.excluded_pairs is not None:
+            mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
+            excluded_indices = self.get_pair_indices(self.excluded_pairs)
+            mask[excluded_indices] = True
+            included_pair_indices = (~mask).nonzero().squeeze(-1)
+            self.included_pairs = self.all_pairs[included_pair_indices]
+        else:
+            self.included_pairs = self.all_pairs
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
         if cutoff:
@@ -135,6 +138,8 @@ class VerletList(NeighborList):
         self.included_pairs = None
         self.pairs = None
         
+
+        self._hash_indices = torch.zeros(self.natoms * self.natoms, dtype=torch.long, device=self.device)
         self._reference_positions = positions.clone().detach()
         self._reference_box = box.clone().detach()
         self._cutoff_verlet = cutoff + padding
@@ -200,17 +205,21 @@ class VerletList(NeighborList):
         with TimingContext("nl/update/verlet_build/find_pairs"):
             pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
             self.all_pairs = self._verlet_pairs[pairs_inside_cutoff]
+
+            with TimingContext("nl/update/verlet_build/find_pairs/hash"):
+                # Compute the hash values for each pair #
+                all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
+                self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
             
             # Remove excluded pairs and store as self.included_pairs #
             if self.excluded_pairs is not None:
-                included_pair_indices = (~torch.any(torch.all(self.all_pairs.unsqueeze(0) == self.excluded_pairs.unsqueeze(1), dim=2), dim=0)).nonzero().squeeze_()
+                mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
+                excluded_indices = self.get_pair_indices(self.excluded_pairs)
+                mask[excluded_indices] = True
+                included_pair_indices = (~mask).nonzero().squeeze(-1)
                 self.included_pairs = self.all_pairs[included_pair_indices]
             else:
                 self.included_pairs = self.all_pairs
-            
-            # Compute the hash values for each pair #
-            all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
-            self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
         with TimingContext("nl/update"):
