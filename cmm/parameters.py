@@ -49,9 +49,13 @@ class Parameterizer:
 
     def _get_angle_types_from_angle_atoms(self, angle_atoms: torch.Tensor):
         if angle_atoms.numel() > 0:
-            return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]), self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]]))))
+            #return self._nonsymmetric_pairing_function(torch.column_stack((self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]), self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]]))))
+            return self._nonsymmetric_pairing_function_separate(
+                self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 0]]]),
+                self._nonsymmetric_pairing_function(self._atom_types[angle_atoms[:, [1, 2]]])
+            )
         return torch.empty_like(angle_atoms)
-
+    
     def _define_type_names_and_indices(self):
         # Atom types #
         self._name_to_atom_type = {}
@@ -104,6 +108,19 @@ class Parameterizer:
         other_indices = torch.where(pairs[:, 0] >= pairs[:, 1])[0].to(self.device)
         pair_types[i_less_than_j_indices] = torch.square(pairs[i_less_than_j_indices][:, 1]) + pairs[i_less_than_j_indices][:, 0]
         pair_types[other_indices] = torch.square(pairs[other_indices][:, 0]) + pairs[other_indices][:, 0] + pairs[other_indices][:, 1]
+        return pair_types
+    
+    def _nonsymmetric_pairing_function_separate(self, pairs_i: torch.Tensor, pairs_j: torch.Tensor) -> torch.Tensor:
+        """
+        Given two positive indices, (i,j), this function generates a unique index k.
+        The index is different for (j,i) and (i,j). Used for generating the angle and dihedral types.
+        This is the "ElegantPair" function defined at: https://en.wikipedia.org/wiki/Pairing_function#Other_pairing_functions
+        """
+        pair_types = torch.zeros(pairs_i.size(0), dtype=torch.long, device=self.device)
+        i_less_than_j_indices = torch.where(pairs_i < pairs_j)[0].to(self.device)
+        other_indices = torch.where(pairs_i >= pairs_j)[0].to(self.device)
+        pair_types[i_less_than_j_indices] = torch.square(pairs_j[i_less_than_j_indices]) + pairs_i[i_less_than_j_indices]
+        pair_types[other_indices] = torch.square(pairs_i[other_indices]) + pairs_i[other_indices] + pairs_j[other_indices]
         return pair_types
 
     def _flatten_raw_parameter_dicts_to_arrays(self, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):

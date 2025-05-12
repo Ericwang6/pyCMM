@@ -125,6 +125,7 @@ def test_spcfw_vs_openmm():
     torch.set_default_dtype(torch.float64)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
     

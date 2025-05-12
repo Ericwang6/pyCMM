@@ -100,21 +100,23 @@ class SPCfw(ForceField):
             mono = params.get_atomic_parameters('mono')
             natoms = torch.tensor(mono.size(0), device=pairs.device)
 
-            # Lennard-Jones parameters
-            eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-                'eps_lj', included_pair_indices, pairs_lr
-            )
-            sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-                'sigma_lj', included_pair_indices, pairs_lr
-            )
+            with TimingContext("ff/get_parameters/LJ_params"):
+                # Lennard-Jones parameters
+                eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+                    'eps_lj', included_pair_indices, pairs_lr
+                )
+                sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
+                    'sigma_lj', included_pair_indices, pairs_lr
+                )
 
-            bonded_pair_indices = cm.neighbor_list.get_pair_indices(topology.bonded_atoms.T)
-            angle_pair_indices_ij = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 0:2])
-            angle_pair_indices_jk = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 1:].flip(1))
-            r_eq = params.get_pair_parameters('r_eq', bonded_pair_indices)
-            k_b_p = params.get_pair_parameters('k_b', bonded_pair_indices)
-            theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
-            k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
+            with TimingContext("ff/get_parameters/bonded_params"):
+                bonded_pair_indices = cm.neighbor_list.get_pair_indices(topology.bonded_atoms.T)
+                angle_pair_indices_ij = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 0:2])
+                angle_pair_indices_jk = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 1:].flip(1))
+                r_eq = params.get_pair_parameters('r_eq', bonded_pair_indices)
+                k_b_p = params.get_pair_parameters('k_b', bonded_pair_indices)
+                theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
+                k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
         
         with TimingContext("ff/elec"):
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
