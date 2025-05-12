@@ -198,37 +198,31 @@ class VerletList(NeighborList):
     def _update_from_verlet_pairs(self, positions: torch.Tensor, box: torch.Tensor):
         # If we are here, it means that we have all of the needed pairs in the list of pairs
         # inside the verlet cutoff. We just need to pull the appropriate pairs from there.
-        with TimingContext("nl/update/verlet_build/dists"):
-            distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
-            distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
-            distances = torch.linalg.vector_norm(distance_vecs, dim=1)
-        with TimingContext("nl/update/verlet_build/find_pairs"):
-            pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
-            self.all_pairs = self._verlet_pairs[pairs_inside_cutoff]
+        distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+        distances = torch.linalg.vector_norm(distance_vecs, dim=1)
+        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
+        self.all_pairs = self._verlet_pairs[pairs_inside_cutoff]
 
-            with TimingContext("nl/update/verlet_build/find_pairs/hash"):
-                # Compute the hash values for each pair #
-                all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
-                self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
+        # Compute the hash values for each pair #
+        all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
+        self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
             
-            # Remove excluded pairs and store as self.included_pairs #
-            if self.excluded_pairs is not None:
-                mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
-                excluded_indices = self.get_pair_indices(self.excluded_pairs)
-                mask[excluded_indices] = True
-                included_pair_indices = (~mask).nonzero().squeeze(-1)
-                self.included_pairs = self.all_pairs[included_pair_indices]
-            else:
-                self.included_pairs = self.all_pairs
+        # Remove excluded pairs and store as self.included_pairs #
+        if self.excluded_pairs is not None:
+            mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
+            excluded_indices = self.get_pair_indices(self.excluded_pairs)
+            mask[excluded_indices] = True
+            included_pair_indices = (~mask).nonzero().squeeze(-1)
+            self.included_pairs = self.all_pairs[included_pair_indices]
+        else:
+            self.included_pairs = self.all_pairs
 
     def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
-        with TimingContext("nl/update"):
-            if self._needs_update(positions, box, cutoff):
-                with TimingContext("nl/update/full_build"):
-                    self._build(positions, box)
-            else:
-                with TimingContext("nl/update/verlet_build"):
-                    self._update_from_verlet_pairs(positions, box)
+        if self._needs_update(positions, box, cutoff):
+                self._build(positions, box)
+        else:
+                self._update_from_verlet_pairs(positions, box)
 
     def get_all_pairs(self):
         return self.all_pairs
