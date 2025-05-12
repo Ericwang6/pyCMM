@@ -136,9 +136,9 @@ class SPCfw_ASE(Calculator):
                           requires_grad=state['require_box_grads'],
                           device=device)
         bonds = torch.tensor(state['bonds'], device=device)
+        topology = Topology(bonds, positions.size(0), device)
         cm = CoordinateManager(positions, box, state['cutoff_max'],
-                             labels=state['atom_labels'], max_neighbors=state['max_neighbors'])
-        topology = Topology(bonds, cm.neighbor_list, positions.size(0))
+                             state['atom_labels'], topology.all_intramolecular_pairs)
         if ff is None:
             ewald_tolerance = torch.tensor(state['ewald_tolerance'], device=device, dtype=dtype)
             ff = SPCfw(
