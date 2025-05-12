@@ -7,11 +7,11 @@ import os
 from cmm.units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG, DEBYE2EA
 from cmm.misc_utils import read_from_tinker_xyz
 from cmm.coordinate_manager import CoordinateManager
-from cmm.topology import Topology, Topology2
+from cmm.topology import Topology
 from cmm.parameters import Parameterizer
 from cmm.spcfw import SPCfw
 from cmm.spcfw_interface import SPCfw_ASE
-from cmm.neighbor_list import NSquaredList2
+from cmm.neighbor_list import VerletList
 
 from simtk.openmm import app
 import simtk.openmm as mm
@@ -133,8 +133,8 @@ def test_spcfw_vs_openmm():
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
 
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = SPCfw(ewald_tolerance=1e-10)
     parameters = Parameterizer(
@@ -198,11 +198,8 @@ def test_spcfw_new_nl():
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
 
-    topology_2 = Topology2(bonds, coords.size(0), device)
-    nl_2 = NSquaredList2(coords, box, 9.0 / BOHR2ANG, topology_2.all_intramolecular_pairs)
-
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = SPCfw(ewald_tolerance=1e-10)
     parameters = Parameterizer(
@@ -212,3 +209,5 @@ def test_spcfw_new_nl():
 
     energies = ff.evaluate(cm, topology, parameters)
     energies['total'].backward()
+    print(energies['bond'].clone().detach().cpu().numpy() * HARTREE2KCAL)
+    print(energies['angle'].clone().detach().cpu().numpy() * HARTREE2KCAL)

@@ -71,16 +71,18 @@ class SPCfw(ForceField):
 
         with TimingContext("ff/get_subpairs"):
             # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
-            pairs_excl = pairs[topology.all_intramolecular_pairs, :]
+            excluded_pair_indices = cm.neighbor_list.get_pair_indices(cm.neighbor_list.excluded_pairs)
+            included_pair_indices = cm.neighbor_list.get_pair_indices(cm.neighbor_list.included_pairs)
+            pairs_excl = pairs[excluded_pair_indices, :]
             pairs_excl_i_a = pairs_excl[:, 0]
             pairs_excl_j_a = pairs_excl[:, 1]
-            dists_excl = dists[topology.all_intramolecular_pairs]
+            dists_excl = dists[excluded_pair_indices]
 
             # Get pairs, dists, and vectors for real-space potential #
-            pairs_lr = pairs[topology.all_intermolecular_pairs, :]
+            pairs_lr = pairs[included_pair_indices, :]
             pairs_lr_i_a = pairs_lr[:, 0]
             pairs_lr_j_a = pairs_lr[:, 1]
-            dists_lr = dists[topology.all_intermolecular_pairs]
+            dists_lr = dists[included_pair_indices]
 
         with TimingContext("ff/get_parameters"):
             # Electric Multipoles #
@@ -89,14 +91,17 @@ class SPCfw(ForceField):
 
             # Lennard-Jones parameters
             eps_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-                'eps_lj', topology.all_intermolecular_pairs, pairs_lr
+                'eps_lj', included_pair_indices, pairs_lr
             )
             sigma_ij_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-                'sigma_lj', topology.all_intermolecular_pairs, pairs_lr
+                'sigma_lj', included_pair_indices, pairs_lr
             )
 
-            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
-            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
+            bonded_pair_indices = cm.neighbor_list.get_pair_indices(topology.bonded_atoms.T)
+            angle_pair_indices_ij = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 0:2])
+            angle_pair_indices_jk = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 1:].flip(1))
+            r_eq = params.get_pair_parameters('r_eq', bonded_pair_indices)
+            k_b_p = params.get_pair_parameters('k_b', bonded_pair_indices)
             theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
             k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
         
@@ -130,10 +135,10 @@ class SPCfw(ForceField):
                     torch.sum(elec_point_pairwise)
                 )
         with TimingContext("ff/bond"):
-            ene_bond_list = computeHarmonicBondPotential(dists[topology.bonded_pairs], r_eq, k_b_p)
+            ene_bond_list = computeHarmonicBondPotential(dists[bonded_pair_indices], r_eq, k_b_p)
             ene_bonds = torch.sum(ene_bond_list)
         with TimingContext("ff/angles"):
-            angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
+            angles = computeAngleFromVecs(dist_vecs[angle_pair_indices_ij], dist_vecs[angle_pair_indices_jk])
             ene_angles_list = computeHarmonicAnglePotential(
                 angles, theta_eq, k_theta
             )

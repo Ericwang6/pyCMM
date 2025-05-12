@@ -31,11 +31,12 @@ def profile_spcfw_md():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels)
+    
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = SPCfw()
     with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
             atom_type_names, pairs, topology.angle_atoms,
             ff.atomic_params, ff.pair_params, {}, {}, ff.angle_params
@@ -43,7 +44,7 @@ def profile_spcfw_md():
     ff_ase = SPCfw_ASE(ff, cm, topology, parameters)
     fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
     opt = LBFGS(fcf, trajectory='water216_cell_opt_spcfw.traj')
-    opt.run(fmax=1e-2, steps=20)
+    opt.run(fmax=1e-2, steps=2)
     ff_ase.save_state("water216_cell_opt_spcfw.json")
     print_timing_stats()
 

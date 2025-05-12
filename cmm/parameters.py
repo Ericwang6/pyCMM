@@ -192,7 +192,6 @@ class Parameterizer:
         return self._pair_param_arrays[name][self._pair_types[pairs_p]]
 
     def get_pair_parameters_with_optional_combination_rule(self, name: str, pairs_p: torch.Tensor, pairs_a: torch.Tensor, combination_rule=torch.sqrt):
-
         pair_types = self._pair_types[pairs_p]
         pair_params = torch.ones_like(pair_types, device=self.device, dtype=torch.get_default_dtype()) * -123456789.0
         # ^^^ I am guessing there will not be any force field with the parameter -123456789
