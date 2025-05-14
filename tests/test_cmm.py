@@ -10,7 +10,6 @@ import numpy as np
 import os
 
 from cmm.units import BOHR2NM, HARTREE2KJ, HARTREE2KCAL, BOHR2ANG, DEBYE2EA
-from cmm.multipole import computeLocal2GlobalRotationMatrix, rotateMultipoles, rotateQuadrupoles, computeCartesianQuadrupoles
 from cmm.misc_utils import read_from_tinker_xyz
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
@@ -30,117 +29,6 @@ def finite_difference(coords: torch.Tensor, f, h: float = 1e-5):
 
             grads_fd[i, w] = (f_plus_h - f_minus_h) / (2 * h)
     return grads_fd
-
-def get_water_dimer_coords(requires_grad=True):
-    coords = torch.tensor(np.array([
-        [0.0031771858, 1.4710501499, -0.0034222052],
-        [0.0981342864, 0.5090994249, -0.0041139499],
-        [0.8976520298, 1.8147098331, 0.0031728568],
-        [-0.0036002768, -1.3547622039, 0.0027150961],
-        [-0.492886242, -1.6733692175, 0.7647713563],
-        [-0.4948459831, -1.6611969865, -0.763123154],
-    ]) / BOHR2ANG, requires_grad=requires_grad)
-    return coords
-
-def water_data(coords: torch.Tensor):
-    paramIndices = torch.LongTensor([0, 1, 1, 0, 1, 1])
-
-    water_dimer_pairs = torch.tensor([[i, j] for i, j in itertools.product([0, 1, 2], [3, 4, 5])])
-    water_dimer_pairs = torch.vstack((water_dimer_pairs, water_dimer_pairs[:, [1, 0]])).T
-
-    # From: https://github.com/heindelj/CMM.jl/blob/main/src/components/parameters.jl#L45
-    Z = torch.tensor([3.61565, 0.93619])
-    mono = torch.tensor([-0.390896, 0.195448])
-    qShell = mono - Z
-    dipo = torch.tensor([
-        [0.0,       0.0, -0.094298],
-        [0.0910288, 0.0, -0.207851]
-    ])
-    
-    quad_s = torch.tensor([
-        # Q20,       Q21c,      Q21s, Q22c,       Q22s
-        [-0.330685,  0.0,       0.0,  0.869923,   0.0],
-        [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
-    ])
-    quad = computeCartesianQuadrupoles(quad_s)
-    
-    rotMatrix = computeLocal2GlobalRotationMatrix(
-        coords, 
-        coords[[1, 0, 0, 4, 3, 3]], 
-        coords[[2, 2, 1, 5, 5, 4]], 
-        coords[[-1, -1, -1, -1, -1, -1]], 
-        torch.tensor([1, 0, 0, 1, 0, 0])
-    )
-    mPoles = rotateMultipoles(
-        qShell[paramIndices],
-        dipo[paramIndices],
-        quad[paramIndices],
-        rotMatrix
-    ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
-
-    b = torch.tensor([2.13358, 2.33322])
-    param_elec = (Z[paramIndices], mPoles, b[paramIndices])
-
-    # Pauli repulsion
-    b_pauli = torch.tensor([2.1975, 1.96474])
-    Kmono_pauli = torch.tensor([6.50923, 0.527804])
-    Kdipo_pauli = torch.tensor([-5.61925, -0.515584])
-    Kquad_pauli = torch.tensor([-1.56567, -0.440164])
-    param_pauli = (b_pauli[paramIndices], Kmono_pauli[paramIndices], Kdipo_pauli[paramIndices], Kquad_pauli[paramIndices])
-    
-    # Dispersion
-    C6_disp = torch.tensor([35.8289, 1.98954])
-    b_disp = torch.tensor([1.84302, 1.30993])
-    param_disp = (C6_disp[paramIndices], b_disp[paramIndices])
-
-    # Polarization
-    alpha = torch.tensor([
-        [[4.45992, 0.0, 0.0], [0.0, 6.07259, 0.0], [0.0, 0.0, 4.55391]],
-        [[2.22001, 0.0, 0.0], [0.0, 1.66835, 0.0], [0.0, 0.0, 0.183855]]
-    ])[paramIndices]
-    alpha = rotateQuadrupoles(alpha, rotMatrix)
-    eta = torch.tensor([6.18699e-6, 0.561535]) * 2
-    groupCharges = torch.tensor([0.0, 0.0])
-    param_pol = (alpha, eta[paramIndices], groupCharges)
-    
-    # Exchange-polarization
-    b_xpol = torch.tensor([2.73582, 2.04028])
-    Kmono_xpol = torch.tensor([1.26592, 0.200089])
-    Kdipo_xpol = torch.zeros((2,))
-    Kquad_xpol = torch.zeros((2,))
-    param_xpol = (b_xpol[paramIndices], Kmono_xpol[paramIndices], Kdipo_xpol[paramIndices], Kquad_xpol[paramIndices])
-
-    # Charge Transfer
-    b_ct = torch.tensor([1.89485, 2.36763])
-    Kmono_ct_acc = torch.tensor([-0.67857, 1.36735])
-    Kdipo_ct_acc = torch.tensor([0.0, 0.0])
-    Kquad_ct_acc = torch.tensor([0.0, 0.0])
-
-    Kmono_ct_don = torch.tensor([0.757752, 0.00888982])
-    Kdipo_ct_don = torch.tensor([-0.512036, -0.0511668])
-    Kquad_ct_don = torch.tensor([-0.208186, 0.0568152])
-
-    eps_ct = torch.tensor([
-        [1e15, 0.380979],
-        [0.380979, 1e15]
-    ])
-
-    param_ct = (
-        b_ct[paramIndices], 
-        Kmono_ct_acc[paramIndices], Kdipo_ct_acc[paramIndices], Kquad_ct_acc[paramIndices], 
-        Kmono_ct_don[paramIndices], Kdipo_ct_don[paramIndices], Kquad_ct_don[paramIndices], 
-        eps_ct[paramIndices[water_dimer_pairs[0]], paramIndices[water_dimer_pairs[1]]]
-    )
-
-    return (
-        water_dimer_pairs,
-        param_elec,
-        param_pauli,
-        param_disp,
-        param_pol,
-        param_xpol,
-        param_ct,
-    )
 
 def test_total_energy_and_total_gradients_ion_ion():
     torch.set_default_dtype(torch.float64)
@@ -277,15 +165,16 @@ def test_total_energy_and_total_gradients_ion_water():
 
 def test_total_energy_and_total_gradients():
     torch.set_default_dtype(torch.float64)
-
-    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
+    
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    coords_no_grad, _, _, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False, device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True, device=device)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, requires_grad=True)
-    
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    box = torch.tensor(np.eye(3) * 100, requires_grad=True, device=device)
+
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
     ff = CMM()
     parameters = Parameterizer(
@@ -295,7 +184,7 @@ def test_total_energy_and_total_gradients():
 
     energies_ff = ff.evaluate(cm, topology, parameters)
     total_ref = torch.tensor([-4.768231511534177])
-    total_ff = energies_ff['total'] * HARTREE2KCAL
+    total_ff = energies_ff['total'].cpu() * HARTREE2KCAL
     assert torch.allclose(total_ff, total_ref)
 
     energies_ff['total'].backward()
@@ -362,14 +251,15 @@ def test_dipole_moment():
 
 def test_nonbonded_interactions():
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=False, device=device)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 100, requires_grad=False)
+    box = torch.tensor(np.eye(3) * 100, requires_grad=False, device=device)
     
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
     ff = CMM()
     parameters = Parameterizer(
@@ -378,23 +268,26 @@ def test_nonbonded_interactions():
     )
     energies = ff.evaluate(cm, topology, parameters)
 
-    ct_direct = energies['ct_direct'] * HARTREE2KCAL
-    perm_elec = energies['perm_elec'] * HARTREE2KCAL
-    pol_ct = energies['pol'] * HARTREE2KCAL
-    pauli = energies['pauli'] * HARTREE2KCAL
-    disp = energies['disp'] * HARTREE2KCAL
-    xpol = energies['xpol'] * HARTREE2KCAL
+    torch.set_printoptions(9)
+    print(energies['deformation'] * HARTREE2KCAL)
+
+    ct_direct = energies['ct_direct'].cpu() * HARTREE2KCAL
+    perm_elec = energies['perm_elec'].cpu() * HARTREE2KCAL
+    pol_ct = energies['pol'].cpu() * HARTREE2KCAL
+    pauli = energies['pauli'].cpu() * HARTREE2KCAL
+    disp = energies['disp'].cpu() * HARTREE2KCAL
+    xpol = energies['xpol'].cpu() * HARTREE2KCAL
 
     ct_direct_ref = torch.tensor([-2.777994825946152])
+    xpol_ref = torch.tensor([-0.4036285834810728])
     perm_elec_ref = torch.tensor([-9.705778546689396])
     pol_ct_ref = torch.tensor([-0.56935496823574])
     pauli_ref = torch.tensor([10.70659662118688])
     disp_ref = torch.tensor([-2.054389376337415])
-    xpol_ref = torch.tensor([-0.4036285834810728])
     assert torch.allclose(ct_direct, ct_direct_ref)
+    assert torch.allclose(xpol, xpol_ref)
+    assert torch.allclose(disp, disp_ref)
+    assert torch.allclose(pauli, pauli_ref)
     assert torch.allclose(perm_elec, perm_elec_ref)
     assert torch.allclose(pol_ct, pol_ct_ref)
-    assert torch.allclose(pauli, pauli_ref)
-    assert torch.allclose(disp, disp_ref)
-    assert torch.allclose(xpol, xpol_ref)
 

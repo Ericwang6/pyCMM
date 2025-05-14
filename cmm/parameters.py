@@ -231,8 +231,8 @@ class Parameterizer:
     def get_pair_pair_parameters(self, name: str, pairs_1_p: torch.Tensor, pairs_2_p: torch.Tensor):
         return self._pair_pair_param_arrays[name][self._pair_types[pairs_1_p], self._pair_types[pairs_2_p]]
     
-    def get_pair_angle_parameters(self, name: str, angle_pairs_p: torch.Tensor, angle_atoms_a: torch.Tensor):
+    def get_pair_angle_parameters(self, name: str, angle_pairs_flat_p: torch.Tensor, angle_atoms_a: torch.Tensor):
         # NOTE(JOE): _get_angle_types_from_angle_atoms will return the type of each angle. Since there are two
         # bonds in each angle (which may in general be different), we have to repeat the angle types twice.
         # angle_pairs_p comes from the topology object as two columns of pair indices hence the flattening.
-        return self._pair_angle_param_arrays[name][self._pair_types[angle_pairs_p.T.flatten()], self._get_angle_types_from_angle_atoms(angle_atoms_a).repeat_interleave(2)]
+        return self._pair_angle_param_arrays[name][self._pair_types[angle_pairs_flat_p], self._get_angle_types_from_angle_atoms(angle_atoms_a).repeat_interleave(2)]

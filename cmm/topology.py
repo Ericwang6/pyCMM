@@ -58,18 +58,18 @@ class Topology:
         self.all_intramolecular_pairs = torch.tensor(intramolecular_atomic_pairs, dtype=torch.long, device=self.device, requires_grad=False)
         
         # Assign a pair index to each pair of atoms in the full set of intramolecular pairs
-        n_exclusions = 0
-        for pair in intramolecular_atomic_pairs:
-            bonded_atoms_to_pair_index[pair] = n_exclusions
-            n_exclusions += 1
-        assert n_exclusions == len(intramolecular_atomic_pairs)
-        
-        # Form the atomic pair tensors (in the pair index space) #
-        self.bonded_pairs = torch.tensor([bonded_atoms_to_pair_index[bond] for bond in bonded_atoms], dtype=torch.long, device=self.device, requires_grad=False)
-        self.angle_pairs = torch.tensor(
-            [(bonded_atoms_to_pair_index[bond_pair[0]], bonded_atoms_to_pair_index[bond_pair[1]]) for bond_pair in angle_bonds],
-            dtype=torch.long, device=self.device, requires_grad=False
-        ).t().contiguous()
+        #n_exclusions = 0
+        #for pair in intramolecular_atomic_pairs:
+        #    bonded_atoms_to_pair_index[pair] = n_exclusions
+        #    n_exclusions += 1
+        #assert n_exclusions == len(intramolecular_atomic_pairs)
+        #
+        ## Form the atomic pair tensors (in the pair index space) #
+        #self.bonded_pairs = torch.tensor([bonded_atoms_to_pair_index[bond] for bond in bonded_atoms], dtype=torch.long, device=self.device, requires_grad=False)
+        #self.angle_pairs = torch.tensor(
+        #    [(bonded_atoms_to_pair_index[bond_pair[0]], bonded_atoms_to_pair_index[bond_pair[1]]) for bond_pair in angle_bonds],
+        #    dtype=torch.long, device=self.device, requires_grad=False
+        #).t().contiguous()
 
     def build_adjacency_list(self):
         adj_list = defaultdict(list)
@@ -173,7 +173,7 @@ class Topology:
             groups = torch.sort(self.angle_atoms, dim=1).values
         else:
             groups = torch.empty_like(self.angle_atoms)
-        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_pairs.device), groups.flatten()))[0].unsqueeze_(1)
+        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_atoms.device), groups.flatten()))[0].unsqueeze_(1)
         
         if single_atom_groups.numel() > 0:
             self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind() + single_atom_groups.unbind()), device=self.device, requires_grad=False)
