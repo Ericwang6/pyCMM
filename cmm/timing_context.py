@@ -42,13 +42,13 @@ def get_timing_stats():
         if not times:
             continue
         stats[name] = {
-            'count': len(times),
-            'total': sum(times),
-            'mean': statistics.mean(times),
-            'median': statistics.median(times),
-            'min': min(times),
-            'max': max(times),
-            'std': statistics.stdev(times) if len(times) > 1 else 0
+            'count': len(times[2:]) if len(times) > 2 else 0,
+            'total': sum(times[2:]) if len(times) > 2 else 0,
+            'mean': statistics.mean(times[2:]) if len(times) > 2 else 0,
+            'median': statistics.median(times[2:]) if len(times) > 2 else 0,
+            'min': min(times[2:]) if len(times) > 2 else 0,
+            'max': max(times[2:]) if len(times) > 2 else 0,
+            'std': statistics.stdev(times[2:]) if len(times) > 3 else 0
         }
     return stats
 
@@ -61,11 +61,11 @@ def print_timing_stats():
         return
         
     print("\n===== Timing Statistics =====")
-    print(f"{'Section':<50} | {'Count':>8} | {'Total (s)':>10} | {'Mean (ms)':>10} | {'Median (ms)':>10} | {'Min (ms)':>10} | {'Max (ms)':>10} | {'Std (ms)':>10}")
+    print(f"{'Section':<45} | {'Count':>8} | {'Total (s)':>10} | {'Mean (ms)':>10} | {'Median (ms)':>10} | {'Min (ms)':>10} | {'Max (ms)':>10} | {'Std (ms)':>10}")
     print("-" * 135)
     
     for name, data in sorted(stats.items(), key=lambda x: x[1]['total'], reverse=True):
-        print(f"{name:<50} | {data['count']:>8} | {data['total']:>10.4f} | {data['mean']*1000:>10.2f} | {data['median']*1000:>10.2f} | {data['min']*1000:>10.2f} | {data['max']*1000:>10.2f} | {data['std']*1000:>10.2f}")
+        print(f"{name:<45} | {data['count']:>8} | {data['total']:>10.4f} | {data['mean']*1000:>10.2f} | {data['median']*1000:>10.2f} | {data['min']*1000:>10.2f} | {data['max']*1000:>10.2f} | {data['std']*1000:>10.2f}")
 
 def reset_timings():
     _timings.clear()

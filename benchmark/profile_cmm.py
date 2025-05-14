@@ -42,9 +42,9 @@ def profile_spcfw_md():
             ff.atomic_params, ff.pair_params, {}, {}, ff.angle_params
         )
     ff_ase = SPCfw_ASE(ff, cm, topology, parameters)
-    fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
-    opt = LBFGS(fcf, trajectory='water216_cell_opt_spcfw.traj')
-    opt.run(fmax=1e-2, steps=20)
+    #fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
+    opt = LBFGS(ff_ase.atoms, trajectory='water216_cell_opt_spcfw.traj')
+    opt.run(fmax=1e-2, steps=200)
     ff_ase.save_state("water216_cell_opt_spcfw.json")
     print_timing_stats()
 
