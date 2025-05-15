@@ -24,10 +24,10 @@ def computeChargeFluxBondBond(
         j_bb_cf_1: torch.Tensor, j_bb_cf_2: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     return (
-        -j_bb_cf_1 * (r2 - req2),
          j_bb_cf_1 * (r2 - req2),
-        -j_bb_cf_2 * (r1 - req1),
+        -j_bb_cf_1 * (r2 - req2),
          j_bb_cf_2 * (r1 - req1),
+        -j_bb_cf_2 * (r1 - req1),
     )
 
 def computeChargeFluxAngle(

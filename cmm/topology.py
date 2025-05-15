@@ -57,6 +57,9 @@ class Topology:
         self.angle_atoms = torch.tensor(angle_atoms, dtype=torch.long, device=self.device, requires_grad=False)
         self.all_intramolecular_pairs = torch.tensor(intramolecular_atomic_pairs, dtype=torch.long, device=self.device, requires_grad=False)
         
+        # NOTE(JOE): I might revisit the below code and force the intramolecular pairs to have a fixed
+        # pair index. This saves on assigning parameters since we don't have to search for which pair
+        # indices correspond to intramolecular interactions.
         # Assign a pair index to each pair of atoms in the full set of intramolecular pairs
         #n_exclusions = 0
         #for pair in intramolecular_atomic_pairs:
@@ -173,7 +176,7 @@ class Topology:
             groups = torch.sort(self.angle_atoms, dim=1).values
         else:
             groups = torch.empty_like(self.angle_atoms)
-        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.bonded_atoms.device), groups.flatten()))[0].unsqueeze_(1)
+        single_atom_groups = torch.where(~torch.isin(torch.arange(self.natoms, device=self.device), groups.flatten()))[0].unsqueeze_(1)
         
         if single_atom_groups.numel() > 0:
             self.polarization_groups = torch.nested.nested_tensor(list(groups.unbind() + single_atom_groups.unbind()), device=self.device, requires_grad=False)
@@ -187,10 +190,10 @@ class Topology:
         self.pol_group_indices_a = torch.cat(self.polarization_groups.unbind())
         self.pol_group_lengths_g = torch.tensor(
             [g.size(0) for g in self.polarization_groups.unbind()], 
-            dtype=torch.long, device=groups.device
+            dtype=torch.long, device=self.device
         )
         self.n_pol_groups = self.pol_group_lengths_g.size(0)
         self.pol_group_segment_indices = torch.zeros(self.n_pol_groups + 1, 
-            dtype=torch.long, device=groups.device
+            dtype=torch.long, device=self.device
         )
         self.pol_group_segment_indices[1:] = torch.cumsum(self.pol_group_lengths_g, dim=0)

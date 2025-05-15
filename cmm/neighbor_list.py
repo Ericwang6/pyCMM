@@ -94,7 +94,7 @@ class NSquaredList(NeighborList):
         self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
 
         # Remove excluded pairs and store as self.included_pairs #
-        if self.excluded_pairs is not None:
+        if self.excluded_pairs is not None and self.excluded_pairs.numel() > 0:
             mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
             excluded_indices = self.get_pair_indices(self.excluded_pairs)
             mask[excluded_indices] = True
@@ -209,7 +209,7 @@ class VerletList(NeighborList):
         self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
             
         # Remove excluded pairs and store as self.included_pairs #
-        if self.excluded_pairs is not None:
+        if self.excluded_pairs is not None and self.excluded_pairs.numel() > 0:
             mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
             excluded_indices = self.get_pair_indices(self.excluded_pairs)
             mask[excluded_indices] = True
