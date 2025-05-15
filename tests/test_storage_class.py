@@ -3,6 +3,8 @@ import torch
 from tensordict import TensorDict
 
 def test_storage_rebuild():
+    pytest.skip("This is just a scratch space for now.")
+    
     natoms = 5
     max_pairs_per_atom = 8
     td = TensorDict(

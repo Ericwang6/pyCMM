@@ -72,7 +72,6 @@ class CMM_ASE(Calculator):
             'cutoff_short_range': float(self._ff.cutoff_sr.item()),
             'require_coord_grads': self._cm._need_coordinate_grads,
             'require_box_grads': self._cm._need_box_grads,
-            'max_neighbors': self._cm.max_neighbors,
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
             'output_folder': str(self.output_folder),

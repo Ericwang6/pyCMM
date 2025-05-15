@@ -283,36 +283,6 @@ class Logger:
         # but logging will happen at the interval given to the Logger.
         dynamics.attach(log_wrapper, interval=1)
     
-    def log_energy_components(self, detailed: bool = False):
-        """
-        Log a detailed breakdown of energy components.
-        
-        Args:
-            detailed: Whether to log even more detailed components
-        """
-        if not hasattr(self.ase_calculator, '_energies'):
-            print("No energy components available")
-            return
-        
-        energies = self.ase_calculator._energies
-        print("\nEnergy Components:")
-        print("-----------------")
-        
-        # Always print main components
-        for component in ['total', 'perm_elec', 'pol', 'pauli', 'disp', 'ct_direct', 'deformation']:
-            if component in energies:
-                value = float(energies[component].detach().cpu())
-                print(f"{component.ljust(12)}: {value:.8f}")
-        
-        # Print additional components if detailed
-        if detailed:
-            print("\nDetailed Components:")
-            print("-------------------")
-            for component in ['bond', 'angle', 'bond_bond', 'bond_angle', 'ewald']:
-                if component in energies:
-                    value = float(energies[component].detach().cpu())
-                    print(f"{component.ljust(12)}: {value:.8f}")
-    
     def save_state(self, filename: str = None):
         """
         Save the current state of the logger.

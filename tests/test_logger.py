@@ -94,9 +94,6 @@ def test_md_logger_basic():
             # Count non-comment, non-empty lines
             data_lines = [l for l in lines if not l.startswith('#') and l.strip()]
             assert len(data_lines) >= 5  # At least 5 steps logged
-
-        # Test energy component logging
-        logger.log_energy_components(detailed=True)
         
         # Test saving state
         state_file = os.path.join(temp_dir, "logger_state.json")
