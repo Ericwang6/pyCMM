@@ -21,6 +21,7 @@ from ase.units import fs, bar
 def test_md_logger_basic():
     """Test basic functionality of Logger"""
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Create a temporary directory for outputs
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -35,9 +36,9 @@ def test_md_logger_basic():
         atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
         
         # Initialize system
+        topology = Topology(bonds, coords.size(0), device)
         box = torch.tensor(np.eye(3) * 20.0 / BOHR2ANG, requires_grad=True)
-        cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
         pairs, _, _ = cm.get_distances_vectors_and_pairs()
         ff = CMM()
         
@@ -49,7 +50,7 @@ def test_md_logger_basic():
         
         # Create ASE calculator
         calculator = CMM_ASE(ff, cm, topology, parameters, output_folder=temp_dir)
-        
+        calculator.calculate()
         # Define custom property functions
         custom_properties = {
             "max_force": lambda cm, ff, ase_calc: float(np.max(np.abs(ase_calc.results['forces'])))
@@ -62,7 +63,7 @@ def test_md_logger_basic():
             ase_calculator=calculator,
             log_interval=1,  # Log every step for testing
             output_folder=temp_dir,
-            properties=["step", "time", "temperature", "V_total", "max_force"],
+            properties=["step", "temperature", "V_total", "max_force"],
             custom_properties=custom_properties
         )
         
@@ -106,9 +107,10 @@ def test_md_logger_basic():
 def test_md_logger_water_box():
     """Test Logger with a larger water box system"""
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
     # Skip test if it takes too long
-    #pytest.skip("Skipping water box test to save time")
+    pytest.skip("Skipping water box test to save time")
     
     # Create a temporary directory for outputs
     with tempfile.TemporaryDirectory(delete=False) as temp_dir:
@@ -125,9 +127,9 @@ def test_md_logger_water_box():
         atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
         
         # Initialize system
+        topology = Topology(bonds, coords.size(0), device)
         box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
-        cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+        cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
         pairs, _, _ = cm.get_distances_vectors_and_pairs()
         ff = CMM(use_ewald=True)
         

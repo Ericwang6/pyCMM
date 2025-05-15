@@ -48,8 +48,8 @@ class CMM(ForceField):
         self.cutoff_vdw = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.use_ewald = use_ewald
 
-        self.use_lr_dispersion = use_lr_dispersion
 
+        self.use_lr_dispersion = use_lr_dispersion
         self.use_polarization = use_polarization
         self.polarization_solver = None
         if self.use_polarization:

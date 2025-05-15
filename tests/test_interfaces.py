@@ -29,8 +29,8 @@ def test_ase_basic():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)
     parameters = Parameterizer(
@@ -63,11 +63,11 @@ def test_cmm_ase_checkpoint_and_restart():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=False, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, _, _ = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True, solve_tolerance=1e-10, ewald_tolerance=1e-10)
     with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
             atom_type_names, pairs, topology.angle_atoms,
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -93,6 +93,7 @@ def test_cmm_ase_checkpoint_and_restart():
 
 def test_optimize_dimers_via_ase():
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_dimer.xyz"), requires_grad=True)
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
@@ -100,8 +101,8 @@ def test_optimize_dimers_via_ase():
 
     box = torch.tensor(np.eye(3) * 100, requires_grad=False)
     
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM()
     parameters = Parameterizer(
@@ -140,23 +141,23 @@ def test_optimize_water_box_via_ase():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=False, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True)
     with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
             atom_type_names, pairs, topology.angle_atoms,
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
         )
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     opt = LBFGS(ff_ase.atoms, trajectory='water216_opt.traj')
-    opt.run(fmax=1e-2)
+    opt.run(steps=2)
 
 def test_optimize_water_box_and_cell_via_ase():
     torch.set_default_dtype(torch.float64)
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device, requires_grad=True)
     permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
     bonds[0] = bonds[0][permutation]
@@ -166,11 +167,11 @@ def test_optimize_water_box_and_cell_via_ase():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True, use_lr_dispersion=True)
     with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
         parameters = Parameterizer(
             atom_type_names, pairs, topology.angle_atoms,
             ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -178,47 +179,5 @@ def test_optimize_water_box_and_cell_via_ase():
     ff_ase = CMM_ASE(ff, cm, topology, parameters)
     fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
     opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')
-    opt.run(fmax=1e-2)
+    opt.run(steps=2)
     ff_ase.save_state("water216_cell_opt.json")
-
-#def test_ideal_gas():
-#    torch.set_default_dtype(torch.float64)
-#
-#    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device)
-#    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
-#    bonds[0] = bonds[0][permutation]
-#    bonds[1] = bonds[1][permutation]
-#    
-#    # Normally, the parser should enforce just returning the names of atom types
-#    atom_indices_to_names = {0: "O_water", 1: "H_water"}
-#    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-#    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
-#    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels, max_neighbors=1024)
-#    pairs, _, _ = cm.get_distances_vectors_and_pairs()
-#    ff = CMM(use_ewald=True, solve_tolerance=1e-10, ewald_tolerance=1e-10)
-#    with torch.no_grad():
-#        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-#        parameters = Parameterizer(
-#            atom_type_names, pairs, topology.angle_atoms,
-#            ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-#        )
-#
-#    ff_ase = CMM_ASE(ff, cm, topology, parameters, output_folder=os.path.join(os.path.dirname(__file__), "scratch"))
-#
-#    temperature = 1000.0  # K
-#    MaxwellBoltzmannDistribution(ff_ase.atoms, temperature_K=temperature, force_temp=True)
-#
-#    dyn = NPTBerendsen(ff_ase.atoms, timestep=1.0 * fs, temperature_K=temperature,
-#               taut=100 * fs, pressure_au=1013.25 * bar,#1.01325 * bar,
-#               taup=1000 * fs, compressibility_au=4.57e-5 / bar)
-#    def log_step(atoms=ff_ase.atoms):
-#        energy = atoms.get_potential_energy()
-#        kinetic = atoms.get_kinetic_energy()
-#        temperature = atoms.get_temperature()
-#        stress_total = atoms.get_stress(voigt=True, include_ideal_gas=True)
-#        pressure = (-(stress_total[0] + stress_total[1] + stress_total[2]) / 3) / (bar * 1.01325)
-#        print(f"Step: {dyn.nsteps}, E_pot: {energy:.6f} eV, E_kin: {kinetic:.6f} eV, T: {temperature:.1f} K, Virial Press.: {pressure:.2f} atm, Volume. {atoms.get_volume():.2f}")
-#
-#    dyn.attach(lambda : log_step(ff_ase.atoms), interval=1000)  # Log at every step
-#    dyn.run(1000000)

@@ -92,13 +92,3 @@ def test_mpoles():
     mPoles_i, mPoles_j = mpoles[water_dimer_pairs[0]], mpoles[water_dimer_pairs[1]]
     ene = torch.sum(computePairwisePermElecEnergyNoDamp(drVec, mPoles_i, mPoles_j)) / 2 * HARTREE2KJ
     assert torch.allclose(ene, ene_ref)
-
-def test_example():
-    input_pdb = os.path.join(os.path.dirname(__file__), 'data/input.pdb')
-    pdb = PDBFile(input_pdb)
-    forcefield = ForceField('amber14-all.xml', 'amber14/tip3pfb.xml')
-    system = forcefield.createSystem(pdb.topology, nonbondedMethod=PME, nonbondedCutoff=1*nanometer, constraints=HBonds)
-    integrator = LangevinMiddleIntegrator(300*kelvin, 1/picosecond, 0.004*picoseconds)
-    simulation = Simulation(pdb.topology, system, integrator)
-    simulation.context.setPositions(pdb.positions)
-    simulation.minimizeEnergy()

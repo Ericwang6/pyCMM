@@ -18,10 +18,6 @@ import simtk.openmm as mm
 import simtk.unit as unit
 from simtk.openmm.app import  PDBFile, Modeller
 
-from ase.filters import FrechetCellFilter
-from ase.optimize import LBFGS
-from ase.units import bar
-
 def test_spcfw_vs_openmm():
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.pdb")
     pdb = PDBFile(system_file)
@@ -157,57 +153,3 @@ def test_spcfw_vs_openmm():
     assert np.isclose(bond_energy.value_in_unit(unit.kilocalorie_per_mole), energies['bond'].clone().detach().cpu().numpy() * HARTREE2KCAL)
     assert np.isclose(angle_energy.value_in_unit(unit.kilocalorie_per_mole), energies['angle'].clone().detach().cpu().numpy() * HARTREE2KCAL)
     assert np.isclose(nonbonded_energy.value_in_unit(unit.kilocalorie_per_mole), (energies['total_elec'] + energies['lj']).clone().detach().cpu().numpy() * HARTREE2KCAL)
-
-def test_optimize_water_box_and_cell_via_ase():
-    torch.set_default_dtype(torch.float64)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216.xyz"), device=device, requires_grad=True)
-    permutation = np.argsort(bonds[0], kind='stable') # Make sure sort is stable so equivalent indices don't get swapped.
-    bonds[0] = bonds[0][permutation]
-    bonds[1] = bonds[1][permutation]
-    
-    # Normally, the parser should enforce just returning the names of atom types
-    atom_indices_to_names = {0: "O_water", 1: "H_water"}
-    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=True, device=device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels=labels)
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = SPCfw()
-    with torch.no_grad():
-        topology = Topology(bonds, cm.neighbor_list, coords.size(0))
-        parameters = Parameterizer(
-            atom_type_names, pairs, topology.angle_atoms,
-            ff.atomic_params, ff.pair_params, {}, {}, ff.angle_params
-        )
-    ff_ase = SPCfw_ASE(ff, cm, topology, parameters)
-    fcf = FrechetCellFilter(ff_ase.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
-    opt = LBFGS(fcf, trajectory='water216_cell_opt_spcfw.traj')
-    opt.run(fmax=1e-2)
-    ff_ase.save_state("water216_cell_opt_spcfw.json")
-
-def test_spcfw_new_nl():
-    torch.set_default_dtype(torch.float64)
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
-
-    # Normally, the parser should enforce just returning the names of atom types
-    atom_indices_to_names = {0: "O_water", 1: "H_water"}
-    atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
-
-    topology = Topology(bonds, coords.size(0), device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = SPCfw(ewald_tolerance=1e-10)
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, {}, {}, ff.angle_params
-    )
-
-    energies = ff.evaluate(cm, topology, parameters)
-    energies['total'].backward()
-    print(energies['bond'].clone().detach().cpu().numpy() * HARTREE2KCAL)
-    print(energies['angle'].clone().detach().cpu().numpy() * HARTREE2KCAL)

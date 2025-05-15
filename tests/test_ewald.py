@@ -21,6 +21,7 @@ import openmm.app as app
 # Ported from https://github.com/openmm/openmm/blob/39808f12cb7dc0465748cc3884b50594ef568523/tests/TestEwald.h
 def test_ewald_exact():
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # Use a NaCl crystal to compare the calculated and Madelung energies
     numParticles = 1000
     boxSize = 28.2
@@ -55,7 +56,7 @@ def test_ewald_exact():
     exactEnergy = -(M * COULOMB * COULOMB  * AVOGADRO_CONSTANT_NA * numParticles) / (FOUR_PI_EPS * CELL_LENGTH * 2 * 1000)
 
     coords = torch.tensor(positions / BOHR2NM, requires_grad=True)
-    bonds = np.array([], dtype=np.float64)
+    bonds = np.empty((2, 0), dtype=np.float64)
     atom_type_names = ["" for i in range(coords.size(0))]
     labels = ["" for i in range(coords.size(0))]
     for i in range(coords.size(0) // 2):
@@ -67,8 +68,8 @@ def test_ewald_exact():
 
     box = torch.tensor(np.eye(3) * boxSize / BOHR2ANG, requires_grad=True)
 
-    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(ewald_tolerance=torch.tensor(1e-15), use_ewald=True, use_polarization=False)
     parameters = Parameterizer(
@@ -86,20 +87,22 @@ def test_ewald_exact():
     ff.rebuild_atomic_params()
 
     energies = ff.evaluate(cm, topology, parameters)
+    print(energies)
     elec_energy_cmm = (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ
     assert torch.isclose(torch.tensor(exactEnergy._value), elec_energy_cmm)
 
 def test_multipolar_ewald_water_mchem_reference():
     torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/water_216_mchem.xyz"), requires_grad=True)
     
     # Normally, the parser should enforce just returning the names of atom types
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True)
-    cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, 1024)
-    topology = Topology(bonds, cm.neighbor_list, coords.size(0))
+    topology = Topology(bonds, coords.size(0), device)
+    cm = CoordinateManager(coords, box, 7.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
     ff = CMM(use_ewald=True, use_polarization=False, cutoff_ewald=torch.tensor(9.0 / BOHR2ANG), ewald_tolerance=torch.tensor(1e-15))
     parameters = Parameterizer(
