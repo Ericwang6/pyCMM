@@ -2,8 +2,6 @@ import torch
 from torch_scatter import segment_csr
 from typing import Optional
 
-from .electrostatics import computeInducedElectricPotentialAndFieldsFromPairs
-
 def get_field_dependent_polarizabilities(
         polarizabilities_a: torch.Tensor,
         elec_field_a: torch.Tensor,
