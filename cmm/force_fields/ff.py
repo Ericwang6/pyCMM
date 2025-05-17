@@ -9,14 +9,15 @@ class FF(torch.nn.Module, ABC):
         super().__init__()
         self._dtype = dtype
         self._device = device
-        self._ff_parameters = {}
-        self._terms = []
-        self._energies = {}
+        
+        self.ff_parameters = {}
+        self.terms = []
+        self.energies = {}
 
     def add_term(self, term: Term):
-        self._terms.append(term)
+        self.terms.append(term)
         for name in term.params:
-            self._ff_parameters[name] = torch.empty(0, dtype=self._dtype, device=self._device)
+            self.ff_parameters[name] = torch.empty(0, dtype=self._dtype, device=self._device)
 
     @abstractmethod
     def forward(self, system: System):

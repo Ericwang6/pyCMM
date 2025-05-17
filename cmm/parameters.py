@@ -39,7 +39,6 @@ class Parameterizer:
         self._angle_types = self._get_angle_types_from_angle_atoms(angle_atoms)
 
     def rebuild(self, pairs: torch.Tensor, raw_atomic_params: Dict[str, torch.Tensor], raw_pair_params: Dict[Tuple[str, str], torch.Tensor], raw_pair_pair_params: Dict[Tuple[Tuple[str, str], Tuple[str, str]], torch.Tensor], raw_pair_angle_params: Dict[Tuple[Tuple[str, str], Tuple[str, str, str]], torch.Tensor], raw_angle_params: Dict[Tuple[str, str, str], torch.Tensor]):
-        print(raw_atomic_params)
         self._flatten_raw_parameter_dicts_to_arrays(raw_atomic_params, raw_pair_params, raw_pair_pair_params, raw_pair_angle_params, raw_angle_params)
         self._pair_types = self._symmetric_pairing_function(self._atom_types[pairs])
         self._build_atomic_parameter_arrays(raw_atomic_params)
@@ -175,8 +174,6 @@ class Parameterizer:
                 self._atomic_param_arrays[param_key][i] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
 
     def _build_pair_parameter_arrays(self, raw_pair_params: Dict[Tuple[str, str], torch.Tensor]):
-        #print(raw_pair_params[("O_water", "H_water")])
-        #print(self._pair_param_arrays.keys())
         for param_key in self._pair_param_arrays.keys():
             for i in torch.arange(len(self._unique_pair_type_names)):
                 if self._unique_pair_type_names[i] in raw_pair_params and param_key in raw_pair_params[self._unique_pair_type_names[i]]:
@@ -398,8 +395,6 @@ class Parameterizer2:
                 self._atomic_param_arrays[param_key][i] = raw_atomic_params[self._unique_atom_type_names[i]][param_key]
 
     def _build_pair_parameter_arrays(self, raw_pair_params: Dict[Tuple[str, str], torch.Tensor]):
-        #print(raw_pair_params[("O_water", "H_water")])
-        #print(self._pair_param_arrays.keys())
         for param_key in self._pair_param_arrays.keys():
             for i in torch.arange(len(self._unique_pair_type_names)):
                 if self._unique_pair_type_names[i] in raw_pair_params and param_key in raw_pair_params[self._unique_pair_type_names[i]]:

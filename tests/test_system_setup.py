@@ -55,6 +55,6 @@ def test_spcfw_water_box_setup():
     topology = Topology(bonds, coords.size(0), device)
     system = System(coords, box, atom_type_names, topology, settings)
     ff = SPCFW()
-    print(ff._ff_parameters)
     ff.forward(system)
+    ff.energies['V_bond'].backward()
     

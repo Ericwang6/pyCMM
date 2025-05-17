@@ -7,7 +7,7 @@ from ..parameters import Parameterizer2
 from ..units import HARTREE2KCAL, BOHR2ANG
 
 class SPCFW(FF):
-    def __init__(self, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) -> None:
+    def __init__(self, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
         super().__init__(dtype, device)
 
         self.add_term(HarmonicBond())
@@ -23,19 +23,19 @@ class SPCFW(FF):
 
         self.pair_params = {
             ("O_water", "H_water"): {
-                "k_bond": torch.tensor([1059.162 / HARTREE2KCAL * BOHR2ANG * BOHR2ANG], dtype=self._dtype, device=self._device),
-                "r_eq": torch.tensor([1.012 / BOHR2ANG], dtype=self._dtype, device=self._device),
+                "k_bond": torch.tensor([1059.162 / HARTREE2KCAL * BOHR2ANG * BOHR2ANG], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
+                "r_eq": torch.tensor([1.012 / BOHR2ANG], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
             },
             ("O_water", "O_water"): {
-                "eps_lj": torch.tensor([0.1554253 / HARTREE2KCAL], dtype=self._dtype, device=self._device),
-                "sigma_lj": torch.tensor([3.165492 / BOHR2ANG], dtype=self._dtype, device=self._device),
+                "eps_lj": torch.tensor([0.1554253 / HARTREE2KCAL], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
+                "sigma_lj": torch.tensor([3.165492 / BOHR2ANG], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
             },
         }
 
         self.angle_params = {
             ("H_water", "O_water", "H_water"): {
-                "k_theta": torch.tensor([75.90 / HARTREE2KCAL], dtype=self._dtype, device=self._device),
-                "theta_eq": torch.tensor([113.24 * math.pi / 180.0], dtype=self._dtype, device=self._device),
+                "k_theta": torch.tensor([75.90 / HARTREE2KCAL], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
+                "theta_eq": torch.tensor([113.24 * math.pi / 180.0], dtype=self._dtype, device=self._device, requires_grad=requires_param_grads),
             }
         }
 
@@ -47,13 +47,15 @@ class SPCFW(FF):
                 self.angle_params[(key[2], key[1], key[0])] = self.angle_params[key]
 
     def forward(self, system: System):
+        # TODO: Make a better API for filling out the parameter arrays and getting the params.
+        # There should be a simple way to specify which indices are needed for each term and
+        # which parameters. Those should then get filled in all in one call so that we can
+        # basically call one setup function which fills in the parameter arrays and then have
+        # a static run through the force field. Some parameters depend on the outcome of other
+        # terms so with some force fields there have to be multiple stages to evaluation, but
+        # we will cross that bridge when we get there.
         pairs, dists, distance_vecs = system.get_distances_vectors_and_pairs()
         system.parameterizer.update(pairs, self.atomic_params, self.pair_params, self.angle_params, angle_atoms=system.topology.angle_atoms)
-        
-        # TODO: This can all be combined into a much better API.
-        # Basically, each term of a force field should specify what type of parameters
-        # it needs. Those will then get filled into some arrays somewhere. Maybe within the Term itself?
-        # We don't really need to hold the parameters out on the full force field object so that makes sense.
 
         #excluded_pair_indices = system.neighbor_list.get_pair_indices(system.neighbor_list.excluded_pairs)
         #included_pair_indices = system.neighbor_list.get_pair_indices(system.neighbor_list.included_pairs)
@@ -62,12 +64,9 @@ class SPCFW(FF):
         #theta_eq = system.parameterizer.get_angle_parameters('theta_eq', system.topology.angle_atoms)
         #k_theta = system.parameterizer.get_angle_parameters('k_theta', system.topology.angle_atoms)
         
-        bonded_pair_indices = system.neighbor_list.get_pair_indices(system.topology.bonded_atoms.T)
-        k_b = system.parameterizer.get_pair_parameters('k_bond', bonded_pair_indices)
-        r_eq = system.parameterizer.get_pair_parameters('r_eq', bonded_pair_indices)
-        # HERE:
-        # 1) Implement the bonded force field the rest of the way
-        # 2) Refactor the above to fill the parameter arrays on the term itself
-        # 3) Then just loop over all the terms and evaluate them
-        print(k_b.size())
-        print(r_eq.size())
+        for term in self.terms:
+            output_dict = term.forward(pairs, dists, distance_vecs, system)
+            for key in output_dict.keys():
+                self.energies[key] = output_dict[key]
+        
+        print(self.energies)

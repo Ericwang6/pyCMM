@@ -10,6 +10,7 @@ from .units import *
 from .switching_functions import switch_543
 from .force_field import ForceField
 from .timing_context import TimingContext
+from .bonded import computeAngleFromVecs, computeHarmonicBondPotential, computeHarmonicAnglePotential
 
 class SPCfw(ForceField):
     def __init__(self, ewald_tolerance: torch.Tensor=torch.tensor(1e-6, dtype=torch.float64)) -> None:
