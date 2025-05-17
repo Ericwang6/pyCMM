@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 
 @dataclass
 class NeighborListSettings:
-    method: str = "verlet_list"
+    method: str = "verlet"
     cutoff: float = 9.0  # Angstrom
     padding: float = 2.0  # Angstrom
     update_frequency: int = 0

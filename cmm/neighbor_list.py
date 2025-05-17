@@ -4,7 +4,7 @@ from typing import Optional
 from .pbc import applyPBC
 from .timing_context import TimingContext
 
-__all__ = ['NeighborList', 'NSquaredList', 'VerletList']
+__all__ = ['NeighborList', 'NSquaredList', 'VerletList', 'VerletList2']
 
 class NeighborList(ABC):
 
@@ -14,6 +14,10 @@ class NeighborList(ABC):
 
     @abstractmethod
     def update(self, positions: torch.Tensor):
+        pass
+
+    @abstractmethod
+    def get_pairs(self, excluded_pairs: torch.Tensor):
         pass
 
     @abstractmethod
@@ -42,9 +46,6 @@ class NeighborList(ABC):
         pairs_a_hashes = pairs_a[:, 0] * self.natoms + pairs_a[:, 1]
         pair_indices = self._hash_indices[pairs_a_hashes]
         return pair_indices
-    
-    def get_pair_indices_search(self, pairs_a: torch.Tensor):
-        return (pairs_a.unsqueeze(1) == self.all_pairs.unsqueeze(0)).all(dim=2).nonzero(as_tuple=True)[1].reshape(-1)
 
 class NSquaredList(NeighborList):
     def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, excluded_atomic_pairs: Optional[torch.Tensor]=None):
@@ -107,6 +108,9 @@ class NSquaredList(NeighborList):
         if cutoff:
             self.cutoff = cutoff
         self._build(positions, box)
+
+    def get_pairs(self, excluded_pairs: torch.Tensor):
+        raise NotImplementedError
 
     def get_all_pairs(self):
         return self.all_pairs
@@ -224,6 +228,9 @@ class VerletList(NeighborList):
         else:
                 self._update_from_verlet_pairs(positions, box)
 
+    def get_pairs(self, excluded_pairs: torch.Tensor):
+        raise NotImplementedError
+
     def get_all_pairs(self):
         return self.all_pairs
     
@@ -232,3 +239,138 @@ class VerletList(NeighborList):
     
     def get_included_pairs(self):
         return self.included_pairs
+    
+class VerletList2(NeighborList):
+    def __init__(self, positions: torch.Tensor, box: torch.Tensor, cutoff: torch.Tensor, excluded_atomic_pairs: Optional[torch.Tensor]=None, padding: torch.Tensor=torch.tensor(1.5)):
+        """
+        Initialize NSquaredList structure which computes all pairwise distances,
+        respecting PBCs. This gives the exact neighbor list within a cutoff.
+        It should only be used for very small systems and for testing that other
+        neighbor lists are being constructed correctly.
+
+        Args:
+            positions (torch.Tensor): (N, 3) array of atomic positions
+            box (torch.Tensor): (3, 3) tensor representing unit cell
+            cutoff (torch.Tensor): (1,) cutoff distance
+            padding (torch.Tensor): (1,) padding added to cutoff to prevent rebuilds
+        """
+        self.device = positions.device
+        self.natoms = positions.shape[0]
+        self.cutoff = cutoff
+        self.excluded_pairs = excluded_atomic_pairs
+        self.included_pairs = None
+        self.pairs = None
+        
+        self._hash_indices = torch.zeros(self.natoms * self.natoms, dtype=torch.long, device=self.device)
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
+        self._cutoff_verlet = cutoff + padding
+        self._padding = padding
+        self._pairs_verlet = None
+        
+        self._build(positions, box)
+    
+    def _needs_update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None):
+        # If the cutoff changes, always rebuild
+        if cutoff is not None and torch.isclose(cutoff, self.cutoff) == False:
+            # Update cutoff for NSquaredList
+            self._cutoff_verlet = cutoff + self._padding
+            self.cutoff = cutoff
+            return True
+        
+        max_displacement =  torch.max(torch.abs(positions - self._reference_positions))
+        max_displacement += torch.max(torch.abs(torch.linalg.qr(box - self._reference_box).R)) # Compute maximum change in eigenvalue
+        # NOTE(JOE): ^^^ Strcitly speaking, I think this contribution depends on the type of box.
+        # I think that for a cubic box, the box sides need to be moved by sqrt(2)/2 = 0.707...
+        # in order to guarantee a rebuild. If only one side were shrinking, then the images
+        # move half the distance that the side length shrinks
+        # (since both sides move toward the center of the box). In that case the rebuild occurs at
+        # the verlet cutoff (not half of it). The images in a diagonally connected cell move towards
+        # the center of the box faster than that.
+        # To be conservative, I just sum these contributions and use half the padding since that
+        # is what applies to changes in atomic positions.
+        # The point of this comment is to say that we can be more efficient about when the NL
+        # needs to be updated with respect to changes in the cell if we want to specialize
+        # the rules for the type of box we are using.
+        return max_displacement > 0.5 * self._padding
+    
+    def _build(self, positions: torch.Tensor, box: torch.Tensor):
+        """
+        Calculate the distance matrix between atoms with periodic boundary conditions
+        for a general cell, following the minimum image convention.
+        """
+
+        # Store new reference positions and box
+        self._reference_positions = positions.clone().detach()
+        self._reference_box = box.clone().detach()
+
+        # Reshape positions for broadcasting
+        pos_i = positions.view(self.natoms, 1, 3)  # Shape: N x 1 x 3
+        pos_j = positions.view(1, self.natoms, 3)  # Shape: 1 x N x 3
+        # Calculate direct differences and apply minimum image convention
+        distance_vecs = pos_j - pos_i  # Shape: N x N x 3
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+        distances = torch.linalg.vector_norm(distance_vecs, dim=-1)
+        
+        pairs_inside_verlet = torch.where((distances < self._cutoff_verlet) & (distances > 0.0), True, False).nonzero()
+        self._verlet_pairs = torch.concat([pairs_inside_verlet[pairs_inside_verlet[:, 0] == i] for i in range(self.natoms)], dim=0)
+
+        self._update_from_verlet_pairs(positions, box)
+
+    def _update_from_verlet_pairs(self, positions: torch.Tensor, box: torch.Tensor):
+        # If we are here, it means that we have all of the needed pairs in the list of pairs
+        # inside the verlet cutoff. We just need to pull the appropriate pairs from there.
+        distance_vecs = positions[self._verlet_pairs[:, 1]] - positions[self._verlet_pairs[:, 0]]
+        distance_vecs = applyPBC(distance_vecs, box, torch.inverse(box))
+        distances = torch.linalg.vector_norm(distance_vecs, dim=1)
+        pairs_inside_cutoff = torch.where((distances < self.cutoff) & (distances > 0.0), True, False).nonzero().squeeze_()
+        self.all_pairs = self._verlet_pairs[pairs_inside_cutoff]
+
+        # Compute the hash values for each pair #
+        all_pairs_hashes = self.all_pairs[:, 0] * self.natoms + self.all_pairs[:, 1]
+        self._hash_indices[all_pairs_hashes] = torch.arange(len(self.all_pairs), device=self.device)
+            
+        # Remove excluded pairs and store as self.included_pairs #
+        if self.excluded_pairs is not None and self.excluded_pairs.numel() > 0:
+            mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
+            excluded_indices = self.get_pair_indices(self.excluded_pairs)
+            mask[excluded_indices] = True
+            included_pair_indices = (~mask).nonzero().squeeze(-1)
+            self.included_pairs = self.all_pairs[included_pair_indices]
+        else:
+            self.included_pairs = self.all_pairs
+
+    def update(self, positions: torch.Tensor, box: torch.Tensor, cutoff: Optional[torch.Tensor]=None) -> None:
+        if self._needs_update(positions, box, cutoff):
+            self._build(positions, box)
+        else:
+            self._update_from_verlet_pairs(positions, box)
+
+    def get_pairs(self, excluded_pairs: Optional[torch.Tensor]=None):
+        if excluded_pairs is None:
+            return self.all_pairs
+        
+        # @SPEED: Can implement caching mechanism here.
+        # If I set up the pairs so that certain pairs always appear at the same
+        # indices, then I should be able to hash the array of indices to a unique value
+        # (in fact a sum and tensor size should be sufficient)
+        # and thereby circumvent reconstructing the arrays every time. Just store the hash
+        # with the index sets we have already calculated.
+
+        # @SPEED: Can also put this mask into the constructor with a fixed size
+        # i.e. using a heuristic for the average number of pairs per atom (1024 is a good heuristic...)
+        # then just zero out the mask and take a view of the appropriate size.
+        mask = torch.zeros(self.all_pairs.size(0), dtype=torch.bool, device=self.device)
+        excluded_indices = self.get_pair_indices(excluded_pairs)
+        mask[excluded_indices] = True
+        included_pair_indices = (~mask).nonzero().squeeze(-1)
+        return self.all_pairs[included_pair_indices]
+
+    def get_all_pairs(self):
+        raise NotImplementedError
+    
+    def get_excluded_pairs(self):
+        raise NotImplementedError
+    
+    def get_included_pairs(self):
+        raise NotImplementedError
