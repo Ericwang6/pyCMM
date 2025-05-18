@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Union, Tuple
+from .units import BOHR2ANG
 
 @dataclass
 class NeighborListSettings:
     method: str = "verlet"
-    cutoff: float = 9.0  # Angstrom
-    padding: float = 2.0  # Angstrom
+    cutoff: float = 9.0 / BOHR2ANG  # Angstrom
+    padding: float = 2.0 / BOHR2ANG  # Angstrom
     update_frequency: int = 0
     use_cell_lists: bool = True
 

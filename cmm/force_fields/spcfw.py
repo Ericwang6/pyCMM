@@ -1,6 +1,7 @@
 import torch, math
 from .ff import FF
-from ..terms.bonded.harmonic_bond import HarmonicBond
+from ..terms.bonded import *
+from ..terms.nonbonded import *
 
 from ..system import System
 from ..parameters import Parameterizer2
@@ -11,6 +12,8 @@ class SPCFW(FF):
         super().__init__(dtype, device)
 
         self.add_term(HarmonicBond())
+        self.add_term(HarmonicAngle())
+        self.add_term(LennardJones())
 
         self.atomic_params = {
             "O_water": {

@@ -3,7 +3,6 @@ import os
 import numpy as np
 
 from cmm.system import System, create_system_from_ext_xyz_file
-from cmm.terms.bonded.harmonic_bond import HarmonicBond
 from cmm.force_fields.spcfw import SPCFW
 from cmm.topology import Topology
 from cmm.settings import Settings, MolecularDynamicsSettings, NeighborListSettings
