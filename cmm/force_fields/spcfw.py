@@ -8,12 +8,16 @@ from ..parameters import Parameterizer2
 from ..units import HARTREE2KCAL, BOHR2ANG
 
 class SPCFW(FF):
-    def __init__(self, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
-        super().__init__(dtype, device)
+    def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
+        super().__init__(system, dtype, device)
 
+        lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
+        lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         self.add_term(HarmonicBond())
         self.add_term(HarmonicAngle())
-        self.add_term(LennardJones())
+        self.add_term(LennardJones(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
+        self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
+        self.setup_long_range_interactions(system)
 
         self.atomic_params = {
             "O_water": {
@@ -67,9 +71,11 @@ class SPCFW(FF):
         #theta_eq = system.parameterizer.get_angle_parameters('theta_eq', system.topology.angle_atoms)
         #k_theta = system.parameterizer.get_angle_parameters('k_theta', system.topology.angle_atoms)
         
+        V_total = torch.tensor(0.0, device=self._device, dtype=self._dtype)
         for term in self.terms:
             output_dict = term.forward(pairs, dists, distance_vecs, system)
             for key in output_dict.keys():
                 self.energies[key] = output_dict[key]
+                V_total = V_total + output_dict[key]
         
-        print(self.energies)
+        self.energies["V_total"] = V_total

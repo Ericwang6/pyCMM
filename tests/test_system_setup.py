@@ -37,11 +37,9 @@ def test_spcfw_water_box_setup():
         ensemble="NVT", timestep=0.5,
         n_steps=50, temperature=298.15
     )
-    nl_settings = NeighborListSettings(
-        padding=1.5
-    )
     settings = Settings()
-    settings.add_neighbor_list(nl_settings)
+    settings.add_neighbor_list_settings(padding=1.5)
+    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-10)
     settings.add("md", md_settings)
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
@@ -53,7 +51,10 @@ def test_spcfw_water_box_setup():
 
     topology = Topology(bonds, coords.size(0), device)
     system = System(coords, box, atom_type_names, topology, settings)
-    ff = SPCFW()
+    ff = SPCFW(system)
     ff.forward(system)
-    ff.energies['V_bond'].backward()
+    print(ff.energies)
+    ff.energies['V_total'].backward()
+    print(coords.grad)
+    print(box.grad)
     

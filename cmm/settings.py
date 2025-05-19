@@ -3,10 +3,30 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from .units import BOHR2ANG
 
 @dataclass
+class LongRangeElectrostaticsSettings:
+    use_long_range: bool = True
+    method: str = "ewald"
+    cutoff: float = 8.0 / BOHR2ANG
+    tolerance: float = 1e-6
+    alpha: float = 0.0
+    k_max: int = 0
+    # ^^^ This will be split into nx, ny, nz eventually
+    # and be interpreted as the k vector integers or the
+    # number of grid points for PME and Ewald respectively.
+    use_switching: bool = False
+
+@dataclass
+class LongRangeDispersionSettings:
+    use_long_range: bool = True
+    method: str = "lrc"
+    use_switching: bool = True
+    switching_start_before_cutoff: float = 2.0
+
+@dataclass
 class NeighborListSettings:
     method: str = "verlet"
-    cutoff: float = 9.0 / BOHR2ANG  # Angstrom
-    padding: float = 2.0 / BOHR2ANG  # Angstrom
+    cutoff: float = 9.0 / BOHR2ANG
+    padding: float = 2.0 / BOHR2ANG
     update_frequency: int = 0
     use_cell_lists: bool = True
 
@@ -47,7 +67,20 @@ class Settings:
     def __post_init__(self):
         if "neighbor_list" not in self.components:
             self.components["neighbor_list"] = NeighborListSettings()
+        if "long_range_electrostatics" not in self.components:
+            self.components["long_range_electrostatics"] = LongRangeElectrostaticsSettings()
+        if "long_range_dispersion" not in self.components:
+            self.components["long_range_dispersion"] = LongRangeDispersionSettings()
     
+    def get_long_range_electrostatics_settings(self):
+        return self.get("long_range_electrostatics")
+    
+    def get_long_range_dispersion_settings(self):
+        return self.get("long_range_dispersion")
+    
+    def get_neighbor_list_settings(self):
+        return self.get("neighbor_list")
+
     def get(self, component_name: str) -> Any:
         if component_name not in self.components:
             raise KeyError(f"Settings for '{component_name}' not found")
@@ -55,6 +88,35 @@ class Settings:
     
     def add(self, component_name: str, settings: Any) -> None:
         self.components[component_name] = settings
+
+    def add_long_range_electrostatics_settings(self,
+        use_long_range: bool = True,
+        method: str = "ewald",
+        cutoff: float = 8.0,
+        tolerance: float = 1e-6
+    ) -> None:
+        self.components["long_range_electrostatics"] = LongRangeElectrostaticsSettings(
+            use_long_range, method, cutoff / BOHR2ANG, tolerance
+        )
+
+    def add_long_range_dispersion_settings(self,
+        use_long_range: bool = True,
+        method: str = "lrc",
+        use_switching: bool = True
+    ) -> None:
+        # This shares the cutoff used by the neighbor list #
+        self.components["long_range_dispersion"] = LongRangeDispersionSettings(
+            use_long_range, method, use_switching
+        )
     
-    def add_neighbor_list(self, settings: NeighborListSettings) -> None:
-        self.components["neighbor_list"] = settings
+    def add_neighbor_list_settings(self,
+        method: str = "verlet",
+        cutoff: float = 9.0,
+        padding: float = 2.0,
+        update_frequency: int = 0,
+        use_cell_lists: bool = True
+    ) -> None:
+        self.components["neighbor_list"] = NeighborListSettings(
+            method, cutoff / BOHR2ANG, padding / BOHR2ANG,
+            update_frequency, use_cell_lists
+        )

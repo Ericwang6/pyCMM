@@ -1,4 +1,5 @@
 import torch
+import math
 from iodata import load_one
 from .neighbor_list import *
 from typing import Dict, Tuple, List, Optional
@@ -29,13 +30,23 @@ class System:
         self.settings = settings
         self._check_for_nl_update = False
         self.build_neighbor_list()
+        self._find_optimal_ewald_parameters()
 
-    
+    def _find_optimal_ewald_parameters(self):
+        lr_elec_settings = self.settings.get_long_range_electrostatics_settings()
+        lr_elec_settings.alpha = math.sqrt(-math.log10(2 * lr_elec_settings.tolerance)) / lr_elec_settings.cutoff
+        lr_elec_settings.k_max = 50
+        for i in range(2, 50):
+            error_estimate = (i * math.sqrt(self.box_lengths[0] * lr_elec_settings.alpha) / 20.0) * math.exp(-torch.pi * torch.pi * i * i / (self.box_lengths[0] * lr_elec_settings.alpha * self.box_lengths[0] * lr_elec_settings.alpha))
+            if error_estimate < lr_elec_settings.tolerance:
+                lr_elec_settings.k_max = i
+                break
+
     def build_neighbor_list(self):
-        nl_settings = self.settings.get("neighbor_list")
+        nl_settings = self.settings.get_neighbor_list_settings()
         if nl_settings.method == "verlet":
             self.neighbor_list = VerletList2(
-                self.coords, self.box, nl_settings.cutoff,
+                self.coords, self.box, nl_settings.cutoff, excluded_atomic_pairs=self.topology.all_intramolecular_pairs,
                 padding=torch.tensor(nl_settings.padding / BOHR2ANG, device=self.coords.device)
             )
         # elif nl_settings.method == "whatever":

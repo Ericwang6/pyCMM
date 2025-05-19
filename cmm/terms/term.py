@@ -1,10 +1,7 @@
 import torch
 from abc import ABC, abstractmethod
 from enum import IntEnum
-
 from ..system import System
-
-
 
 class InteractionType(IntEnum):
     Bonded         = 0

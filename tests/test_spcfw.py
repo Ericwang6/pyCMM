@@ -141,6 +141,8 @@ def test_spcfw_vs_openmm():
     energies = ff.evaluate(cm, topology, parameters)
     energies['total'].backward()
     print(energies)
+    print(coords.grad)
+    print(box.grad)
     #print("perm_elec: ", energies['perm_elec'] * HARTREE2KCAL)
     #print("ewald: ", energies['ewald'] * HARTREE2KCAL)
     #print("lj: ", energies['lj'] * HARTREE2KCAL)
