@@ -7,14 +7,10 @@ class TTDispersionC6(Term):
     def __init__(self, use_switching: bool, switching_start: float):
         self.use_switching = use_switching
         self.switching_start = switching_start
-
-    @property
-    def cutoff_type(self):
-        return CutoffType.NB_Long
     
     @property
-    def params(self):
-        return [('C6_disp', ParameterType.Pair), ('b_disp', ParameterType.Pair)]
+    def param_data(self):
+        return [('C6_disp', ParameterType.Pair, CutoffType.NB_Long), ('b_disp', ParameterType.Pair, CutoffType.NB_Long)]
     
     @property
     def outputs(self):

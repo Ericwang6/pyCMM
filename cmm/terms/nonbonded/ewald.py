@@ -11,12 +11,8 @@ class EwaldEnergy0(Term):
         super().__init__()
     
     @property
-    def cutoff_type(self):
-        return CutoffType.NB_Ewald
-    
-    @property
-    def params(self):
-        return [('q', ParameterType.Atomic)]
+    def param_data(self):
+        return [('q', ParameterType.Atomic, CutoffType.NB_Ewald)]
     
     @property
     def outputs(self):

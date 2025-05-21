@@ -4,13 +4,10 @@ from ...system import System
 from ...dispersion import compute_long_range_lennard_jones_correction
 
 class LongRangeLennardJonesCorrection(Term):
-    @property
-    def cutoff_type(self):
-        return CutoffType.NB_Long
     
     @property
-    def params(self):
-        return [('sigma_lj', ParameterType.Pair), ('eps_lj', ParameterType.Pair)]
+    def param_data(self):
+        return [('sigma_lj', ParameterType.Pair, CutoffType.NB_Long), ('eps_lj', ParameterType.Pair, CutoffType.NB_Long)]
     
     @property
     def outputs(self):

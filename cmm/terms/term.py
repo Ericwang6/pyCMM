@@ -1,7 +1,9 @@
 import torch
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from ..system import System
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..system import System
 
 class CutoffType(IntEnum):
     NB_Short   = 0
@@ -24,15 +26,10 @@ class ParameterType(IntEnum):
 class Term(ABC, torch.nn.Module):
     def __init__(self):
         super().__init__()
-    
-    @property
-    @abstractmethod
-    def cutoff_type(self):
-        raise NotImplementedError
 
     @property
     @abstractmethod
-    def params(self):
+    def param_data(self):
         raise NotImplementedError
     
     @property
@@ -41,5 +38,5 @@ class Term(ABC, torch.nn.Module):
         raise NotImplementedError
 
     @abstractmethod
-    def forward(self, system: System):
+    def forward(self, system: "System"):
         raise NotImplementedError

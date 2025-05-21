@@ -4,13 +4,10 @@ from ...system import System
 from ...bonded import computeHarmonicBondPotential
 
 class HarmonicBond(Term):
-    @property
-    def cutoff_type(self):
-        return CutoffType.B_Bond
     
     @property
-    def params(self):
-        return [('k_bond', ParameterType.Pair), ('r_eq', ParameterType.Pair)]
+    def param_data(self):
+        return [('k_bond', ParameterType.Pair, CutoffType.B_Bond), ('r_eq', ParameterType.Pair, CutoffType.B_Bond)]
     
     @property
     def outputs(self):

@@ -4,13 +4,10 @@ from ...system import System
 from ...bonded import computeHarmonicAnglePotential, computeAngleFromVecs
 
 class HarmonicAngle(Term):
-    @property
-    def cutoff_type(self):
-        return CutoffType.B_Angle
     
     @property
-    def params(self):
-        return [('k_angle', ParameterType.Angle), ('theta_eq', ParameterType.Angle)]
+    def param_data(self):
+        return [('k_angle', ParameterType.Angle, CutoffType.B_Angle), ('theta_eq', ParameterType.Angle, CutoffType.B_Angle)]
     
     @property
     def outputs(self):

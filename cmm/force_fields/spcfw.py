@@ -10,13 +10,13 @@ class SPCFW(FF):
     def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
         super().__init__(system, dtype, device)
 
-        #lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
-        #lr_disp_settings = system.settings.get_long_range_dispersion_settings()
+        lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
+        lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         self.add_term(HarmonicBond())
-        #self.add_term(HarmonicAngle())
-        #self.add_term(LennardJones(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
-        #self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
-        #self.setup_long_range_interactions(system)
+        self.add_term(HarmonicAngle())
+        self.add_term(LennardJones(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
+        self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
+        self.setup_long_range_interactions(system)
 
         self.atomic_params = {
             "O_water": {
@@ -61,14 +61,10 @@ class SPCFW(FF):
         # terms so with some force fields there have to be multiple stages to evaluation, but
         # we will cross that bridge when we get there.
         pairs, dists, distance_vecs = system.get_distances_vectors_and_pairs()
-        system.parameterizer.update(pairs, self.atomic_params, self.pair_params, self.angle_params, angle_atoms=system.topology.angle_atoms)
-        print(self.terms[0].cutoff_type)
-        print(self.terms[0].params[0])
-        temp = {}
-        temp[self.terms[0].params[0]] = 2.0
-        print(temp)
-
-        system.parameterizer.fill_parameter_arrays(system.storage, self.terms)
+        system.parameterizer.update(
+            pairs, self.atomic_params,
+            self.pair_params, self.angle_params, angle_atoms=system.topology.angle_atoms
+        )
 
         V_total = torch.tensor(0.0, device=self._device, dtype=self._dtype)
         for term in self.terms:

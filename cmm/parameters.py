@@ -1,7 +1,6 @@
 import torch
 from typing import Dict, List, Tuple, Optional
-from .terms.term import CutoffType, ParameterType
-from .system import System
+from .terms.term import ParameterType, CutoffType
 
 class Parameterizer:
     """
@@ -48,13 +47,6 @@ class Parameterizer:
         self._build_pair_pair_parameter_arrays(raw_pair_pair_params)
         self._build_pair_angle_parameter_arrays(raw_pair_angle_params)
         self._build_angle_parameter_arrays(raw_angle_params)
-
-    def _fill_parameter_arrays(self, params_metadata: List[Tuple[str, ParameterType, CutoffType]], system: System):
-        # HERE: Form the params_metadata from the force field.
-        # Then fill up the parameter arrays in the storage dictionary and just pull the parameters out of there as needed.
-        # Should be able to use the whole tuple as a key.
-        # In the future, we should eliminate all strings from the program for efficiency.
-        pass
 
     def _get_angle_types_from_angle_atoms(self, angle_atoms: torch.Tensor):
         if angle_atoms.numel() > 0:

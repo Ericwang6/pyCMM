@@ -7,14 +7,10 @@ class LennardJones(Term):
     def __init__(self, use_switching: bool, switching_start: float):
         self.use_switching = use_switching
         self.switching_start = switching_start
-
-    @property
-    def cutoff_type(self):
-        return CutoffType.NB_Long
     
     @property
-    def params(self):
-        return [('sigma_lj', ParameterType.Pair), ('eps_lj', ParameterType.Pair)]
+    def param_data(self):
+        return [('sigma_lj', ParameterType.Pair, CutoffType.NB_Long), ('eps_lj', ParameterType.Pair, CutoffType.NB_Long)]
     
     @property
     def outputs(self):

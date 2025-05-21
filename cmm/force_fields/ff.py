@@ -12,9 +12,10 @@ class FF(torch.nn.Module, ABC):
         super().__init__()
         self._dtype = dtype
         self._device = device
-
+        
         self.terms = []
         self.energies = {}
+        self.parameter_metadata = []
 
     def setup_long_range_interactions(self, system: System):
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
@@ -30,6 +31,15 @@ class FF(torch.nn.Module, ABC):
 
     def add_term(self, term: Term):
         self.terms.append(term)
+        # NOTE(JOE): Currently we don't do anything with this metadata.
+        # In the future, the point is that we can fill out all of the parameter
+        # arrays before evaluating any of the actual terms using this data.
+        # I still haven't decided exactly how to do this,
+        # but it should make it possible for the loop over terms
+        # to be completely static and therefore interoperable with CUDA graphs.
+        # It also prevents multiple terms having to generate the same data more than once.
+        for param_data in term.param_data:
+            self.parameter_metadata.append(param_data)
 
     @abstractmethod
     def forward(self, system: System):
