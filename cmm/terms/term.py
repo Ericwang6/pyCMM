@@ -3,15 +3,23 @@ from abc import ABC, abstractmethod
 from enum import IntEnum
 from ..system import System
 
-class InteractionType(IntEnum):
-    Bonded         = 0
-    Electrostatics = 1
-    Pauli          = 2
-    Dispersion     = 3
-    Polarization   = 4
-    ChargeTransfer = 5
-    Parameter      = 6
-    Other          = 7
+class CutoffType(IntEnum):
+    NB_Short   = 0
+    NB_Medium  = 1
+    NB_Long    = 2
+    NB_Ewald   = 3
+    B_Bond     = 4
+    B_Angle    = 5
+    B_Dihedral = 6
+
+class ParameterType(IntEnum):
+    Atomic    = 0
+    Pair      = 1
+    Angle     = 2
+    Dihedral  = 3
+    PairPair  = 4
+    PairAngle = 5
+    # ...
 
 class Term(ABC, torch.nn.Module):
     def __init__(self):
@@ -19,7 +27,7 @@ class Term(ABC, torch.nn.Module):
     
     @property
     @abstractmethod
-    def interaction_type(self):
+    def cutoff_type(self):
         raise NotImplementedError
 
     @property

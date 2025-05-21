@@ -1,21 +1,20 @@
 import torch, math
 from torch_scatter import segment_csr
+from .bonded import computeAngleFromVecs
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
-from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix, compute_product_with_polarization_matrix_local
+from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs, compute_long_range_dispersion_correction
 from .coordinate_manager import CoordinateManager
 from .axis_types import AxisTypes
 from .parameters import Parameterizer
 from .topology import Topology
-from .terms import *
+from .bonded_parameter_functions import *
 from .units import *
 from .switching_functions import switch_543
-from.polarization_solver import cg_solve, CG
-
-from copy import copy
+from .polarization_solver import cg_solve, CG
 
 class ForceField(torch.nn.Module):
     def __init__(self) -> None:

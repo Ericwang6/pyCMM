@@ -33,12 +33,4 @@ class FF(torch.nn.Module, ABC):
 
     @abstractmethod
     def forward(self, system: System):
-        # 1) Fill out the parameters
-        # 2) Evaluate any dependencies
-        # 3) Update parameters which need to be updated (possibly with a different name to prevent overwriting otherwise constant params?)
-        # 4) Evaluate remaining terms, continuing the process if needed.
-        
-        # NOTE(JOE): Conceivably, there can be a loop in here where we evaluate some function (like the polarization)
-        # then update the parameters and repeat this until convergence. That is a bit of an edge case but it should be possible.
-        # I think we can just make this a special type of term which updates both parameters and an energy.
         raise NotImplementedError

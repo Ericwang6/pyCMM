@@ -1,5 +1,5 @@
 import torch
-from ..term import Term, InteractionType
+from ..term import Term, CutoffType, ParameterType
 from ...system import System
 from ...electrostatics import computeDampFactorsErfc
 
@@ -9,12 +9,12 @@ class ElectrostaticEnergy0(Term):
         super().__init__()
     
     @property
-    def interaction_type(self):
-        return InteractionType.Electrostatics
+    def cutoff_type(self):
+        return CutoffType.NB_Medium
     
     @property
     def params(self):
-        return ['q', 'alpha']
+        return [('q', ParameterType.Atomic)]
     
     @property
     def outputs(self):

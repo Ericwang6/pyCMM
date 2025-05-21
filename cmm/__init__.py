@@ -8,3 +8,4 @@ from .multipole import *
 from .neighbor_list import *
 from .ewald import *
 from .force_field import *
+from .terms import *

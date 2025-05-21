@@ -8,12 +8,13 @@ from .axis_types import AxisTypes
 from .topology import Topology
 from .settings import *
 from .parameters import Parameterizer2
+from .storage import Storage
 from .units import BOHR2ANG
 
 def create_system_from_ext_xyz_file(file_name: str, settings: Settings, requires_grad: bool=True, device: str="cpu"):
     mol = load_one(file_name, fmt="extxyz")
     print(mol)
-    
+
 class System:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, atom_type_names: List[str], topology: Topology, settings: Settings,
                  device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) -> None:
@@ -28,6 +29,7 @@ class System:
         self.parameterizer = Parameterizer2(atom_type_names, device=self.device)
         self.topology = topology
         self.settings = settings
+        self.storage = Storage()
         self._check_for_nl_update = False
         self.build_neighbor_list()
         self._find_optimal_ewald_parameters()

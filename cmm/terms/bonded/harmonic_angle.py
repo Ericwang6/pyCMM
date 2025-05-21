@@ -1,16 +1,16 @@
 import torch
-from ..term import Term, InteractionType
+from ..term import Term, CutoffType, ParameterType
 from ...system import System
 from ...bonded import computeHarmonicAnglePotential, computeAngleFromVecs
 
 class HarmonicAngle(Term):
     @property
-    def interaction_type(self):
-        return InteractionType.Bonded
+    def cutoff_type(self):
+        return CutoffType.B_Angle
     
     @property
     def params(self):
-        return ['k_angle', 'theta_eq']
+        return [('k_angle', ParameterType.Angle), ('theta_eq', ParameterType.Angle)]
     
     @property
     def outputs(self):

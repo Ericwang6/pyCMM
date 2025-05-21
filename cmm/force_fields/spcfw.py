@@ -4,27 +4,26 @@ from ..terms.bonded import *
 from ..terms.nonbonded import *
 
 from ..system import System
-from ..parameters import Parameterizer2
 from ..units import HARTREE2KCAL, BOHR2ANG
 
 class SPCFW(FF):
     def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
         super().__init__(system, dtype, device)
 
-        lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
-        lr_disp_settings = system.settings.get_long_range_dispersion_settings()
+        #lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
+        #lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         self.add_term(HarmonicBond())
-        self.add_term(HarmonicAngle())
-        self.add_term(LennardJones(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
-        self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
-        self.setup_long_range_interactions(system)
+        #self.add_term(HarmonicAngle())
+        #self.add_term(LennardJones(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
+        #self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
+        #self.setup_long_range_interactions(system)
 
         self.atomic_params = {
             "O_water": {
-                "q": torch.tensor(-0.82, dtype=self._dtype, device=self._device)
+                "q": torch.tensor(-0.82, dtype=self._dtype, device=self._device, requires_grad=requires_param_grads)
             },
             "H_water": {
-                "q": torch.tensor(0.41, dtype=self._dtype, device=self._device)
+                "q": torch.tensor(0.41, dtype=self._dtype, device=self._device, requires_grad=requires_param_grads)
             }
         }
 
@@ -63,14 +62,14 @@ class SPCFW(FF):
         # we will cross that bridge when we get there.
         pairs, dists, distance_vecs = system.get_distances_vectors_and_pairs()
         system.parameterizer.update(pairs, self.atomic_params, self.pair_params, self.angle_params, angle_atoms=system.topology.angle_atoms)
+        print(self.terms[0].cutoff_type)
+        print(self.terms[0].params[0])
+        temp = {}
+        temp[self.terms[0].params[0]] = 2.0
+        print(temp)
 
-        #excluded_pair_indices = system.neighbor_list.get_pair_indices(system.neighbor_list.excluded_pairs)
-        #included_pair_indices = system.neighbor_list.get_pair_indices(system.neighbor_list.included_pairs)
-        #angle_pair_indices_ij = system.neighbor_list.get_pair_indices(system.topology.angle_atoms[:, 0:2])
-        #angle_pair_indices_jk = system.neighbor_list.get_pair_indices(system.topology.angle_atoms[:, 1:].flip(1))
-        #theta_eq = system.parameterizer.get_angle_parameters('theta_eq', system.topology.angle_atoms)
-        #k_theta = system.parameterizer.get_angle_parameters('k_theta', system.topology.angle_atoms)
-        
+        system.parameterizer.fill_parameter_arrays(system.storage, self.terms)
+
         V_total = torch.tensor(0.0, device=self._device, dtype=self._dtype)
         for term in self.terms:
             output_dict = term.forward(pairs, dists, distance_vecs, system)

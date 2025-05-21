@@ -1,5 +1,5 @@
 import torch
-from ..term import Term, InteractionType
+from ..term import Term, CutoffType, ParameterType
 from ...system import System
 from ...electrostatics import computeDampFactorsErf
 from ...ewald import long_range_potential_rank_0
@@ -11,12 +11,12 @@ class EwaldEnergy0(Term):
         super().__init__()
     
     @property
-    def interaction_type(self):
-        return InteractionType.Electrostatics
+    def cutoff_type(self):
+        return CutoffType.NB_Ewald
     
     @property
     def params(self):
-        return ['q', 'alpha', 'k_max']
+        return [('q', ParameterType.Atomic)]
     
     @property
     def outputs(self):
