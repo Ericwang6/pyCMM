@@ -39,6 +39,8 @@ class CMM2(FF):
         self.add_term(MultipolarPauli())
         self.add_term(MultipolarChargeTransfer())
         self.add_term(ManyBodyChargeTransfer())
+        self.add_term(CosineAngle())
+        self.add_term(BondedCouplingCMM())
         self._build()
 
     def forward(self, system: System):
