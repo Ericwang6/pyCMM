@@ -25,6 +25,7 @@ class CMM2(FF):
         
         #self.add_term(MorseBond())
         #self.add_term(CosineAngle())
+        self.add_term(StoreIndices())
         self.add_term(StoreChargeFluxCMM())
         self.add_term(StoreMultipolesCMM())
         self.add_term(StoreInteractionTensorsCMM())
