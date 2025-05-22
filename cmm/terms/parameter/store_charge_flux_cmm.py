@@ -11,7 +11,8 @@ class StoreChargeFluxCMM(Term):
     def param_data(self):
         return [
             ('j_cf', ParameterType.Pair, CutoffType.B_Bond), ('r_eq', ParameterType.Pair, CutoffType.B_Bond),
-            ('j_cf_angle', ParameterType.Angle, CutoffType.B_Angle), ('theta_eq', ParameterType.Angle, CutoffType.B_Angle)
+            ('j_cf_angle', ParameterType.Angle, CutoffType.B_Angle), ('theta_eq', ParameterType.Angle, CutoffType.B_Angle),
+            ('j_cf_pauli', ParameterType.Pair, CutoffType.B_Bond)
         ]
     
     @property
@@ -20,6 +21,7 @@ class StoreChargeFluxCMM(Term):
 
     def forward(self, pairs: torch.Tensor, dists: torch.Tensor, distance_vecs: torch.Tensor, system: System):
         flux_charges = torch.zeros(system.topology.natoms, device=system.device, dtype=torch.get_default_dtype())
+        flux_charges_pauli = torch.zeros(system.topology.natoms, device=system.device, dtype=torch.get_default_dtype())
         if system.topology.angle_atoms.numel() > 0:
             bonded_pair_indices = system.neighbor_list.get_pair_indices(system.topology.bonded_atoms.T)
             angle_pair_indices_ij = system.neighbor_list.get_pair_indices(system.topology.angle_atoms[:, 0:2])
@@ -32,6 +34,7 @@ class StoreChargeFluxCMM(Term):
             # Bond charge flux params #
             j_cf = system.parameterizer.get_pair_parameters('j_cf', bonded_pair_indices)
             r_eq = system.parameterizer.get_pair_parameters('r_eq', bonded_pair_indices)
+            j_cf_pauli = system.parameterizer.get_pair_parameters('j_cf_pauli', bonded_pair_indices)
 
             # Bond-Bond charge flux params #
             r_eq_bb_1 = system.parameterizer.get_pair_parameters('r_eq', angle_pair_indices_ij)
@@ -45,6 +48,7 @@ class StoreChargeFluxCMM(Term):
 
             # bond charge flux #
             charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(dists_bonded, r_eq, j_cf)
+            charge_flux_pauli_bond_1, charge_flux_pauli_bond_2 = computeChargeFluxBond(dists_bonded, r_eq, j_cf_pauli)
 
             # bond-bond charge flux #
             charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
@@ -54,6 +58,10 @@ class StoreChargeFluxCMM(Term):
 
             # angle charge flux #
             charge_flux_angle_list_i, charge_flux_angle_list_j, charge_flux_angle_list_k = computeChargeFluxAngle(angles, theta_eq, j_cf_angle)
+
+            # Scatter Pauli flux charges to appropriate atom indices #
+            flux_charges_pauli.scatter_add_(0, system.topology.bonded_atoms[0], charge_flux_pauli_bond_1)
+            flux_charges_pauli.scatter_add_(0, system.topology.bonded_atoms[1], charge_flux_pauli_bond_2)
 
             # Scatter flux charges to appropriate atom indices #
             flux_charges.scatter_add_(0, system.topology.bonded_atoms[0], charge_flux_bond_1)
@@ -71,5 +79,6 @@ class StoreChargeFluxCMM(Term):
             
         # Store the flux charges for later use
         system.storage.add('q_flux', flux_charges)
+        system.storage.add('q_flux_pauli', flux_charges_pauli)
 
         return {}

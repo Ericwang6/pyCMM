@@ -35,6 +35,9 @@ class CMM2(FF):
         self.add_term(ExchangePolarizationCMM())
         self.add_term(MultipolarElectrostatics2())
         self.add_term(MultipolarChargePenetration())
+        self.add_term(MultipolarPauli())
+        self.add_term(MultipolarChargeTransfer())
+        self.add_term(ManyBodyChargeTransfer())
         self._build()
 
     def forward(self, system: System):

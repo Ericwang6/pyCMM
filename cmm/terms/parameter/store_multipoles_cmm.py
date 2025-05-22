@@ -26,7 +26,7 @@ class StoreMultipolesCMM(Term):
         axis_types = system.parameterizer.get_atomic_parameters('axistypes')
         
         # Pauli Multipoles #
-        q_pauli = system.parameterizer.get_atomic_parameters('q_pauli')
+        q_pauli = system.parameterizer.get_atomic_parameters('q_pauli') + system.storage.get('q_flux_pauli')
         Kdipo_pauli = system.parameterizer.get_atomic_parameters('Kdipo_pauli')
         Kquad_pauli = system.parameterizer.get_atomic_parameters('Kquad_pauli')
 
@@ -42,8 +42,16 @@ class StoreMultipolesCMM(Term):
         q_ct_don = system.parameterizer.get_atomic_parameters('q_ct_don')
         Kdipo_ct_don = system.parameterizer.get_atomic_parameters('Kdipo_ct_don')
         Kquad_ct_don = system.parameterizer.get_atomic_parameters('Kquad_ct_don')
+        
+        # Polarizability #
+        eta = system.parameterizer.get_atomic_parameters("eta")
+        alpha = system.parameterizer.get_atomic_parameters("alpha")
+        alpha_damp_exponent = system.parameterizer.get_atomic_parameters("alpha_damp_exponent")
+        alpha_damp_max = system.parameterizer.get_atomic_parameters("alpha_damp_max")
 
         rotation_matrices = system.compute_rotation_matrices(system.topology.zatoms, system.topology.xatoms, system.topology.yatoms, axis_types)
+
+        polarizabilities = rotateQuadrupoles(alpha, rotation_matrices)
 
         dipo_lr = rotateDipoles(dipo, rotation_matrices).squeeze(1)
         quad_lr = rotateQuadrupoles(quad, rotation_matrices)
@@ -79,5 +87,9 @@ class StoreMultipolesCMM(Term):
         system.storage.add('multipoles_pauli', multipoles_pauli)
         system.storage.add('multipoles_xpol', multipoles_xpol)
         system.storage.add('electric_field_data', electric_field_data)
+        system.storage.add('eta', eta)
+        system.storage.add('polarizabilities', polarizabilities)
+        system.storage.add('alpha_damp_exponent', alpha_damp_exponent)
+        system.storage.add('alpha_damp_max', alpha_damp_max)
 
         return {}
