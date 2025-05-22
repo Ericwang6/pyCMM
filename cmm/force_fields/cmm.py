@@ -31,6 +31,7 @@ class CMM2(FF):
         self.add_term(StoreMultipolesCMM())
         self.add_term(StoreInteractionTensorsCMM())
         self.add_term(StoreSwitchingValues())
+        self.add_term(VariableHardness())
         self.add_term(TTDispersionC6(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
         self.add_term(ExchangePolarizationCMM())
         self.add_term(MultipolarElectrostatics2())
