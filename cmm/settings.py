@@ -3,6 +3,11 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from .units import BOHR2ANG
 
 @dataclass
+class ShortRangeSettings:
+    cutoff: float = 5.0 / BOHR2ANG
+    use_switching: bool = True
+
+@dataclass
 class LongRangeElectrostaticsSettings:
     use_long_range: bool = True
     method: str = "ewald"

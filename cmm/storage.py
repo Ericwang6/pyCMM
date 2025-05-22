@@ -1,3 +1,4 @@
+import torch
 
 # NOTE(JOE): In the future, this will probably use the tensor dict class and we
 # will use a maximum size to pre-allocate the memory for parameters, etc.
@@ -9,3 +10,9 @@
 class Storage:
     def __init__(self) -> None:
         self.data = {}
+
+    def add(self, name: str, data: torch.Tensor):
+        self.data[name] = data
+
+    def get(self, name: str):
+        return self.data[name]

@@ -2,10 +2,12 @@ import torch, math
 from .ff import FF
 from ..terms.bonded import *
 from ..terms.nonbonded import *
+from ..terms.parameter import *
 
 from ..system import System
 from ..parameters import Parameterizer2
 from ..units import HARTREE2KCAL, BOHR2ANG, HARTREE2KJ
+from ..settings import ShortRangeSettings
 
 import torch, math
 from ..multipole import computeCartesianQuadrupoles
@@ -15,12 +17,17 @@ from..polarization_solver import cg_solve, CG
 class CMM2(FF):
     def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
         super().__init__(system, dtype, device)
+        
 
-        #lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
+        system.settings.add("short_range", ShortRangeSettings())
+        lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         
         #self.add_term(MorseBond())
         #self.add_term(CosineAngle())
+        self.add_term(StoreChargeFluxCMM())
+        self.add_term(StoreMultipolesCMM())
+        self.add_term(StoreInteractionTensorsCMM())
         self.add_term(TTDispersionC6(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
         #self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
         #self.setup_long_range_interactions(system)
@@ -487,7 +494,7 @@ class CMM2(FF):
             # elec
             "Z": self.Z,
             "q_shell": self.mono - self.Z,
-            "mono": self.mono,
+            "q": self.mono,
             "dipo": self.dipo,
             "quad": computeCartesianQuadrupoles(self.quad_s),
             "b_elec": self.b_elec,

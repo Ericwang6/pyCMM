@@ -767,7 +767,6 @@ class CMM(ForceField):
             k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
             k_ba = params.get_pair_angle_parameters('k_ba', angle_pairs_flat_p, topology.angle_atoms)
         
-        # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
             erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
