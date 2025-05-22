@@ -12,7 +12,8 @@ class ShortRangeSettings:
 class LongRangeElectrostaticsSettings:
     use_long_range: bool = True
     method: str = "ewald"
-    cutoff: float = 8.0 / BOHR2ANG
+    cutoff: float = 9.0 / BOHR2ANG
+    max_rank: int = 2
     tolerance: float = 1e-6
     alpha: float = 0.0
     k_max: int = 0

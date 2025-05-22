@@ -68,7 +68,7 @@ def test_cmm_water_box_setup():
     
     settings = Settings()
     settings.add_neighbor_list_settings(padding=1.5)
-    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-10)
+    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-6)
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
@@ -91,11 +91,10 @@ def test_cmm_water_box_setup():
     energies['total'].backward()
     print(energies)
 
-
     system = System(coords, box, atom_type_names, topology, settings)
     ff = CMM2(system)
     ff.forward(system)
     print(ff.energies)
     ff.energies['V_total'].backward()
-    print(coords.grad)
-    print(box.grad)
+    #print(coords.grad)
+    #print(box.grad)

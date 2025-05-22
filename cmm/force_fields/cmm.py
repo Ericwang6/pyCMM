@@ -23,6 +23,7 @@ class CMM2(FF):
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         
+        self.setup_long_range_interactions(system)
         #self.add_term(MorseBond())
         #self.add_term(CosineAngle())
         self.add_term(StoreIndices())
@@ -32,8 +33,8 @@ class CMM2(FF):
         self.add_term(StoreSwitchingValues())
         self.add_term(TTDispersionC6(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
         self.add_term(ExchangePolarizationCMM())
-        #self.add_term(ElectrostaticEnergy0(lr_elec_settings.alpha))
-        #self.setup_long_range_interactions(system)
+        self.add_term(MultipolarElectrostatics2())
+        self.add_term(MultipolarChargePenetration())
         self._build()
 
     def forward(self, system: System):

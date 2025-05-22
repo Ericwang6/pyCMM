@@ -22,7 +22,8 @@ class FF(torch.nn.Module, ABC):
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         if lr_elec_settings.use_long_range:
             if lr_elec_settings.method == "ewald":
-                self.add_term(EwaldEnergy0(lr_elec_settings.alpha, lr_elec_settings.k_max))
+                if lr_elec_settings.max_rank == 0:
+                    self.add_term(EwaldEnergy0(lr_elec_settings.alpha, lr_elec_settings.k_max))
                 # ^^^ Eventually change to n_x, n_y, n_z and store them on the Term instead of k_max.
         if lr_disp_settings.use_long_range:
             if lr_disp_settings.method == "lrc":

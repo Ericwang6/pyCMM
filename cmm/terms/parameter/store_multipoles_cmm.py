@@ -62,6 +62,14 @@ class StoreMultipolesCMM(Term):
         multipoles_pauli = scaleMultipoles(multipoles_real, q_pauli, Kdipo_pauli, Kquad_pauli)
         multipoles_xpol = scaleMultipoles(multipoles_real, q_xpol, Kdipo_xpol, Kquad_xpol)
         
+        # Storage for field data #
+        electric_field_data = torch.zeros(system.neighbor_list.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
+        # NOTE(JOE): The 10 here is for the potential (1), field (3), and field gradients (6)
+        # If we used spherical harmonics there would be 5 field gradient components
+        # but we can only reduce cartesian quadrupoles to 6 components using symmetry.
+        # In any case, the code for dealing with multipoles and all related variables could be more general
+        # and likely more efficient.
+
         # Store all multipoles for later use #
         system.storage.add('multipoles_real', multipoles_real)
         system.storage.add('multipoles_cp', multipoles_cp)
@@ -70,5 +78,6 @@ class StoreMultipolesCMM(Term):
         system.storage.add('multipoles_ct_don', multipoles_ct_don)
         system.storage.add('multipoles_pauli', multipoles_pauli)
         system.storage.add('multipoles_xpol', multipoles_xpol)
+        system.storage.add('electric_field_data', electric_field_data)
 
         return {}
