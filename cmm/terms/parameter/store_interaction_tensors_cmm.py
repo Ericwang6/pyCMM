@@ -20,23 +20,14 @@ class StoreInteractionTensorsCMM(Term):
     def forward(self, pairs: torch.Tensor, dists: torch.Tensor, distance_vecs: torch.Tensor, system: System):
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
 
-        pairs_excl = system.storage.get('pairs_excl')
         dists_excl = system.storage.get('dists_excl')
         distance_vecs_excl = system.storage.get('distance_vecs_excl')
-        excluded_pair_indices = system.storage.get('excluded_pair_indices')
-        pairs_long = system.storage.get('pairs_long')
-        dists_long = system.storage.get('dists_long')
-        distance_vecs_long = system.storage.get('distance_vecs_long')
-        included_pair_indices_long = system.storage.get('included_pair_indices_long')
-        included_pair_indices_medium = system.storage.get('included_pair_indices_medium')
-        pairs_medium = system.storage.get('pairs_medium')
         dists_medium = system.storage.get('dists_medium')
         distance_vecs_medium = system.storage.get('distance_vecs_medium')
         included_pair_indices_short = system.storage.get('included_pair_indices_short')
         pairs_short = system.storage.get('pairs_short')
         dists_short = system.storage.get('dists_short')
         distance_vecs_short = system.storage.get('distance_vecs_short')
-        
 
         b_elec = system.parameterizer.get_atomic_parameters('b_elec')
         b_ij_cp_short_p = system.parameterizer.get_pair_parameters_with_optional_combination_rule(
@@ -107,7 +98,6 @@ class StoreInteractionTensorsCMM(Term):
         xpol_interaction_tensor_short = torch.mul(undamped_tensor_1_short, xpol_damps_short_2c_1) + torch.mul(undamped_tensor_2_short, xpol_damps_short_2c_2) + torch.mul(undamped_tensor_3_short, xpol_damps_short_2c_3)
         ct_interaction_tensor_short = torch.mul(undamped_tensor_1_short, ct_damps_short_2c_1) + torch.mul(undamped_tensor_2_short, ct_damps_short_2c_2) + torch.mul(undamped_tensor_3_short, ct_damps_short_2c_3)
         pol_interaction_tensor_short = torch.mul(undamped_tensor_1_pol_short, pol_damps_short_2c_1) + torch.mul(undamped_tensor_2_pol_short, pol_damps_short_2c_2)
-        print(pol_interaction_tensor_short)
 
         system.storage.add('direct_field_tensor_medium', direct_field_tensor_medium)
         system.storage.add('direct_field_tensor_excl', direct_field_tensor_excl)

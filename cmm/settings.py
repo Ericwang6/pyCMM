@@ -4,8 +4,9 @@ from .units import BOHR2ANG
 
 @dataclass
 class ShortRangeSettings:
-    cutoff: float = 5.0 / BOHR2ANG
     use_switching: bool = True
+    cutoff: float = 5.0 / BOHR2ANG
+    switching_start_before_cutoff: float = 2.0 # Bohr
 
 @dataclass
 class LongRangeElectrostaticsSettings:
@@ -19,6 +20,7 @@ class LongRangeElectrostaticsSettings:
     # and be interpreted as the k vector integers or the
     # number of grid points for PME and Ewald respectively.
     use_switching: bool = False
+    switching_start_before_cutoff: float = 2.0 # Bohr
 
 @dataclass
 class LongRangeDispersionSettings:

@@ -86,6 +86,7 @@ def test_cmm_water_box_setup():
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
     )
 
+    torch.set_printoptions(9)
     energies = ff.evaluate(cm, topology, parameters)
     energies['total'].backward()
     print(energies)
