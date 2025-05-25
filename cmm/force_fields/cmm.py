@@ -24,8 +24,7 @@ class CMM2(FF):
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         
         self.setup_long_range_interactions(system)
-        #self.add_term(MorseBond())
-        #self.add_term(CosineAngle())
+        # HERE: Only polarization and ewald left to implement
         self.add_term(StoreIndices())
         self.add_term(StoreChargeFluxCMM())
         self.add_term(StoreMultipolesCMM())
@@ -40,6 +39,8 @@ class CMM2(FF):
         self.add_term(MultipolarChargeTransfer())
         self.add_term(ManyBodyChargeTransfer())
         self.add_term(CosineAngle())
+        self.add_term(FieldDependentMorseParams())
+        self.add_term(MorseBond())
         self.add_term(BondedCouplingCMM())
         self._build()
 

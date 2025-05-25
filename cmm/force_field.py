@@ -1075,6 +1075,7 @@ class CMM(ForceField):
         ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         ene_bbs = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         if topology.bonded_atoms.numel() > 0:
+            print(elec_field)
             re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
                 dists_bonded, dist_vecs_bonded,
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
