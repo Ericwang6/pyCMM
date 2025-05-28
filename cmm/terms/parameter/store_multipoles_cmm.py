@@ -79,6 +79,9 @@ class StoreMultipolesCMM(Term):
         # and likely more efficient.
 
         # Store all multipoles for later use #
+        system.storage.add('q', q_total)
+        system.storage.add('dipo', dipo_lr)
+        system.storage.add('quad', quad_lr)
         system.storage.add('multipoles_real', multipoles_real)
         system.storage.add('multipoles_cp', multipoles_cp)
         system.storage.add('multipoles_Z', multipoles_Z)

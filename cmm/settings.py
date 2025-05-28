@@ -101,10 +101,11 @@ class Settings:
         use_long_range: bool = True,
         method: str = "ewald",
         cutoff: float = 8.0,
-        tolerance: float = 1e-6
+        max_rank: int = 2,
+        tolerance: float = 1e-6,
     ) -> None:
         self.components["long_range_electrostatics"] = LongRangeElectrostaticsSettings(
-            use_long_range, method, cutoff / BOHR2ANG, tolerance
+            use_long_range, method, cutoff / BOHR2ANG, max_rank, tolerance
         )
 
     def add_long_range_dispersion_settings(self,

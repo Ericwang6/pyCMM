@@ -23,18 +23,20 @@ class CMM2(FF):
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         
-        self.setup_long_range_interactions(system)
         # HERE: Only polarization and ewald left to implement
         self.add_term(StoreIndices())
         self.add_term(StoreChargeFluxCMM())
         self.add_term(StoreMultipolesCMM())
         self.add_term(StoreInteractionTensorsCMM())
         self.add_term(StoreSwitchingValues())
+        
+        self.setup_long_range_interactions(system)
         self.add_term(VariableHardness())
         self.add_term(TTDispersionC6(lr_disp_settings.use_switching, lr_disp_settings.switching_start_before_cutoff))
         self.add_term(ExchangePolarizationCMM())
         self.add_term(MultipolarElectrostatics2())
         self.add_term(MultipolarChargePenetration())
+        self.add_term(ExcludedMultipolarElectrostatics2())
         self.add_term(MultipolarPauli())
         self.add_term(MultipolarChargeTransfer())
         self.add_term(ManyBodyChargeTransfer())
