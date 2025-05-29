@@ -65,8 +65,8 @@ class EwaldEnergy2(Term):
             torch.einsum("nij,nij->", quad, ewald_field_gradient) / 3
         )
 
-        system.storage.add('ewald_potential', ewald_potential)
-        system.storage.add('ewald_field', ewald_field)
-        system.storage.add('ewald_field_gradient', ewald_field_gradient)
+        system.storage.add('ewald_elec_potential', ewald_potential)
+        system.storage.add('ewald_elec_field', ewald_field)
+        system.storage.add('ewald_elec_field_gradient', ewald_field_gradient)
 
         return {'V_elec_lr': V_elec_lr}

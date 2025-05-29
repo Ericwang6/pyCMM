@@ -3,6 +3,16 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from .units import BOHR2ANG
 
 @dataclass
+class PolarizationSettings:
+    solver: str = "CG"
+    preconditioner: str = "direct"
+    tolerance: float = 1e-6
+    use_extrapolation: bool = True
+    n_extrapolate_from: int = 20
+    max_iterations: int = 500
+    verbose: bool = False
+
+@dataclass
 class ShortRangeSettings:
     use_switching: bool = True
     cutoff: float = 5.0 / BOHR2ANG

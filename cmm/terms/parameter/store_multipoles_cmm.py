@@ -92,6 +92,7 @@ class StoreMultipolesCMM(Term):
         system.storage.add('electric_field_data', electric_field_data)
         system.storage.add('eta', eta)
         system.storage.add('polarizabilities', polarizabilities)
+        system.storage.add('inverse_polarizabilities', torch.linalg.inv(polarizabilities))
         system.storage.add('alpha_damp_exponent', alpha_damp_exponent)
         system.storage.add('alpha_damp_max', alpha_damp_max)
 

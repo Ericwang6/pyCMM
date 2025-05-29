@@ -4,7 +4,7 @@ import numpy as np
 
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
-from cmm.settings import Settings, MolecularDynamicsSettings, NeighborListSettings
+from cmm.settings import Settings, MolecularDynamicsSettings, NeighborListSettings, PolarizationSettings, ShortRangeSettings
 from cmm.misc_utils import read_from_tinker_xyz
 from cmm.parameters import Parameterizer
 from cmm.system import System, create_system_from_ext_xyz_file
@@ -69,6 +69,8 @@ def test_cmm_water_box_setup():
     settings = Settings()
     settings.add_neighbor_list_settings(padding=1.5)
     settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-6)
+    settings.add("polarization", PolarizationSettings())
+    settings.add("short_range", ShortRangeSettings())
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)

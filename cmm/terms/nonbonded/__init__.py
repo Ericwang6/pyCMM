@@ -8,3 +8,4 @@ from .multipolar_charge_penetration import MultipolarChargePenetration
 from .multipolar_electrostatics import MultipolarElectrostatics2, ExcludedMultipolarElectrostatics2
 from .multipolar_pauli import MultipolarPauli
 from .multipolar_charge_transfer import MultipolarChargeTransfer
+from .multipolar_polarization import MultipolarPolarization1

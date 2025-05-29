@@ -1044,6 +1044,8 @@ class CMM(ForceField):
         #    return local_induced_multipoles
 
         # Solve polarization equations by preconditioned conjugate gradient #
+        print(elec_potential)
+        #print(elec_field)
         ene_pol = torch.tensor(0.0)
         if self.use_polarization:
             b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
