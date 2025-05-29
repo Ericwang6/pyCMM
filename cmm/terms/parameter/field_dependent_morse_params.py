@@ -38,10 +38,9 @@ class FieldDependentMorseParams(Term):
             ct_slope_1_p = system.parameterizer.get_pair_parameters('ct_slope_1', bonded_pair_indices)
             ct_slope_2_p = system.parameterizer.get_pair_parameters('ct_slope_2', bonded_pair_indices)
 
-            electric_field_data = system.storage.get('electric_field_data')
-            elec_field = electric_field_data.mul(torch.tensor([1, -1, -1, -1, -1, -1, -1, -1, -1, -1], device=pairs.device).reshape(1, -1))[:, 1:4]
+
+            elec_field = system.storage.get('electric_field_permanent')
             dq_a = system.storage.get('dq_a')
-            print(elec_field)
             r_eq_morse, beta_morse = computeFieldDependentMorseParams(
                 dists_bonded, distance_vecs_bonded,
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,

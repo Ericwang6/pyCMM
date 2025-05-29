@@ -1044,8 +1044,6 @@ class CMM(ForceField):
         #    return local_induced_multipoles
 
         # Solve polarization equations by preconditioned conjugate gradient #
-        print(elec_potential)
-        #print(elec_field)
         ene_pol = torch.tensor(0.0)
         if self.use_polarization:
             b_vector = torch.hstack((-elec_potential, elec_field.flatten(), dq_groups))
@@ -1077,7 +1075,6 @@ class CMM(ForceField):
         ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         ene_bbs = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         if topology.bonded_atoms.numel() > 0:
-            print(elec_field)
             re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
                 dists_bonded, dist_vecs_bonded,
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,

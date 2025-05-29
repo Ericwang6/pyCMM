@@ -23,7 +23,7 @@ class LongRangeLennardJonesCorrection(Term):
         sigma_ij_vdw_p = system.parameterizer.get_pair_parameters_with_optional_combination_rule(
             'sigma_lj', included_pair_indices, pairs_lr
         )
-
+        print(sigma_ij_vdw_p)
         V_lj_lr = compute_long_range_lennard_jones_correction(
             sigma_ij_vdw_p, eps_ij_vdw_p, system.neighbor_list.cutoff,
             system.neighbor_list.natoms, system.box_volume

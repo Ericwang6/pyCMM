@@ -52,6 +52,8 @@ class MultipolarPolarization1(Term):
         if lr_settings.use_long_range:
             elec_potential = elec_potential + system.storage.get('ewald_elec_potential')
             elec_field = elec_field + system.storage.get('ewald_elec_field')
+        system.storage.add('electric_potential_permanent', elec_potential)
+        system.storage.add('electric_field_permanent', elec_field)
 
         def A_mm(x: torch.Tensor):
             return compute_product_with_polarization_matrix(
