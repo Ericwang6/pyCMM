@@ -16,7 +16,9 @@ from ..polarization_solver import cg_solve, CG
 class CMM2(FF):
     def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
         super().__init__(system, dtype, device)
-        
+        # TODO: The force field should take in only the settings (not the system) and it should
+        # fill out some default settings. Users can then override these settings after the force field
+        # has been constructed? Details to be worked out.
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()
         pol_settings = system.settings.get('polarization')

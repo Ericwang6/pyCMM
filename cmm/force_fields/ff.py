@@ -29,8 +29,10 @@ class FF(torch.nn.Module, ABC):
                 # ^^^ Eventually change to n_x, n_y, n_z and store them on the Term instead of k_max.
         if lr_disp_settings.use_long_range:
             if lr_disp_settings.method == "lrc":
-                self.add_term(LongRangeLennardJonesCorrection())
-                # ^^^ Eventually change to n_x, n_y, n_z and store them on the Term instead of k_max.
+                if lr_disp_settings.model == "lj":
+                    self.add_term(LongRangeLennardJonesCorrection())
+                if lr_disp_settings.model == "C6":
+                    self.add_term(LongRangeC6DispersionCorrection())
 
     def add_term(self, term: Term):
         self.terms.append(term)

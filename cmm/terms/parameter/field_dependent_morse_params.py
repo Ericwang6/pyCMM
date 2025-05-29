@@ -38,7 +38,6 @@ class FieldDependentMorseParams(Term):
             ct_slope_1_p = system.parameterizer.get_pair_parameters('ct_slope_1', bonded_pair_indices)
             ct_slope_2_p = system.parameterizer.get_pair_parameters('ct_slope_2', bonded_pair_indices)
 
-
             elec_field = system.storage.get('electric_field_permanent')
             dq_a = system.storage.get('dq_a')
             r_eq_morse, beta_morse = computeFieldDependentMorseParams(

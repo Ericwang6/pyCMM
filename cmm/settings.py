@@ -37,6 +37,7 @@ class LongRangeElectrostaticsSettings:
 class LongRangeDispersionSettings:
     use_long_range: bool = True
     method: str = "lrc"
+    model: str = "C6"
     use_switching: bool = True
     switching_start_before_cutoff: float = 2.0
 

@@ -62,7 +62,7 @@ class NSquaredList(NeighborList):
         """
         self.device = positions.device
         self.natoms = positions.shape[0]
-        self.cutoff = cutoff
+        self.cutoff = cutoff if torch.is_tensor(cutoff) else torch.tensor(cutoff, device=self.device, dtype=positions.dtype)
         self.excluded_pairs = excluded_atomic_pairs
         self.included_pairs = None
         self.pairs = None
@@ -137,7 +137,7 @@ class VerletList(NeighborList):
         """
         self.device = positions.device
         self.natoms = positions.shape[0]
-        self.cutoff = cutoff
+        self.cutoff = cutoff if torch.is_tensor(cutoff) else torch.tensor(cutoff, device=self.device, dtype=positions.dtype)
         self.excluded_pairs = excluded_atomic_pairs
         self.included_pairs = None
         self.pairs = None
@@ -256,7 +256,7 @@ class VerletList2(NeighborList):
         """
         self.device = positions.device
         self.natoms = positions.shape[0]
-        self.cutoff = cutoff
+        self.cutoff = cutoff if torch.is_tensor(cutoff) else torch.tensor(cutoff, device=self.device, dtype=positions.dtype)
         self.excluded_pairs = excluded_atomic_pairs
         self.included_pairs = None
         self.pairs = None

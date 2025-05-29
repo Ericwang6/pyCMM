@@ -18,18 +18,18 @@ class TTDispersionC6(Term):
 
     def forward(self, pairs: torch.Tensor, dists: torch.Tensor, distance_vecs: torch.Tensor, system: System):
         included_pair_indices = system.neighbor_list.get_pair_indices(system.neighbor_list.included_pairs)
-        pairs_lr = pairs[included_pair_indices, :]
-        dists_lr = dists[included_pair_indices]
+        pairs_long = system.storage.get('pairs_long')
+        dists_long = dists[included_pair_indices]
 
         b_ij_disp_vdw_p = system.parameterizer.get_pair_parameters_with_optional_combination_rule(
-            'b_disp', included_pair_indices, pairs_lr
+            'b_disp', included_pair_indices, pairs_long
         )
         C6_ij_disp_vdw_p = system.parameterizer.get_pair_parameters_with_optional_combination_rule(
-            'C6_disp', included_pair_indices, pairs_lr
+            'C6_disp', included_pair_indices, pairs_long
         )
 
         disp_pairwise = computeDispersionFromPairs(
-            dists_lr,
+            dists_long,
             C6_ij_disp_vdw_p, b_ij_disp_vdw_p
         )
         V_disp = torch.sum(disp_pairwise) / 2
