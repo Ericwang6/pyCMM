@@ -62,15 +62,9 @@ def test_spcfw_water_box_setup():
     print(coords.grad)
     print(box.grad)
     
-def test_cmm_water_box_setup():
+def test_cmm_water_box_against_original_implementation():
     torch.set_default_dtype(torch.float64)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    
-    settings = Settings()
-    settings.add_neighbor_list_settings(padding=1.5)
-    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-6)
-    settings.add("polarization", PolarizationSettings())
-    settings.add("short_range", ShortRangeSettings())
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
@@ -78,25 +72,33 @@ def test_cmm_water_box_setup():
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
-
     topology = Topology(bonds, coords.size(0), device)
-    cm = CoordinateManager(coords, box, 9.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
-    pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM()
-    parameters = Parameterizer(
-        atom_type_names, pairs, topology.angle_atoms,
-        ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
-    )
 
-    torch.set_printoptions(9)
-    energies = ff.evaluate(cm, topology, parameters)
-    energies['total'].backward()
-    print(energies)
+    reference_energies = {
+        'perm_elec': torch.tensor(-1.530321435),
+        'pol': torch.tensor(-1.066418481),
+        'ct_direct': torch.tensor(-1.463103904),
+        'xpol': torch.tensor(-0.238940206),
+        'pauli': torch.tensor(6.577868084),
+        'disp': torch.tensor(-2.070634588),
+        'deformation': torch.tensor(0.370158548),
+        'bond': torch.tensor(0.229082034),
+        'angle': torch.tensor(0.133542917),
+        'bond_bond': torch.tensor(-0.000843700),
+        'bond_angle': torch.tensor(0.008377297),
+        'total': torch.tensor(-3.373368613),
+        'ewald': torch.tensor(-3.916683062),
+        'disp_lr': torch.tensor(-0.035293569),
+    }
+
+    settings = Settings()
+    settings.add_neighbor_list_settings(padding=1.5)
+    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-6)
+    settings.add("polarization", PolarizationSettings())
+    settings.add("short_range", ShortRangeSettings())
 
     system = System(coords, box, atom_type_names, topology, settings)
     ff = CMM2(system)
     ff.forward(system)
-    print(ff.energies)
     ff.energies['V_total'].backward()
-    #print(coords.grad)
-    #print(box.grad)
+    assert torch.isclose(ff.energies['V_total'], reference_energies['total'])
