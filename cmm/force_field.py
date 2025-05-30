@@ -1,27 +1,27 @@
 import torch, math
 from torch_scatter import segment_csr
+from .bonded import computeAngleFromVecs
 from .multipole import computeCartesianQuadrupoles, convertMultipolesToPolytensor, rotateDipoles, rotateQuadrupoles, computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .ewald import long_range_potential, long_range_potential_rank_1
-from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix, compute_product_with_polarization_matrix_local
+from .polarization import direct_field_induced_dipole_guess, get_field_dependent_polarizabilities, direct_polarization_guess, compute_product_with_polarization_matrix
 from .short_range import scaleMultipoles, computeShortRangeOneCenterDampFactors, computeShortRangeTwoCenterDampFactors, computeShortRangePolarizationDampFactors
 from .dispersion import computeDispersionFromPairs, compute_long_range_dispersion_correction
 from .coordinate_manager import CoordinateManager
 from .axis_types import AxisTypes
 from .parameters import Parameterizer
 from .topology import Topology
-from .terms import *
+from .bonded_parameter_functions import *
 from .units import *
 from .switching_functions import switch_543
-from.polarization_solver import cg_solve, CG
-
-from copy import copy
+from .polarization_solver import cg_solve, CG
 
 class ForceField(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self._atomic_params = {}
         self._pair_params = {}
+        self.alpha_ewald = None
 
 class CMM(ForceField):
     def __init__(self,
@@ -47,8 +47,8 @@ class CMM(ForceField):
         self.cutoff_vdw = cutoff_ewald if torch.is_tensor(cutoff_ewald) else torch.tensor(cutoff_ewald, dtype=torch.float64)
         self.use_ewald = use_ewald
 
-        self.use_lr_dispersion = use_lr_dispersion
 
+        self.use_lr_dispersion = use_lr_dispersion
         self.use_polarization = use_polarization
         self.polarization_solver = None
         if self.use_polarization:
@@ -573,27 +573,52 @@ class CMM(ForceField):
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)
         self.cutoff_vdw = cm.cutoff
 
-        if True: #self.parameters_have_changed:
-            # SPEED: Can of course do this per parameter type so that not everything is rebuilt
-            # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
-            # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.
-            # This would be a reason to add setter functions. In addition to a way to set the status bool.
-            params.rebuild(pairs, self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
-            self.parameters_have_changed = False
+        # Get pair indices for excluded and included nonbonded interactions #
+        included_pair_indices = cm.neighbor_list.get_pair_indices(cm.neighbor_list.included_pairs)
+        if cm.neighbor_list.excluded_pairs.numel() > 0:
+            excluded_pair_indices = cm.neighbor_list.get_pair_indices(cm.neighbor_list.excluded_pairs)
+        else:
+            excluded_pair_indices = torch.empty(0, device=included_pair_indices.device, dtype=included_pair_indices.dtype)
+        if topology.bonded_atoms.numel() > 0:
+            bonded_pair_indices = cm.neighbor_list.get_pair_indices(topology.bonded_atoms.T)
+        else:
+            bonded_pair_indices = torch.empty(0, device=included_pair_indices.device, dtype=included_pair_indices.dtype)
+        if topology.angle_atoms.numel() > 0:
+            angle_pair_indices_ij = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 0:2])
+            angle_pair_indices_jk = cm.neighbor_list.get_pair_indices(topology.angle_atoms[:, 1:].flip(1))
+        else:
+            angle_pair_indices_ij = torch.empty(0, device=included_pair_indices.device, dtype=included_pair_indices.dtype)
+            angle_pair_indices_jk = torch.empty(0, device=included_pair_indices.device, dtype=included_pair_indices.dtype)
+
+        if self.alpha_ewald is None:
+            # Find appropriate ewald parameters. This should really be done by the CM.
+            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
+            self.k_max = 50
+            for i in range(2, 50):
+                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
+                if error_estimate < self.ewald_tolerance:
+                    self.k_max = i
+                    break
+
+        # SPEED: Can of course do this per parameter type so that not everything is rebuilt
+        # each time this is called. Currently would SOMETIMES NOT WORK for pair params since
+        # we symmetrize the pair parameters w.r.t. a specific choice of the atom types.
+        # This would be a reason to add setter functions. In addition to a way to set the status bool.
+        params.rebuild(pairs, self.atomic_params, self.pair_params, self.pair_pair_params, self.pair_angle_params, self.angle_params)
         
         # Get pairs, dists, and vectors for exclusion list (needed to remove their contribution from long-range interactions) #
-        pairs_excl = pairs[topology.all_intramolecular_pairs, :]
+        pairs_excl = pairs[excluded_pair_indices, :]
         pairs_excl_i_a = pairs_excl[:, 0]
         pairs_excl_j_a = pairs_excl[:, 1]
-        dists_excl = dists[topology.all_intramolecular_pairs]
-        dist_vecs_excl = dist_vecs[topology.all_intramolecular_pairs]
+        dists_excl = dists[excluded_pair_indices]
+        dist_vecs_excl = dist_vecs[excluded_pair_indices]
 
         # Get pairs, dists, and vectors for vdw potential #
-        pairs_vdw = pairs[topology.all_intermolecular_pairs, :]
+        pairs_vdw = pairs[included_pair_indices, :]
         pairs_vdw_i_a = pairs_vdw[:, 0]
         pairs_vdw_j_a = pairs_vdw[:, 1]
-        dists_vdw = dists[topology.all_intermolecular_pairs]
-        dist_vecs_vdw = dist_vecs[topology.all_intermolecular_pairs]
+        dists_vdw = dists[included_pair_indices]
+        dist_vecs_vdw = dist_vecs[included_pair_indices]
 
         # NOTE(JOE): Using switching functions for the vdw interactions will be a long-range
         # option but for now it is preferable to use the long-range correction. Onec PME dispersion
@@ -616,7 +641,8 @@ class CMM(ForceField):
         # Get pairs, dists, and vectors for short-range nonbonded potential #
         indices_vdw_to_sr = torch.where(dists_vdw <= self.cutoff_sr, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
         indices_vdw_to_sr = indices_vdw_to_sr[indices_vdw_to_sr >= 0]
-        all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_vdw_to_sr]
+        #all_intermolecular_pairs_sr = topology.all_intermolecular_pairs[indices_vdw_to_sr]
+        all_intermolecular_pairs_sr = included_pair_indices[indices_vdw_to_sr]
 
         pairs_sr = pairs_vdw[indices_vdw_to_sr, :]
         pairs_sr_i_a = pairs_sr[:, 0]
@@ -629,22 +655,19 @@ class CMM(ForceField):
         switch_start_sr = switch_start_sr if switch_start_sr > 0.0 else 0.0
         switch_sr = switch_543(dists_sr, switch_start_sr, self.cutoff_sr)
 
+        dists_bonded = dists[bonded_pair_indices]
+        dist_vecs_bonded = dist_vecs[bonded_pair_indices]
+
         # Get pairs, dists, and vectors for local iteration of nonbonded potential #
-        indices_vdw_to_local = torch.where(dists_vdw <= self.cutoff_local, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
-        indices_vdw_to_local = indices_vdw_to_local[indices_vdw_to_local >= 0]
-        all_intermolecular_pairs_local = topology.all_intermolecular_pairs[indices_vdw_to_local]
+        #indices_vdw_to_local = torch.where(dists_vdw <= self.cutoff_local, torch.arange(dists_vdw.size(0), dtype=torch.long, device=dists_vdw.device), torch.tensor(-1, dtype=torch.long, device=dists_vdw.device))
+        #indices_vdw_to_local = indices_vdw_to_local[indices_vdw_to_local >= 0]
+        #all_intermolecular_pairs_local = included_pair_indices[indices_vdw_to_local]
 
-        pairs_local = pairs_vdw[indices_vdw_to_local, :]
-        pairs_local_i_a = pairs_local[:, 0]
-        pairs_local_j_a = pairs_local[:, 1]
-        dists_local = dists_vdw[indices_vdw_to_local]
-        dist_vecs_local = dist_vecs_vdw[indices_vdw_to_local]
-
-        if topology.angle_pairs.numel() > 0:
-            angles = computeAngleFromVecs(dist_vecs[topology.angle_pairs[0]], dist_vecs[topology.angle_pairs[1]])
-
-        # All pairs forming an angle #
-        pairs_angles_p = topology.angle_pairs.T.flatten()
+        #pairs_local = pairs_vdw[indices_vdw_to_local, :]
+        #pairs_local_i_a = pairs_local[:, 0]
+        #pairs_local_j_a = pairs_local[:, 1]
+        #dists_local = dists_vdw[indices_vdw_to_local]
+        #dist_vecs_local = dist_vecs_vdw[indices_vdw_to_local]
 
         # Electric Multipoles #
         Z = params.get_atomic_parameters('Z')
@@ -686,9 +709,9 @@ class CMM(ForceField):
         b_ij_cp_sr_p = params.get_pair_parameters_with_optional_combination_rule(
             'b_elec', all_intermolecular_pairs_sr, pairs_sr
         )
-        b_ij_cp_local_p = params.get_pair_parameters_with_optional_combination_rule(
-            'b_elec', all_intermolecular_pairs_local, pairs_local
-        )
+        #b_ij_cp_local_p = params.get_pair_parameters_with_optional_combination_rule(
+        #    'b_elec', all_intermolecular_pairs_local, pairs_local
+        #)
         b_ij_pauli_sr_p = params.get_pair_parameters_with_optional_combination_rule(
             'b_pauli', all_intermolecular_pairs_sr, pairs_sr
         )
@@ -699,54 +722,52 @@ class CMM(ForceField):
             'b_ct', all_intermolecular_pairs_sr, pairs_sr
         )
         b_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'b_disp', topology.all_intermolecular_pairs, pairs_vdw
+            'b_disp', included_pair_indices, pairs_vdw
         )
         C6_ij_disp_vdw_p = params.get_pair_parameters_with_optional_combination_rule(
-            'C6_disp', topology.all_intermolecular_pairs, pairs_vdw
+            'C6_disp', included_pair_indices, pairs_vdw
         )
         eps = params.get_pair_parameters_with_optional_combination_rule('eps', all_intermolecular_pairs_sr, pairs[all_intermolecular_pairs_sr])
 
-        if topology.bonded_pairs.numel() > 0:
-            r_eq = params.get_pair_parameters('r_eq', topology.bonded_pairs)
-            k_b_p = params.get_pair_parameters('k_b', topology.bonded_pairs)
-            D_p = params.get_pair_parameters('D', topology.bonded_pairs)
-            dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', topology.bonded_pairs)
-            dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', topology.bonded_pairs)
-            ct_slope_1_p = params.get_pair_parameters('ct_slope_1', topology.bonded_pairs)
-            ct_slope_2_p = params.get_pair_parameters('ct_slope_2', topology.bonded_pairs)
-            j_cf = params.get_pair_parameters('j_cf', topology.bonded_pairs)
-            j_cf_pauli = params.get_pair_parameters('j_cf_pauli', topology.bonded_pairs)
-            k_hardness_b = params.get_pair_parameters('k_hardness_b', topology.bonded_pairs)
+        if topology.angle_atoms.numel() > 0:
+            angles = computeAngleFromVecs(dist_vecs[angle_pair_indices_ij], dist_vecs[angle_pair_indices_jk])
+
+        # All pairs forming an angle #
+        angle_pairs_flat_p = torch.stack((angle_pair_indices_ij, angle_pair_indices_jk), dim=1).flatten()
+
+        if bonded_pair_indices.numel() > 0:
+            r_eq = params.get_pair_parameters('r_eq', bonded_pair_indices)
+            k_b_p = params.get_pair_parameters('k_b', bonded_pair_indices)
+            D_p = params.get_pair_parameters('D', bonded_pair_indices)
+            dip_deriv_1_p = params.get_pair_parameters('dip_deriv_1', bonded_pair_indices)
+            dip_deriv_2_p = params.get_pair_parameters('dip_deriv_2', bonded_pair_indices)
+            ct_slope_1_p = params.get_pair_parameters('ct_slope_1', bonded_pair_indices)
+            ct_slope_2_p = params.get_pair_parameters('ct_slope_2', bonded_pair_indices)
+            j_cf = params.get_pair_parameters('j_cf', bonded_pair_indices)
+            j_cf_pauli = params.get_pair_parameters('j_cf_pauli', bonded_pair_indices)
+            k_hardness_b = params.get_pair_parameters('k_hardness_b', bonded_pair_indices)
         
         # NOTE(JOE): Need to test that we get the right bond-bond parameters for non-symmetric angles.
         # Currently, we don't have parameters for a non-symmetric angle but they will come up with
         # organic molecules.
-        if topology.angle_pairs.numel() > 0:
-            r_eq_bb_1 = params.get_pair_parameters('r_eq', topology.angle_pairs[0])
-            r_eq_bb_2 = params.get_pair_parameters('r_eq', topology.angle_pairs[1])
+        if angle_pair_indices_ij.numel() > 0:
+            r_eq_bb_1 = params.get_pair_parameters('r_eq', angle_pair_indices_ij)
+            r_eq_bb_2 = params.get_pair_parameters('r_eq', angle_pair_indices_jk)
             r_eq_ba = torch.stack((r_eq_bb_1, r_eq_bb_2), dim=1).flatten()
 
-            k_bb = params.get_pair_pair_parameters('k_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', topology.angle_pairs[1], topology.angle_pairs[0])
-            k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[0], topology.angle_pairs[1])
-            k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', topology.angle_pairs[1], topology.angle_pairs[0])
+            k_bb = params.get_pair_pair_parameters('k_bb', angle_pair_indices_ij, angle_pair_indices_jk)
+            j_cf_bb_1 = params.get_pair_pair_parameters('j_cf_bb', angle_pair_indices_ij, angle_pair_indices_jk)
+            j_cf_bb_2 = params.get_pair_pair_parameters('j_cf_bb', angle_pair_indices_jk, angle_pair_indices_ij)
+            k_hardness_bb_1 = params.get_pair_pair_parameters('k_hardness_bb', angle_pair_indices_ij, angle_pair_indices_jk)
+            k_hardness_bb_2 = params.get_pair_pair_parameters('k_hardness_bb', angle_pair_indices_jk, angle_pair_indices_ij)
 
             theta_eq = params.get_angle_parameters('theta_eq', topology.angle_atoms)
             k_theta = params.get_angle_parameters('k_theta', topology.angle_atoms)
             j_cf_angle = params.get_angle_parameters('j_cf_angle', topology.angle_atoms)
             k_hardness_angle = params.get_angle_parameters('k_hardness_angle', topology.angle_atoms)
-            k_ba = params.get_pair_angle_parameters('k_ba', topology.angle_pairs, topology.angle_atoms)
+            k_ba = params.get_pair_angle_parameters('k_ba', angle_pairs_flat_p, topology.angle_atoms)
         
-        # Find appropriate ewald parameters. This should really be done by the CM.
         if self.use_ewald:
-            self.alpha_ewald = torch.sqrt(-torch.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
-            self.k_max = 50
-            for i in range(2, 50):
-                error_estimate = (i * torch.sqrt(cm.box_lengths[0] * self.alpha_ewald) / 20.0) * torch.exp(-torch.pi * torch.pi * i * i / (cm.box_lengths[0] * self.alpha_ewald * cm.box_lengths[0] * self.alpha_ewald))
-                if error_estimate < self.ewald_tolerance:
-                    self.k_max = i
-                    break
             erfc_damps = computeDampFactorsErfc(dists_lr, self.alpha_ewald) # direct space
             erf_damps = -computeDampFactorsErf(dists_excl, self.alpha_ewald)
             # ^^^ for removing excluded interactions that are implicitly included in long-range summation
@@ -769,19 +790,19 @@ class CMM(ForceField):
         xpol_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_xpol_sr_p)
         ct_damps_sr_2c = -computeShortRangeTwoCenterDampFactors(dists_sr, b_ij_ct_sr_p)
         pol_damps_sr_2c = -computeShortRangePolarizationDampFactors(dists_sr, b_ij_cp_sr_p)
-        pol_damps_local_2c = -computeShortRangePolarizationDampFactors(dists_local, b_ij_cp_local_p)
+        #pol_damps_local_2c = -computeShortRangePolarizationDampFactors(dists_local, b_ij_cp_local_p)
 
         # Get all undamped and damped interactions needed for multipolar interactions #
         # @SPEED: There are a lot of overlapping calculations here which can be avoided by pulling
         # the interactions tensors out of the long-range one.
         undamped_tensor_1_lr, undamped_tensor_2_lr, undamped_tensor_3_lr = computeUndampedInteractionTensorBlocks(dist_vecs_lr, dists_lr)
         undamped_tensor_1_sr, undamped_tensor_2_sr, undamped_tensor_3_sr = computeUndampedInteractionTensorBlocks(dist_vecs_sr, dists_sr)
-        undamped_tensor_1_local, undamped_tensor_2_local, undamped_tensor_3_local = computeUndampedInteractionTensorBlocks(dist_vecs_local, dists_local)
+        #undamped_tensor_1_local, undamped_tensor_2_local, undamped_tensor_3_local = computeUndampedInteractionTensorBlocks(dist_vecs_local, dists_local)
         undamped_tensor_1_excl, undamped_tensor_2_excl, undamped_tensor_3_excl = computeUndampedInteractionTensorBlocks(dist_vecs_excl, dists_excl)
         undamped_tensor_1_pol_sr = undamped_tensor_1_sr[:, :4, :4]
         undamped_tensor_2_pol_sr = undamped_tensor_2_sr[:, :4, :4]
-        undamped_tensor_1_pol_local = undamped_tensor_1_local[:, :4, :4]
-        undamped_tensor_2_pol_local = undamped_tensor_2_local[:, :4, :4]
+        #undamped_tensor_1_pol_local = undamped_tensor_1_local[:, :4, :4]
+        #undamped_tensor_2_pol_local = undamped_tensor_2_local[:, :4, :4]
 
         ewald_damps_lr_1, ewald_damps_lr_2, ewald_damps_lr_3 = formDampingFactorBlocksRank2(erfc_damps)
         ewald_damps_excl_1, ewald_damps_excl_2, ewald_damps_excl_3 = formDampingFactorBlocksRank2(erf_damps)
@@ -792,7 +813,7 @@ class CMM(ForceField):
         xpol_damps_sr_2c_1, xpol_damps_sr_2c_2, xpol_damps_sr_2c_3 = formDampingFactorBlocksRank2(xpol_damps_sr_2c)
         ct_damps_sr_2c_1, ct_damps_sr_2c_2, ct_damps_sr_2c_3 = formDampingFactorBlocksRank2(ct_damps_sr_2c)
         pol_damps_sr_2c_1, pol_damps_sr_2c_2 = formDampingFactorBlocksRank1(pol_damps_sr_2c)
-        pol_damps_local_2c_1, pol_damps_local_2c_2 = formDampingFactorBlocksRank1(pol_damps_local_2c)
+        #pol_damps_local_2c_1, pol_damps_local_2c_2 = formDampingFactorBlocksRank1(pol_damps_local_2c)
 
         direct_field_tensor_lr = torch.mul(undamped_tensor_1_lr, ewald_damps_lr_1) + torch.mul(undamped_tensor_2_lr, ewald_damps_lr_2) + torch.mul(undamped_tensor_3_lr, ewald_damps_lr_3)
         direct_field_tensor_excl = torch.mul(undamped_tensor_1_excl, ewald_damps_excl_1) + torch.mul(undamped_tensor_2_excl, ewald_damps_excl_2) + torch.mul(undamped_tensor_3_excl, ewald_damps_excl_3)
@@ -807,28 +828,69 @@ class CMM(ForceField):
         xpol_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, xpol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, xpol_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, xpol_damps_sr_2c_3)
         ct_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, ct_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, ct_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, ct_damps_sr_2c_3)
         pol_interaction_tensor_sr = torch.mul(undamped_tensor_1_pol_sr, pol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_pol_sr, pol_damps_sr_2c_2)
-        pol_interaction_tensor_local = torch.mul(undamped_tensor_1_pol_local, pol_damps_local_2c_1) + torch.mul(undamped_tensor_2_pol_local, pol_damps_local_2c_2)
+        #pol_interaction_tensor_local = torch.mul(undamped_tensor_1_pol_local, pol_damps_local_2c_1) + torch.mul(undamped_tensor_2_pol_local, pol_damps_local_2c_2)
 
         # Pauli charge flux #
-        if topology.bonded_pairs.numel():
-            evaluate_bond_charge_flux(pairs, dists, topology.bonded_pairs, q_pauli, r_eq, j_cf_pauli)
+        if topology.bonded_atoms.numel():
+            evaluate_bond_charge_flux_2(dists_bonded, topology.bonded_atoms, q_pauli, r_eq, j_cf_pauli)
 
         # Electrostatic charge flux #
-        if topology.angle_pairs.numel() > 0:
-            evaluate_bond_and_angle_charge_flux(
-                pairs, dists, angles,
-                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-                mono, r_eq, theta_eq, j_cf, j_cf_angle,
+        if topology.angle_atoms.numel() > 0:
+            # bond charge flux #
+            charge_flux_bond_1, charge_flux_bond_2 = computeChargeFluxBond(dists_bonded, r_eq, j_cf)
+
+            # bond-bond coupling #
+            charge_flux_bb_1, charge_flux_bb_2, charge_flux_bb_3, charge_flux_bb_4 = computeChargeFluxBondBond(
+                dists[angle_pair_indices_ij], dists[angle_pair_indices_jk],
                 r_eq_bb_1, r_eq_bb_2, j_cf_bb_1, j_cf_bb_2
             )
 
+            # angle charge flux #
+            charge_flux_angle_list_i, charge_flux_angle_list_j, charge_flux_angle_list_k = computeChargeFluxAngle(angles, theta_eq, j_cf_angle)
+
+            # Scatter flux charges to appropriate atom indices #
+            flux_charges = torch.zeros_like(mono)
+            flux_charges.scatter_add_(0, topology.bonded_atoms[0], charge_flux_bond_1)
+            flux_charges.scatter_add_(0, topology.bonded_atoms[1], charge_flux_bond_2)
+            flux_charges.scatter_add_(0, topology.angle_atoms.t()[0], charge_flux_bb_1)
+            flux_charges.scatter_add_(0, topology.angle_atoms.t()[1], charge_flux_bb_2)
+            flux_charges.scatter_add_(0, topology.angle_atoms.t()[2], charge_flux_bb_3)
+            flux_charges.scatter_add_(0, topology.angle_atoms.t()[1], charge_flux_bb_4)
+            # ^^^ @SPEED: If it is actually faster, these could be stacked and scattered all at
+            # once but I am guessing that is not more efficient.
+
+            flux_charges.scatter_add_(0, topology.angle_atoms.T[0], charge_flux_angle_list_i)
+            flux_charges.scatter_add_(0, topology.angle_atoms.T[1], charge_flux_angle_list_j)
+            flux_charges.scatter_add_(0, topology.angle_atoms.T[2], charge_flux_angle_list_k)
+            mono.add_(flux_charges)
+        
             # Hardness change #
-            evaluate_hardness_change(
-                pairs, dists, angles,
-                topology.bonded_pairs, topology.angle_pairs, topology.angle_atoms,
-                eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
+            #evaluate_hardness_change(
+            #    pairs, dists, angles,
+            #    bonded_pair_indices, angle_pairs_flat_p, topology.angle_atoms,
+            #    eta, r_eq, theta_eq, k_hardness_b, k_hardness_angle,
+            #    r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
+            #)
+            hardness_product = torch.ones_like(eta)
+            hardness_change_b = computeHardnessChangeBond(dists_bonded, r_eq, k_hardness_b)
+            hardness_change_bb_1, hardness_change_bb_2 = computeHardnessChangeBondBond(
+                dists[angle_pair_indices_ij], dists[angle_pair_indices_jk],
                 r_eq_bb_1, r_eq_bb_2, k_hardness_bb_1, k_hardness_bb_2
             )
+            hardness_change_angle = computeHardnessChangeAngle(angles, theta_eq, k_hardness_angle)
+
+            # NOTE(JOE): We only accumulate some of the bond-bond terms since this basically assumes that all of
+            # the hardness change is on the second atom of the bond. i.e. just the H atoms in water.
+            # This is yet another reason not to like this piece of the model. There should be a better way.
+
+            # Cannot do in-place operations or else computational graphs breaks. Sad.
+            hardness_product = hardness_product.scatter_reduce(0, topology.bonded_atoms[1], hardness_change_b, reduce="prod")
+            hardness_product = hardness_product.scatter_reduce(0, topology.angle_atoms.t()[0], hardness_change_bb_1, reduce="prod")
+            hardness_product = hardness_product.scatter_reduce(0, topology.angle_atoms.t()[2], hardness_change_bb_2, reduce="prod")
+
+            eta *= hardness_product
+            eta.scatter_add_(0, topology.angle_atoms.t()[0], hardness_change_angle)
+            eta.scatter_add_(0, topology.angle_atoms.t()[2], hardness_change_angle)
         
         eta_times_2 = 2 * eta
 
@@ -1012,9 +1074,9 @@ class CMM(ForceField):
         # figure that out once we are in a better position to actually run MD.
         ene_bonds = torch.zeros(1, dtype=dists.dtype, device=dists.device)
         ene_bbs = torch.zeros(1, dtype=dists.dtype, device=dists.device)
-        if topology.bonded_pairs.numel() > 0:
+        if topology.bonded_atoms.numel() > 0:
             re_fd_p, beta_fd_p = computeFieldDependentMorseParams(
-                dists[topology.bonded_pairs], dist_vecs[topology.bonded_pairs],
+                dists_bonded, dist_vecs_bonded,
                 k_b_p, D_p, r_eq, dip_deriv_1_p, dip_deriv_2_p,
                 ct_slope_1_p, ct_slope_2_p,
                 #(elec_field + induced_field)[topology.bonded_atoms[1]],
@@ -1023,12 +1085,11 @@ class CMM(ForceField):
             )
 
             # morse-bond
-            ene_bond_list = computeMorseBondPotential(dists[topology.bonded_pairs], re_fd_p, D_p, beta_fd_p)
+            ene_bond_list = computeMorseBondPotential(dists_bonded, re_fd_p, D_p, beta_fd_p)
             ene_bonds = torch.sum(ene_bond_list)
-
             # bond-bond couplings
             ene_bbs_list = computeBondBondCoupling(
-                dists[topology.angle_pairs[0]], dists[topology.angle_pairs[1]],
+                dists[angle_pair_indices_ij], dists[angle_pair_indices_jk],
                 r_eq_bb_1, r_eq_bb_2, k_bb
             )
             ene_bbs = torch.sum(ene_bbs_list)
@@ -1044,7 +1105,7 @@ class CMM(ForceField):
 
             # bond-angle couplings
             ene_bas_list = computeBondAngleCoupling(
-                dists[pairs_angles_p], r_eq_ba,
+                dists[angle_pairs_flat_p], r_eq_ba,
                 angles.repeat_interleave(2), theta_eq.repeat_interleave(2),
                 k_ba
             )

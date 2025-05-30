@@ -72,7 +72,6 @@ class CMM_ASE(Calculator):
             'cutoff_short_range': float(self._ff.cutoff_sr.item()),
             'require_coord_grads': self._cm._need_coordinate_grads,
             'require_box_grads': self._cm._need_box_grads,
-            'max_neighbors': self._cm.max_neighbors,
             'device': str(self._cm.coords.device),
             'torch_dtype': str(self._cm.coords.dtype),
             'output_folder': str(self.output_folder),
@@ -141,10 +140,10 @@ class CMM_ASE(Calculator):
         box = torch.tensor(state['cell'], dtype=dtype,
                           requires_grad=state['require_box_grads'],
                           device=device)
-        bonds = torch.tensor(state['bonds'], device=device)
+        bonds = np.array(state['bonds'])
+        topology = Topology(bonds, positions.size(0), device)
         cm = CoordinateManager(positions, box, state['cutoff_max'],
-                             labels=state['atom_labels'], max_neighbors=state['max_neighbors'])
-        topology = Topology(bonds, cm.neighbor_list, positions.size(0))
+                             state['atom_labels'], topology.all_intramolecular_pairs)
         if ff is None:
             use_ewald = state['use_ewald']
             use_polarization = state['use_polarization']

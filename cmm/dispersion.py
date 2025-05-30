@@ -1,6 +1,5 @@
 import torch
 
-
 def computeDispersion(
     drVec: torch.Tensor, 
     c6_i: torch.Tensor, c6_j: torch.Tensor,
@@ -57,3 +56,21 @@ def compute_long_range_dispersion_correction(
     # https://manual.gromacs.org/current/reference-manual/functions/long-range-vdw.html
     C6_average = torch.mean(C6_ij_p)
     return -(2 / 3) * torch.pi * natoms * natoms * C6_average / (torch.pow(cutoff_vdw, 3) * box_volume)
+
+def computeLennardJonesFromPairs(
+    dists_p: torch.Tensor, 
+    sigma_ij_p: torch.Tensor, eps_ij_p: torch.Tensor
+):
+    u6  = (sigma_ij_p / dists_p)**6
+    u12 = u6**2
+    return 4 * eps_ij_p * (u12 - u6)
+
+def compute_long_range_lennard_jones_correction(
+    sigma_ij_p: torch.Tensor, eps_ij_p: torch.Tensor, cutoff_vdw: torch.Tensor,
+    natoms: torch.Tensor, box_volume: torch.Tensor
+):
+    # See: http://docs.openmm.org/latest/userguide/theory/02_standard_forces.html#lennard-jones-interaction
+    # or DOI: 10.1021/jp0735987 J. Phys. Chem. B 2007, 111, 13052-13063
+    eu12 = torch.mean(eps_ij_p * torch.pow(sigma_ij_p, 12))
+    eu6 = torch.mean(eps_ij_p * torch.pow(sigma_ij_p, 6))
+    return 8 * torch.pi * natoms * natoms * (eu12 / (9 * cutoff_vdw**9) - eu6 / (3 * cutoff_vdw**3)) / box_volume
