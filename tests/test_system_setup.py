@@ -17,21 +17,21 @@ def test_system_setup_from_file():
     torch.set_default_dtype(torch.float64)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    md_settings = MolecularDynamicsSettings(
-        ensemble="NVT", timestep=0.5,
-        n_steps=50, temperature=298.15
-    )
-    nl_settings = NeighborListSettings(
-        padding=1.5
-    )
     settings = Settings()
-    settings.add_neighbor_list(nl_settings)
-    settings.add("md", md_settings)
+    settings.add_neighbor_list_settings(cutoff=30.0, padding=1.5)
+    settings.add_long_range_electrostatics_settings(use_long_range=False)
+    settings.add_long_range_dispersion_settings(use_long_range=False)
+    settings.add("polarization", PolarizationSettings())
+    settings.add("short_range", ShortRangeSettings())
 
-    create_system_from_ext_xyz_file(os.path.join(os.path.dirname(__file__), "data/water_clusters.xyz"), requires_grad=True, device=device)
-    # HERE: Keep working on the system and settings stuff.
-    # 1) Load system from extxyz file
-    # 2) Make system have same functionality as coordinate manager
+    systems = create_system_from_ext_xyz_file(os.path.join(os.path.dirname(__file__), "data/water_clusters.xyz"), settings, requires_grad=True, device=device)
+    ff = CMM2(systems[0])
+    ff.forward(systems[0])
+    V_total = ff.energies['V_total']
+    ff.forward(systems[0])
+    V_total = V_total + ff.energies['V_total']
+    V_total.backward()
+
 
 def test_spcfw_water_box_setup():
     torch.set_default_dtype(torch.float64)
@@ -47,7 +47,7 @@ def test_spcfw_water_box_setup():
     settings.add("md", md_settings)
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
-    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
+    coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, requires_box_grad=True, device=device)
     
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
@@ -68,7 +68,6 @@ def test_cmm_water_box_against_original_implementation():
 
     system_file = os.path.join(os.path.dirname(__file__), "data/water_216.xyz")
     coords, atom_types, bonds, labels = read_from_tinker_xyz(system_file, requires_grad=True, device=device)
-    
     atom_indices_to_names = {0: "O_water", 1: "H_water"}
     atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
     box = torch.tensor(np.eye(3) * 18.643 / BOHR2ANG, requires_grad=True, device=device)
