@@ -20,8 +20,8 @@ class StoreChargeFluxCMM(Term):
         return []
 
     def forward(self, pairs: torch.Tensor, dists: torch.Tensor, distance_vecs: torch.Tensor, system: System):
-        flux_charges = torch.zeros(system.topology.natoms, device=system.device, dtype=torch.get_default_dtype())
-        flux_charges_pauli = torch.zeros(system.topology.natoms, device=system.device, dtype=torch.get_default_dtype())
+        flux_charges = torch.zeros(system.topology.natoms, device=system.device, dtype=system.coords.dtype)
+        flux_charges_pauli = torch.zeros(system.topology.natoms, device=system.device, dtype=system.coords.dtype)
         if system.topology.angle_atoms.numel() > 0:
             bonded_pair_indices = system.neighbor_list.get_pair_indices(system.topology.bonded_atoms.T)
             angle_pair_indices_ij = system.neighbor_list.get_pair_indices(system.topology.angle_atoms[:, 0:2])

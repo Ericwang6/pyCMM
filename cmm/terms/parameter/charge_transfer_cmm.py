@@ -36,8 +36,8 @@ class ManyBodyChargeTransfer(Term):
         dq_backward = multipoles_ct_acc_i_p[:, 0] * multipoles_ct_don_j_p[:, 0] * drInvDamp_ct * eps
         dq_pairwise = (dq_forward - dq_backward) * switch_short
         
-        dq_a = torch.zeros(system.neighbor_list.natoms, device=pairs.device, requires_grad=True)
-        dq_groups = torch.zeros(system.topology.n_pol_groups, device=pairs.device, requires_grad=True)
+        dq_a = torch.zeros(system.neighbor_list.natoms, device=system.device, dtype=system.dtype, requires_grad=True)
+        dq_groups = torch.zeros(system.topology.n_pol_groups, device=system.device, dtype=system.dtype, requires_grad=True)
         dq_a = dq_a.scatter_add(0, pairs_short[:, 1], dq_pairwise)
         dq_groups = segment_csr(dq_a[system.topology.pol_group_indices_a], system.topology.pol_group_segment_indices, reduce='sum')
 

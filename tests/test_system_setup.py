@@ -2,16 +2,13 @@ import torch
 import os
 import numpy as np
 
-from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
-from cmm.settings import Settings, MolecularDynamicsSettings, NeighborListSettings, PolarizationSettings, ShortRangeSettings
+from cmm.settings import Settings, MolecularDynamicsSettings, PolarizationSettings, ShortRangeSettings
 from cmm.misc_utils import read_from_tinker_xyz
-from cmm.parameters import Parameterizer
 from cmm.system import System, create_system_from_ext_xyz_file
 from cmm.force_fields.spcfw import SPCFW
 from cmm.force_fields.cmm import CMM2
 from cmm.units import BOHR2ANG, HARTREE2KCAL
-from cmm.force_field import CMM
 
 def test_system_setup_from_file():
     torch.set_default_dtype(torch.float64)
@@ -31,7 +28,6 @@ def test_system_setup_from_file():
     ff.forward(systems[0])
     V_total = V_total + ff.energies['V_total']
     V_total.backward()
-
 
 def test_spcfw_water_box_setup():
     torch.set_default_dtype(torch.float64)

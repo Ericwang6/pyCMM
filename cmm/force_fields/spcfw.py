@@ -8,7 +8,7 @@ from ..units import HARTREE2KCAL, BOHR2ANG
 
 class SPCFW(FF):
     def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), requires_param_grads: bool=False) -> None:
-        super().__init__(system, dtype, device)
+        super().__init__(system)
 
         lr_elec_settings = system.settings.get_long_range_electrostatics_settings()
         lr_disp_settings = system.settings.get_long_range_dispersion_settings()

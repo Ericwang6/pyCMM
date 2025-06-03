@@ -23,9 +23,9 @@ def direct_field_induced_dipole_guess(
     dipole_part = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
 
     return torch.cat([
-        torch.zeros(n_charges, device=elec_field.device),
+        torch.zeros(n_charges, device=elec_field.device, dtype=elec_field.dtype),
         dipole_part,
-        torch.zeros(n_groups, device=elec_field.device)
+        torch.zeros(n_groups, device=elec_field.device, dtype=elec_field.dtype)
     ])
 
 def direct_polarization_guess(
@@ -95,7 +95,7 @@ def compute_product_with_polarization_matrix(
         expanded_lagrange_muls = lagrange_muls.repeat_interleave(pol_group_lengths_g)
 
         # Scatter these values back to the atomic indices
-        lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device, requires_grad=False)
+        lagrange_muls_a = torch.zeros(n_charges, device=lagrange_muls.device, dtype=lagrange_muls.dtype, requires_grad=False)
         lagrange_muls_a.scatter_add_(0, pol_group_indices_a, expanded_lagrange_muls)
 
         residual = torch.concat((

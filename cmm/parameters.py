@@ -237,8 +237,9 @@ class Parameterizer:
         return self._pair_angle_param_arrays[name][self._pair_types[angle_pairs_flat_p], self._get_angle_types_from_angle_atoms(angle_atoms_a).repeat_interleave(2)]
 
 class Parameterizer2:
-    def __init__(self, atom_type_names: List[str], device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) -> None:
+    def __init__(self, atom_type_names: List[str], device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), dtype=torch.float64) -> None:
         self.device = device
+        self.dtype = dtype
         self._atomic_param_arrays = {} # Map from parameter type to array indexed by atom type
         self._pair_param_arrays = {} # Map from parameter type to array indexed by pair type
         self._pair_pair_param_arrays = {} # Map from parameter type to array indexed by two pair types
@@ -429,7 +430,7 @@ class Parameterizer2:
 
     def get_pair_parameters_with_optional_combination_rule(self, name: str, pairs_p: torch.Tensor, pairs_a: torch.Tensor, combination_rule=torch.sqrt):
         pair_types = self._pair_types[pairs_p]
-        pair_params = torch.ones_like(pair_types, device=self.device, dtype=torch.get_default_dtype()) * -123456789.0
+        pair_params = torch.ones_like(pair_types, device=self.device, dtype=self.dtype) * -123456789.0
         # ^^^ I am guessing there will not be any force field with the parameter -123456789
         # but if there is, then the code will break. Both 1 and 0 are quite likely to be actual
         # pair parameter values.

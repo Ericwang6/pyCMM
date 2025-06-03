@@ -12,8 +12,29 @@ from .storage import Storage
 from .units import BOHR2ANG
 from .data import *
 
-#def guess_bonds_from_coordinates_and_labels():
+def create_system_from_xyz_file(
+        file_name: str, settings: Settings,
+        requires_grad: bool=True, requires_box_grad: bool=True,
+        device: str="cpu"
+    ):
+    mols = load_many(file_name, fmt="xyz")
+    systems = []
+    for mol in mols:
+        atomic_numbers_to_name = {8: "O_water", 1: "H_water"}
+        atom_type_names = [atomic_numbers_to_name[mol.atnums[i]] for i in range(len(mol.atnums))]
+        if mol.cellvecs is None:
+            box = torch.from_numpy(np.eye(3) * 1000.0).requires_grad_(False).to(device)
+        else:
+            box = torch.from_numpy(mol.cellvecs).requires_grad_(requires_box_grad).to(device)
+        coords = torch.from_numpy(mol.atcoords).requires_grad_(requires_grad).to(device)
+        labels = convert_atomic_numbers_to_labels(mol.atnums)
+        bonds = guess_bond_connectivity(mol.atcoords * BOHR2ANG, labels)
 
+        topology = Topology(bonds, coords.size(0), device)
+        system = System(coords, box, atom_type_names, topology, settings)
+        systems.append(system)
+    
+    return systems
 
 def create_system_from_ext_xyz_file(
         file_name: str, settings: Settings,
@@ -40,6 +61,7 @@ class System:
     def __init__(self, coords: torch.Tensor, box: torch.Tensor, atom_type_names: List[str], topology: Topology, settings: Settings,
                  device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) -> None:
         self.device = device
+        self.dtype = coords.dtype
         self._need_coordinate_grads = coords.requires_grad
         self._need_box_grads = box.requires_grad
         self.coords = coords

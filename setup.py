@@ -3,17 +3,17 @@ from setuptools import setup, find_packages
 setup(
     name="pyCMM",
     version="0.1.0",
-    packages=find_packages(where="cmm"),
+    packages=find_packages(),
     install_requires=[
         "openmm==8.2.0",
-        "pytest==8.3.4",
-        "scipy==1.15.1",
-        "torch==2.5.1",
-        "torch-scatter==2.1.2",
-        "torchaudio",
-        "torchvision",
-        "iodata-qc"
+        "pytest",
+        "scipy",
+        "qc-iodata",
+        "tables"
     ],
+    extras_require={
+        "torch": ["torch>=2.0.0", "torchvision", "torchaudio", "torch-scatter", "tensordict"],
+    },
     author="Eric Wang, Joseph Heindel, Aalim Abdullah",
     author_email="ericwangyz@berkeley.edu,heindelj@lbl.gov,aalimabdullah@berkeley.edu",
     description="A package for differentiable multipolar polarizable force fields",
@@ -24,5 +24,5 @@ setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.12",
 )

@@ -8,10 +8,10 @@ from ..settings import Settings
 from abc import ABC, abstractmethod
 
 class FF(torch.nn.Module, ABC):
-    def __init__(self, system: System, dtype: torch.dtype=torch.float64, device: torch.DeviceObjType=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) -> None:
+    def __init__(self, system: System) -> None:
         super().__init__()
-        self._dtype = dtype
-        self._device = device
+        self._dtype = system.coords.dtype
+        self._device = system.coords.device
         
         self.terms = []
         self.energies = {}
