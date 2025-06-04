@@ -30,7 +30,6 @@ class MultipolarElectrostatics2(Term):
             electric_field_data = system.storage.get('electric_field_data')
             electric_field_data = electric_field_data.scatter_add(0, pairs_medium[:, 1].unsqueeze(1).expand(-1, 10), edata_point_pairwise.squeeze(2))
             system.storage.add('electric_field_data', electric_field_data)
-
         return {'V_elec_direct': 0.5 * torch.sum(elec_point_pairwise)}
 
 class ExcludedMultipolarElectrostatics2(Term):

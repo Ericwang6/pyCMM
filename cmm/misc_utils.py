@@ -2,7 +2,6 @@ import torch
 from typing import List
 import numpy as np
 from .units import BOHR2ANG
-from .atom_types import get_expected_connectivities
 
 def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
     """

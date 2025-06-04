@@ -959,7 +959,7 @@ class CMM(ForceField):
         # Get real space field data #
         edata_point_pairwise = torch.bmm(direct_field_tensor_lr, multipoles_real_i_p.unsqueeze(2))
         edata_cs_pairwise_ij = torch.bmm(cp_field_tensor_sr_i, multipoles_cp_i_p.unsqueeze(2))
-        
+
         # Real Space Electrostatic Interactions #
         elec_point_pairwise = torch.bmm(multipoles_real_j_p.unsqueeze(1), edata_point_pairwise).flatten()
         elec_cs_pairwise_ij = torch.bmm(Z_mpoles_j_p.unsqueeze(1), edata_cs_pairwise_ij).flatten()

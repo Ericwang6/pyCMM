@@ -30,6 +30,32 @@ from cmm.force_fields.spcfw import SPCFW
 # common pattern that allows us to unify the calculation types in a nice way.
 # This file is where the preliminary driver implementations go.
 
+
+class SinglePointDriver:
+    def __init__(self, ff_type: str) -> None:
+        self.output = None
+
+        self._ff_type = ff_type
+        self._ff_constructor = None
+        self._get_ff_constructor()
+
+    def _get_ff_constructor(self):
+        # Dictionary mapping strings to classes
+        ff_mapping = {
+            "CMM": CMM2,
+            "SPCfw": SPCFW,
+        }
+        
+        if self._ff_type in ff_mapping:
+            self._ff_constructor = ff_mapping[self._ff_type]
+        else:
+            raise ValueError(f"You requested ff_type {self._ff_type}, which we do not recognize as a valid force field name.")
+
+    def run(self, system: System):
+        self.ff = self._ff_constructor(system)
+        self.ff.forward(system)
+        self.output = self.ff.energies
+
 class BatchSinglePointDriver:
     def __init__(self, ff_type: str) -> None:
         # TODO: Eventually, this should also just take the settings and the details

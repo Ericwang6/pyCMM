@@ -76,10 +76,18 @@ class System:
         self._check_for_nl_update = False
         self.build_neighbor_list()
         self._find_optimal_ewald_parameters()
+        self._atom_type_names_to_labels(atom_type_names)
 
     @classmethod
     def from_instance(cls, system):
         return cls(system.coords, system.box, system.parameterizer._atom_type_names, Topology.from_instance(system.topology), system.settings, device=system.device)
+
+    def _atom_type_names_to_labels(self, atom_type_names):
+        types_to_labels = {
+            'O_water': 'O',
+            'H_water': 'H',
+        }
+        self.labels = [types_to_labels[name] for name in atom_type_names]
 
     def _find_optimal_ewald_parameters(self):
         lr_elec_settings = self.settings.get_long_range_electrostatics_settings()
