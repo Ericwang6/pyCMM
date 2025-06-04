@@ -24,6 +24,10 @@ class Topology:
         self._find_atoms_for_building_local_axes()
         self._find_polarization_groups_and_scatter_indices()
     
+    @classmethod
+    def from_instance(cls, topology):
+        return cls(topology.bonds, topology.natoms, topology.device)
+
     def _form_intramolecular_atoms_and_pairs_tensors(self):
         bonded_atoms_to_pair_index = {}
         bonded_atoms = []

@@ -77,6 +77,10 @@ class System:
         self.build_neighbor_list()
         self._find_optimal_ewald_parameters()
 
+    @classmethod
+    def from_instance(cls, system):
+        return cls(system.coords, system.box, system.parameterizer._atom_type_names, Topology.from_instance(system.topology), system.settings, device=system.device)
+
     def _find_optimal_ewald_parameters(self):
         lr_elec_settings = self.settings.get_long_range_electrostatics_settings()
         lr_elec_settings.alpha = math.sqrt(-math.log10(2 * lr_elec_settings.tolerance)) / lr_elec_settings.cutoff

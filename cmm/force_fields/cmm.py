@@ -73,6 +73,11 @@ class CMM2(FF):
                 V_total = V_total + output_dict[key]
         
         self.energies["V_total"] = V_total
+        self.energies["V_deformation"] = (
+            self.energies["V_bond"] + self.energies["V_angle"] +
+            self.energies["V_bond_bond"] + self.energies["V_bond_angle"]
+        )
+        self.energies["V_interaction"] = V_total - self.energies["V_deformation"]
 
     def _build(self):
         self._types_to_index = {
