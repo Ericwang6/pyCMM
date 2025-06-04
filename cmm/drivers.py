@@ -66,7 +66,7 @@ class BatchSinglePointDriver:
 class OptimizationDriver:
     def __init__(self,
                  ff_type: str,
-                 method="BFGS",
+                 method='L-BFGS-B',
                  tolerance: float=1e-6
         ) -> None:
         self.method = method
