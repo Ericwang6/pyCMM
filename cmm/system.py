@@ -15,14 +15,16 @@ from .data import *
 def create_system_from_xyz_file(
         file_name: str, settings: Settings,
         requires_grad: bool=True, requires_box_grad: bool=True,
-        device: str="cpu"
+        device: str="cpu", box: Optional[torch.tensor]=None
     ):
     mols = load_many(file_name, fmt="xyz")
     systems = []
     for mol in mols:
         atomic_numbers_to_name = {8: "O_water", 1: "H_water"}
         atom_type_names = [atomic_numbers_to_name[mol.atnums[i]] for i in range(len(mol.atnums))]
-        if mol.cellvecs is None:
+        if box is not None:
+            box = (box / BOHR2ANG).requires_grad_(requires_box_grad).to(device)
+        elif mol.cellvecs is None:
             box = torch.from_numpy(np.eye(3) * 1000.0).requires_grad_(False).to(device)
         else:
             box = torch.from_numpy(mol.cellvecs).requires_grad_(requires_box_grad).to(device)

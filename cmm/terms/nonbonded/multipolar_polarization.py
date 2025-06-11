@@ -27,19 +27,26 @@ class MultipolarPolarization1(Term):
         if lr_settings.use_long_range:
             long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(system.coords, charges, dipoles, system.box, self.alpha, self.k_max)
 
-        pairs_medium = system.storage.get('pairs_medium')
-        pairs_short = system.storage.get('pairs_short')
-        pairs_excl = system.storage.get('pairs_excl')
-        pairs_medium_i_a = pairs_medium[:, 0]
-        pairs_medium_j_a = pairs_medium[:, 1]
-        pairs_short_i_a = pairs_short[:, 0]
-        pairs_short_j_a = pairs_short[:, 1]
-        pairs_excl_i_a = pairs_excl[:, 0]
-        pairs_excl_j_a = pairs_excl[:, 1]
+        #pairs_medium = system.storage.get('pairs_medium')
+        pairs_medium_pol = system.storage.get('pairs_medium_pol')
+        #pairs_short = system.storage.get('pairs_short')
+        pairs_pol = system.storage.get('pairs_pol')
+        #pairs_excl = system.storage.get('pairs_excl')
+        pairs_excl_pol = system.storage.get('pairs_excl_pol')
+        pairs_medium_pol_i_a = pairs_medium_pol[:, 0]
+        pairs_medium_pol_j_a = pairs_medium_pol[:, 1]
+        #pairs_short_i_a = pairs_short[:, 0]
+        #pairs_short_j_a = pairs_short[:, 1]
+        pairs_pol_i_a = pairs_pol[:, 0]
+        pairs_pol_j_a = pairs_pol[:, 1]
+        pairs_excl_pol_i_a = pairs_excl_pol[:, 0]
+        pairs_excl_pol_j_a = pairs_excl_pol[:, 1]
 
-        direct_field_tensor_rank_1_medium = system.storage.get('direct_field_tensor_rank_1_medium')
-        direct_field_tensor_excl_rank_1 = system.storage.get('direct_field_tensor_excl_rank_1')
-        pol_interaction_tensor_short = system.storage.get('pol_interaction_tensor_short')
+        direct_field_tensor_rank_1_medium = system.storage.get('direct_field_tensor_medium_pol')
+        direct_field_tensor_excl_rank_1 = system.storage.get('direct_field_tensor_excl_pol')
+        #pol_interaction_tensor_short = system.storage.get('pol_interaction_tensor_short')
+        pol_interaction_tensor_pol = system.storage.get('pol_interaction_tensor_pol')
+
         eta = system.storage.get('eta')
         polarizabilities = system.storage.get('polarizabilities')
         inverse_polarizabilities = system.storage.get('inverse_polarizabilities')
@@ -59,9 +66,10 @@ class MultipolarPolarization1(Term):
             return compute_product_with_polarization_matrix(
                 x,
                 system.topology.natoms,
-                pairs_medium_i_a, pairs_medium_j_a, pairs_short_i_a, pairs_short_j_a,
-                pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_medium,
-                pol_interaction_tensor_short, direct_field_tensor_excl_rank_1,
+                pairs_medium_pol_i_a, pairs_medium_pol_j_a, pairs_pol_i_a, pairs_pol_j_a, #pairs_short_i_a, pairs_short_j_a,
+                pairs_excl_pol_i_a, pairs_excl_pol_j_a, direct_field_tensor_rank_1_medium,
+                pol_interaction_tensor_pol, #pol_interaction_tensor_short,
+                direct_field_tensor_excl_rank_1,
                 eta, inverse_polarizabilities, system.topology.pol_group_indices_a,
                 system.topology.pol_group_segment_indices, system.topology.pol_group_lengths_g,
                 long_range_potential_function=long_range_induced_potential_function

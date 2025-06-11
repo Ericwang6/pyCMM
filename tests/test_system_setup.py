@@ -43,6 +43,33 @@ def test_spcfw_water_box_setup():
     print(coords.grad)
     print(box.grad)
     
+def test_cmm_ice_box():
+    torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    system_file = os.path.join(os.path.dirname(__file__), "data/ice_Ih_3x3_cell.xyz")
+
+    settings = Settings()
+    settings.add_neighbor_list_settings(padding=1.5)
+    settings.add_long_range_electrostatics_settings(cutoff=9.0, tolerance=1e-6)
+    settings.add("polarization", PolarizationSettings())
+    settings.add("short_range", ShortRangeSettings())
+
+    # 90.0, 90.0, 60.0
+    ice_box = torch.from_numpy(np.array([
+        [23.34,  0.  ,  0.  ],
+        [11.67      , 20.21303292,  0.        ],
+        [ 0.  ,  0.  , 21.99]]
+    ))
+    ice_systems = create_system_from_xyz_file(system_file, settings, requires_grad=True, requires_box_grad=True, device=device, box=ice_box)
+
+    system = ice_systems[0]
+    ff = CMM2(system)
+    ff.forward(system)
+    torch.set_printoptions(9)
+    for key in ff.energies.keys():
+        print(key, " ", ff.energies[key] * HARTREE2KCAL)
+
 def test_cmm_water_box_against_original_implementation():
     torch.set_default_dtype(torch.float64)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -77,47 +104,28 @@ def test_cmm_water_box_against_original_implementation():
     settings.add("polarization", PolarizationSettings())
     settings.add("short_range", ShortRangeSettings())
 
-    #system = System(coords, box, atom_type_names, topology, settings)
-    #ff = CMM2(system)
-    #ff.forward(system)
-    #ff.energies['V_total'].backward()
-    #assert torch.isclose(ff.energies['V_total'], reference_energies['total'])
+    system = System(coords, box, atom_type_names, topology, settings)
+    ff = CMM2(system)
+    ff.forward(system)
+    ff.energies['V_total'].backward()
+    assert torch.isclose(ff.energies['V_total'], reference_energies['total'])
 
-    system_file = os.path.join(os.path.dirname(__file__), "data/water_clusters.xyz")
+def test_cmm_on_reference_clusters():
+    torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     settings = Settings()
     settings.add_neighbor_list_settings(cutoff=30.0, padding=1.5)
     settings.add_long_range_electrostatics_settings(use_long_range=False, cutoff=30.0)
     settings.add_long_range_dispersion_settings(use_long_range=False)
-    settings.add("polarization", PolarizationSettings())
+    settings.add("polarization", PolarizationSettings(tolerance=1e-10))
     settings.add("short_range", ShortRangeSettings(cutoff=15.0))
 
     ref_cluster_systems = create_system_from_xyz_file("/home/heindelj/OneDrive/Documents/Coding_Projects/python_development/pyCMM/tests/data/water_clusters.xyz", settings, requires_grad=True, device=device)
-    system = ref_cluster_systems[-1]
+    system = ref_cluster_systems[0]
     ff = CMM2(system)
     ff.forward(system)
     ff.energies['V_total'].backward()
     torch.set_printoptions(9)
     for key in ff.energies.keys():
         print(key, " ", ff.energies[key] * HARTREE2KCAL)
-
-    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    #coords, atom_types, bonds, labels = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "data/w25.xyz"), requires_grad=True, device=device)
-#
-    #atom_indices_to_names = {0: "O_water", 1: "H_water"}
-    #atom_type_names = [atom_indices_to_names[int(atom_types[i])] for i in range(len(atom_types))]
-    #box = torch.tensor(np.eye(3) * 1000.0, requires_grad=False, device=device)
-    #topology = Topology(bonds, coords.size(0), device)
-    #cm = CoordinateManager(coords, box, 30.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
-    #pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    #ff_ref = CMM(
-    #    use_ewald=False, use_lr_dispersion=False,
-    #    cutoff_ewald=torch.tensor(30.0 / BOHR2ANG),
-    #    cutoff_short_range=torch.tensor(15.0 / BOHR2ANG),
-    #)
-    #parameters = Parameterizer(
-    #    atom_type_names, pairs, topology.angle_atoms,
-    #    ff_ref.atomic_params, ff_ref.pair_params, ff_ref.pair_pair_params, ff_ref.pair_angle_params, ff_ref.angle_params
-    #)
-    #energies_ref = ff_ref.evaluate(cm, topology, parameters)
-#
-    #assert torch.isclose(ff.energies['V_total'], energies_ref['total'])
