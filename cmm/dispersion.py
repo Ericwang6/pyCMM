@@ -55,7 +55,9 @@ def compute_long_range_dispersion_correction(
     # But I'm not really sure. Leaving as is since this is what is in the Gromacs manual:
     # https://manual.gromacs.org/current/reference-manual/functions/long-range-vdw.html
     C6_average = torch.mean(C6_ij_p)
-    return -(2 / 3) * torch.pi * natoms * natoms * C6_average / (torch.pow(cutoff_vdw, 3) * box_volume)
+    return -(2 / 3) * torch.pi * natoms * natoms * C6_average / (cutoff_vdw**3 * box_volume)
+
+computeLongRangeDispersionCorrection = compute_long_range_dispersion_correction
 
 def computeLennardJonesFromPairs(
     dists_p: torch.Tensor, 

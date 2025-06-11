@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Iterable, Callable, Tuple
 import torch
 from torch_scatter import scatter
 from ..topology import Topology
+from ..multipole import AxisTypes, computeCartesianQuadrupoles
 
 
 class Parametrizer(ABC):
@@ -30,6 +31,7 @@ class Parametrizer(ABC):
         
         self.name = name if name else self.__class__.__name__[:-12]
         self.params = {}
+        self.params_expand = {}
         self.device = top.device
 
         if handle_unmatched == 'default':
@@ -46,14 +48,27 @@ class Parametrizer(ABC):
         else:
             raise ValueError(f"Invalid value: '{handle_unmatched}' (valid values: 'default', 'error', 'warning' or empty string)")
         
+        self._param_is_indices = {}
         self.initIndices()
+        self.registerIndices('atomIndices', self.atomIndices)
+        self.registerIndices('paramIndices', self.paramIndices)
+    
+    def expandParameters(self):
+        for name in self.params:
+            if self._param_is_indices[name]:
+                self.params_expand[name] = self.params[name]
+            else:
+                self.params_expand[name] = self.params[name][self.paramIndices]
 
     def setDefaultHandleUnmatched(self):
         self.raise_error = False
         self.raise_warning = False
 
     def getParameters(self, name: str):
-        return self.params[name][self.paramIndices]
+        return self.params[name]
+    
+    def getExpandParameters(self, name: str):
+        return self.params_expand[name]
 
     @abstractmethod
     def initIndices(self, *args, **kwargs):
@@ -62,11 +77,14 @@ class Parametrizer(ABC):
         ...
 
     def registerParameters(self, name: str, params: torch.Tensor):
-        assert len(params.shape) == 1, "Input parameter must be a 1-D tensor"
         assert params.shape[0] == len(self.typesAsDict), \
-            f"Length of input parameters not correct, should be {len(self.typesAsDict)}, but found {params.shape[0]}"
-        
+                f"Length of input parameters not correct, should be {len(self.typesAsDict)}, but found {params.shape[0]}"
         self.params[name] = params
+        self._param_is_indices[name] = False
+    
+    def registerIndices(self, name: str, indices: torch.Tensor):
+        self.params[name] = indices
+        self._param_is_indices[name] = True
         
     def raiseException(self, msg):
         if self.raise_error:
@@ -344,7 +362,31 @@ class MultipoleParametrizer(AtomicParametrizer):
         self.kzIndices = torch.tensor(kzIndices, device=self.device)
         self.kxIndices = torch.tensor(kxIndices, device=self.device)
         self.kyIndices = torch.tensor(kyIndices, device=self.device)
-        
+        self.registerIndices('kzIndices', self.kzIndices)
+        self.registerIndices('kxIndices', self.kxIndices)
+        self.registerIndices('kyIndices', self.kyIndices)
+    
+    def expandParameters(self):
+        dipo = torch.vstack((self.params['dx'], self.params['dy'], self.params['dz'])).T.contiguous()
+        self.params['dipo'] = dipo
+        self._param_is_indices['dipo'] = False
+
+        quad_s = torch.vstack([self.params[p] for p in ['q20', 'q21c', 'q21s', 'q22c', 'q22s']]).T.contiguous()
+        quad = computeCartesianQuadrupoles(quad_s)
+        self.params['quad'] = quad
+        self._param_is_indices['quad'] = False
+
+        super().expandParameters()
+
+
+class PolarizationParametrizer(AtomicParametrizer):
+
+    def expandParameters(self):
+        alpha = torch.vmap(torch.diag)(torch.vstack([self.params['alpha_xx'], self.params['alpha_yy'], self.params['alpha_zz']]).T)
+        self.params['alpha'] = alpha
+        self._param_is_indices['alpha'] = False
+        super().expandParameters()
+
 
 def symmetric_pairing_function(pairs: torch.Tensor) -> torch.Tensor:
     """
@@ -385,7 +427,13 @@ class PairParametrizer(AtomicParametrizer):
         self.atom_type_pairs = torch.tensor(atom_type_pairs, device=self.device)
         self.atom_type_pairs_after_pairing_func = symmetric_pairing_function(self.atom_type_pairs)
 
-    def registerParameters(
+        self._param_is_pairwise = {}
+    
+    def registerParameters(self, name, params):
+        super().registerParameters(name, params)
+        self._param_is_pairwise[name] = False
+
+    def registerPairwiseParameters(
         self, 
         name: str,
         params: torch.Tensor, 
@@ -394,6 +442,7 @@ class PairParametrizer(AtomicParametrizer):
     ):
         
         super().registerParameters(name, params)
+        self._param_is_pairwise[name] = True
 
         if specific_pair_types:
             assert len(specific_pair_params.shape) == 1, "Input specific pair parameter must be a 1-D tensor"
@@ -403,15 +452,24 @@ class PairParametrizer(AtomicParametrizer):
             self.specific_pair_param_indices[name] = symmetric_pairing_function(atom_type_pairs)
             self.specific_pair_params[name] = specific_pair_params
     
-    def getParameters(self, name: str, pairs: torch.Tensor | None = None):
+    def expandParameters(self):
+        for name in self.params:
+            if self._param_is_indices[name]:
+                self.params_expand[name] = self.params[name]
+            else:
+                # we also want to keep track of the non-paired values
+                self.params_expand[name] = self.params[name][self.paramIndices]
+                if self._param_is_pairwise[name]:
+                    pairwise_param = scatter(
+                        self.combination_rule(self.params[name][self.atom_type_pairs[:, 0]], self.params[name][self.atom_type_pairs[:, 1]]),
+                        self.atom_type_pairs_after_pairing_func
+                    )
+                    if name in self.specific_pair_param_indices:
+                        pairwise_param[self.specific_pair_param_indices[name]] = self.specific_pair_params[name]
+                    self.params_expand[name+'_ij'] = pairwise_param
+
+    def getExpandParameters(self, name: str, pairs: torch.Tensor | None = None):
         if pairs is None:
-            return super().getParameters(name)
+            return super().getExpandParameters(name)
         else:
-            pairwise_param = scatter(
-                self.combination_rule(self.params[name][self.atom_type_pairs[:, 0]], self.params[name][self.atom_type_pairs[:, 1]]),
-                self.atom_type_pairs_after_pairing_func
-            )
-            if name in self.specific_pair_param_indices:
-                pairwise_param[self.specific_pair_param_indices[name]] = self.specific_pair_params[name]
-            return pairwise_param[symmetric_pairing_function(self.paramIndices[pairs])]
-            
+            return self.params_expand[name+'_ij'][symmetric_pairing_function(self.paramIndices[pairs])]

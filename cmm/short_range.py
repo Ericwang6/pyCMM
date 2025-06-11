@@ -85,10 +85,11 @@ def computeShortRangeEnergyFromPairs(
     dists_p: torch.Tensor, dist_vecs_p: torch.Tensor,
     mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
     b_ij_p: torch.Tensor, switching_values: torch.Tensor,
-    positive: bool = True
+    positive: bool = True,
+    dists_p_inv: torch.Tensor | None = None
 ):
-
-    drInv_p = 1 / dists_p
+    
+    drInv_p = 1 / dists_p if dists_p_inv is None else dists_p_inv
 
     damps = computeShortRangeTwoCenterDampFactors(dists_p, b_ij_p)
     if not positive:

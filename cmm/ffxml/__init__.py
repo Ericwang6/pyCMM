@@ -11,11 +11,23 @@ from pandas.api.types import is_float_dtype, is_integer_dtype
 import torch
 
 from ..topology import Topology
+from ..system import System
+from ..multipole import AxisTypes
+from .parametrizer import (
+    BondParametrizer, 
+    AngleAngleParametrizer, AngleParametrizer, 
+    TorsionAngleParametrizer, TorsionBondParametrizer, TorsionParametrizer, 
+    MultipoleParametrizer, PairParametrizer, PolarizationParametrizer
+)
+
+
+AxisTypesAsDict = {name: member.value for name, member in AxisTypes.__members__.items()}
 
 
 def prettify_xml(xmlstr: str):
     pretxml = xml.dom.minidom.parseString(xmlstr)
     pretstr = pretxml.toprettyxml()
+    pretstr = '\n'.join([x for x in pretstr.split('\n')[1:] if x.strip()])
     return pretstr
 
 
@@ -25,10 +37,16 @@ class ItemTable(pd.DataFrame):
         infer_dtypes = kwargs.pop('infer_dtypes', True)
         name = kwargs.pop('name', '')
         assert name, 'Must provide a name'
-        self.attrs['name'] = name
         super().__init__(*args, **kwargs)
+        self.attrs['name'] = name
         if infer_dtypes:
-            self.convert_dtypes()
+            for col in self.columns:
+                if col.startswith('type') or col.endswith('type') or col in ['kz', 'kx', 'ky']:
+                    continue
+                try:
+                    self[col] = pd.to_numeric(self[col])
+                except:
+                    continue
 
     def to_xml_str(self, attr_cols=None, encoding='utf-8') -> str:
         if attr_cols is None:
@@ -64,16 +82,18 @@ class ItemTable(pd.DataFrame):
                 # integer always doesn't need grads
                 data[col] = torch.tensor(self[col].tolist(), dtype=integer_dtype, device=device, requires_grad=False)
             else:
-                data[col] = self[col].data
+                data[col] = self[col].tolist()
         return data
 
     @staticmethod
     def parseElement(element: ET.Element):
-        tables = defaultdict(defaultdict(list))
+        tables = {}
         for item in element:
-            name = f'{element.tag}/{item.tag}'
+            name = item.tag
+            table = tables.get(name, defaultdict(list))
             for k, v in item.attrib.items():
-                tables[name][k].append(v)
+                table[k].append(v)
+            tables[name] = table
         tables = {key: ItemTable(tables[key], name=key) for key in tables}
         return tables
 
@@ -104,11 +124,12 @@ class ParameterSet:
 
         for force_name in data.keys():
             self.data[force_name] = {}
-            for item_name in self.data[force_name].keys():
-                if not isinstance(self.data[force_name][item_name]):
-                    table = ItemTable(self.data[force_name][item_name], name=item_name)
+            for item_name in data[force_name].keys():
+                self.data[force_name][item_name] = {}
+                if not isinstance(data[force_name][item_name], ItemTable):
+                    table = ItemTable(data[force_name][item_name], name=item_name)
                 else:
-                    table = self.data[force_name][item_name]
+                    table = data[force_name][item_name]
                 params = table.to_tensors(float_dtype, integer_dtype, device, requires_grad)
                 for param_name, param in params.items():
                     self.data[force_name][item_name][param_name] = param
@@ -142,10 +163,16 @@ class ParameterSet:
         
         return self.data
             
-    def find(self, path: str):
+    def find(self, path: str, default: Any = None):
         tmp = tuple(path.split('/'))
         assert len(tmp) == 3, f'Invalid path: {path}'
-        return self.data[tmp[0]][tmp[1]][tmp[2]]
+        if default is None:
+            return self.data[tmp[0]][tmp[1]][tmp[2]]
+        else:
+            try:
+                return self.data[tmp[0]][tmp[1]][tmp[2]]
+            except:
+                return default
     
     def findall(self, only_tensor=True, requires_grad=True):
         if requires_grad and (not only_tensor):
@@ -164,17 +191,21 @@ class ParameterSet:
                         continue
                     yield f'{force_name}/{item_name}/{param_name}', self.data[force_name][item_name][param_name]
     
-    def to_xml_str(self, pretty=True):
+    def to_xml_str(self):
         buffer = []
         for force_name in self.data.keys():
             buffer.append(f'<{force_name}>\n')
             for item_name in self.data[force_name].keys():
-                table = ItemTable(self.data[force_name][item_name], name=f'{item_name}')
+                data_cpu = {}
+                for k, v in self.data[force_name][item_name].items():
+                    if torch.is_tensor(v):
+                        data_cpu[k] = v.detach().cpu().numpy()
+                    else:
+                        data_cpu[k] = v
+                table = ItemTable(data_cpu, name=f'{item_name}')
                 buffer.append(table.to_xml_str())
             buffer.append(f'</{force_name}>\n')
         xmlstr = ''.join(buffer)
-        if pretty:
-            xmlstr = prettify_xml(xmlstr)
         return xmlstr
     
     @classmethod
@@ -190,7 +221,7 @@ class ParameterSet:
         for force in element:
             if force.tag in ['Residues', 'AtomTypes']:
                 continue
-            data[force] = ItemTable.parseElement(force)
+            data[force.tag] = ItemTable.parseElement(force)
         return cls(data, float_dtype, integer_dtype, device, requires_grad)
     
     def __add__(self, other):
@@ -234,6 +265,9 @@ class ForceFieldXML:
         self.device = device
         self.requires_grad = requires_grad
 
+        self.atomTypeDefs: Dict[str, Dict[str, str]] = defaultdict(dict)
+        self.pset: ParameterSet = None
+
         self.loadAtomTypeDefs()
         self.loadParameterSet()
     
@@ -250,7 +284,6 @@ class ForceFieldXML:
         return files
     
     def loadAtomTypeDefs(self):
-        self.atomTypeDefs = Dict[str, Dict[str, str]] = defaultdict(dict)
         for tree in self.trees:
             residues = tree.getroot().find("Residues")
             for res in residues.findall("Residue"):
@@ -262,7 +295,7 @@ class ForceFieldXML:
                     self.atomTypeDefs[resname][name] = atype
 
     def exportAtomTypeDefs(self):
-        residues = ET.Element(self.root, 'Residues')
+        residues = ET.Element('Residues')
         for resname in self.atomTypeDefs:
             residue = ET.SubElement(residues, 'Residue', {"name": resname})
             for name, atype in self.atomTypeDefs[resname].items():
@@ -284,7 +317,7 @@ class ForceFieldXML:
         self.pset = pset
     
     def exportParameterSet(self):
-        return self.pset.to_xml_str(False)
+        return self.pset.to_xml_str()
     
     def assignAtomTypes(self, top: Topology):
         for resname, name in top.atomSigs:
@@ -302,3 +335,245 @@ class ForceFieldXML:
             with open(fname, 'w') as f:
                 f.write(xmlstr)
         return xmlstr
+    
+    def createParametrizers(self, top: Topology):
+        parametrizers = {}
+
+        # assign atom types
+        self.assignAtomTypes(top)
+        
+        # bond
+        bondTypes = list(zip(self.pset.find('Bonds/Bond/type1'), self.pset.find('Bonds/Bond/type2')))
+        bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
+        bondParams = [
+            'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
+            'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
+        ]
+        for p in bondParams:
+            bondParametrizer.registerParameters(p, self.pset.find(f'Bonds/Bond/{p}'))
+        parametrizers['Bond'] = bondParametrizer
+        
+        # angle
+        angleTypes = list(zip(
+            self.pset.find('Angles/Angle/type1'), 
+            self.pset.find('Angles/Angle/type2'),
+            self.pset.find('Angles/Angle/type3')
+        ))
+        angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
+        angleParams = [
+            'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
+            'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
+        ]
+        for p in angleParams:
+            angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}'))
+        parametrizers['Angle'] = angleParametrizer
+        
+        # torsion
+        if 'Torsions' in self.pset.data:
+            torsionTypes = list(zip(
+                self.pset.find('Torsions/Torsion/type1'), self.pset.find('Torsions/Torsion/type2'),
+                self.pset.find('Torsions/Torsion/type3'), self.pset.find('Torsions/Torsion/type4')
+            ))
+            torsionParametrizer = TorsionParametrizer(torsionTypes, top, 'Torsion')
+            torsionParams = [
+                'per1', 'phase1', 'k1', 'per2', 'phase2', 'k2',
+                'per3', 'phase3', 'k3', 'per4', 'phase4', 'k4',
+                'theta_eq_1', 'theta_eq_2', 
+                'k_taa_1', 'k_taa_2', 'k_taa_3', 'k_taa_4',
+            ]
+            for p in torsionParams:
+                torsionParametrizer.registerParameters(p, self.pset.find(f'Torsions/Torsion/{p}'))
+            parametrizers['Torsion'] = torsionParametrizer
+        
+        # angle-angle
+        if 'AngleAngleCoupling' in self.pset.data:
+            aaTypes = list(zip(
+                self.pset.find('AngleAngleCoupling/AngleAngle/type1'), self.pset.find('AngleAngleCoupling/AngleAngle/type2'),
+                self.pset.find('AngleAngleCoupling/AngleAngle/type3'), self.pset.find('AngleAngleCoupling/AngleAngle/type4'), 
+                self.pset.find('AngleAngleCoupling/AngleAngle/type5'), self.pset.find('AngleAngleCoupling/AngleAngle/type6'),
+                self.pset.find('AngleAngleCoupling/AngleAngle/ctype') # coupling type
+            ))
+            aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle')
+            for p in ['theta_eq_1', 'theta_eq_2', 'k_aa']:
+                aaParametrizer.registerParameters(p, self.pset.find(f'AngleAngleCoupling/AngleAngle/{p}'))
+            parametrizers['AngleAngle'] = aaParametrizer
+        
+        # torsion-bond
+        if 'TorsionBondCoupling' in self.pset.data:
+            tbTypes = list(zip(
+                self.pset.find('TorsionBondCoupling/TorsionBond/type1'), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/type2'),
+                self.pset.find('TorsionBondCoupling/TorsionBond/type3'), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/type4'), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/type5'), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/type6'),
+                self.pset.find('TorsionBondCoupling/TorsionBond/ctype') # coupling type
+            ))
+            tbParametrizer = TorsionBondParametrizer(tbTypes, top, 'TorsionBond')
+            tbParams = [
+                'per1', 'phase1', 'per2', 'phase2',
+                'per3', 'phase3', 'per4', 'phase4',
+                'r_eq', 'k_tb_1', 'k_tb_2', 'k_tb_3', 'k_tb_4',
+            ]
+            for p in tbParams:
+                tbParametrizer.registerParameters(p, self.pset.find(f'TorsionBondCoupling/TorsionBond/{p}'))
+            parametrizers['TorsionBond'] = tbParametrizer
+        
+        # torsion-angle
+        if 'TorsionAngleCoupling' in self.pset.data:
+            taTypes = list(zip(
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type1'), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type2'),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type3'), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type4'), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type5'), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type6'),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/type7'),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/ctype') # coupling type
+            ))
+            taParametrizer = TorsionAngleParametrizer(taTypes, top, 'TorsionAngle')
+            taParams = [
+                'per1', 'phase1', 'per2', 'phase2',
+                'per3', 'phase3', 'per4', 'phase4',
+                'theta_eq', 'k_ta_1', 'k_ta_2', 'k_ta_3', 'k_ta_4',
+            ]
+            for p in taParams:
+                taParametrizer.registerParameters(p, self.pset.find(f'TorsionAngleCoupling/TorsionAngle/{p}'))
+            parametrizers['TorsionAngle'] = taParametrizer
+        
+        # multipoles
+        mpoleTypes = list(zip(
+            self.pset.find('Multipoles/Multipole/type'),
+            self.pset.find('Multipoles/Multipole/kz'),
+            self.pset.find('Multipoles/Multipole/kx'),
+            self.pset.find('Multipoles/Multipole/ky'),
+        ))
+        mpoleParametrizer = MultipoleParametrizer(mpoleTypes, top, 'Multipole')
+        mpoleParametrizer.registerParameters(
+            'axistype',
+            torch.tensor([AxisTypesAsDict[t] for t in self.pset.find('Multipoles/Multipole/axistype')], device=top.device)
+        )
+        mpoleParametrizer.registerParameters('mono', self.pset.find('Multipoles/Multipole/c0'))
+        for p in ['dx', 'dy', 'dz', 'q20', 'q21c', 'q21s', 'q22c', 'q22s']:
+            mpoleParametrizer.registerParameters(p, self.pset.find(f'Multipoles/Multipole/{p}'))
+        parametrizers['Multipoles'] = mpoleParametrizer
+        
+        # charge penetration
+        cpParametrizer = PairParametrizer(
+            self.pset.find("ChargePenetration/CP/type"),
+            top, name='ChargePenetration'
+        )
+        cpParametrizer.registerParameters('Z', self.pset.find('ChargePenetration/CP/Z'))
+        cpParametrizer.registerPairwiseParameters(
+            'b_elec', 
+            self.pset.find('ChargePenetration/CP/b_elec'),
+            specific_pair_types=list(zip(
+                self.pset.find('ChargePenetration/Pair/type1', list()),
+                self.pset.find('ChargePenetration/Pair/type2', list())
+            )),
+            specific_pair_params=self.pset.find('ChargePenetration/Pair/b_elec', list())
+        )
+        parametrizers['ChargePenetration'] = cpParametrizer
+
+        # Pauli
+        pauliParametrizer = PairParametrizer(
+            self.pset.find('PauliRepulsion/Pauli/type'),
+            top,
+            name='Pauli'
+        )
+        for p in ['q_pauli', 'Kdipo_pauli', 'Kquad_pauli']:
+            pauliParametrizer.registerParameters(p, self.pset.find(f'PauliRepulsion/Pauli/{p}'))
+        pauliParametrizer.registerPairwiseParameters(
+            'b_pauli', 
+            self.pset.find('PauliRepulsion/Pauli/b_pauli'),
+            specific_pair_types=list(zip(
+                self.pset.find('PauliRepulsion/Pair/type1', list()),
+                self.pset.find('PauliRepulsion/Pair/type2', list())
+            )),
+            specific_pair_params=self.pset.find('PauliRepulsion/Pair/b_pauli', list())
+        )
+        parametrizers['Pauli'] = pauliParametrizer
+
+        # Exchange-Pol
+        xpolParametrizer = PairParametrizer(
+            self.pset.find('ExchangePolarization/Xpol/type'),
+            top,
+            name='ExchangePolarization'
+        )
+        for p in ['q_xpol', 'Kdipo_xpol', 'Kquad_xpol']:
+            xpolParametrizer.registerParameters(p, self.pset.find(f'ExchangePolarization/Xpol/{p}'))
+        xpolParametrizer.registerPairwiseParameters(
+            'b_xpol', 
+            self.pset.find('ExchangePolarization/Xpol/b_xpol'),
+            specific_pair_types=list(zip(
+                self.pset.find('ExchangePolarization/Pair/type1', list()),
+                self.pset.find('ExchangePolarization/Pair/type2', list())
+            )),
+            specific_pair_params=self.pset.find('ExchangePolarization/Pair/b_xpol', list())
+        )
+        parametrizers['ExchangePolarization'] = xpolParametrizer
+
+        # Dispersion
+        dispParametrizer = PairParametrizer(
+            self.pset.find("Dispersion/Disp/type"),
+            top,
+            name='Dispersion'
+        )
+        for p in ['C6_disp', 'b_disp']:
+            dispParametrizer.registerPairwiseParameters(
+                p,
+                self.pset.find(f'Dispersion/Disp/{p}'),
+                specific_pair_types=list(zip(
+                    self.pset.find('Dispersion/Pair/type1', list()),
+                    self.pset.find('Dispersion/Pair/type2', list())
+                )),
+                specific_pair_params=self.pset.find(f'Dispersion/Pair/{p}', list())
+            )
+        parametrizers['Dispersion'] = dispParametrizer
+        
+        # ChargeTransfer
+        ctParameterizer = PairParametrizer(
+            self.pset.find("ChargeTransfer/Direct/type"),
+            top,
+            name='ChargeTransfer'
+        )
+        for p in ['q_ct_acc', 'q_ct_don', 'Kdipo_ct_acc', 'Kdipo_ct_don', 'Kquad_ct_acc', 'Kquad_ct_don']:
+            ctParameterizer.registerParameters(p, self.pset.find(f"ChargeTransfer/Direct/{p}"))
+        
+        ctParameterizer.registerPairwiseParameters(
+            "b_ct",
+            self.pset.find("ChargeTransfer/Direct/b_ct"),
+            specific_pair_types=list(zip(
+                self.pset.find('ChargeTransfer/Pair/type1', list()),
+                self.pset.find('ChargeTransfer/Pair/type2', list())
+            )),
+            specific_pair_params=self.pset.find('ChargeTransfer/Pair/b_ct', list())
+        )
+        ctParameterizer.registerPairwiseParameters(
+            "eps_ct",
+            torch.zeros_like(ctParameterizer.getParameters('q_ct_acc')),
+            specific_pair_types=list(zip(
+                self.pset.find('ChargeTransfer/Indirect/type1'),
+                self.pset.find('ChargeTransfer/Indirect/type2')
+            )),
+            specific_pair_params=self.pset.find('ChargeTransfer/Indirect/eps_ct')
+        )
+        parametrizers['ChargeTransfer'] = ctParameterizer
+
+        # Polarization
+        polParametrizer = PolarizationParametrizer(
+            self.pset.find("Polarization/Pol/type"),
+            top,
+            name='Polarization'
+        )
+        for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz', 'alpha_damp_exponent', 'alpha_damp_max']:
+            polParametrizer.registerParameters(p, self.pset.find(f'Polarization/Pol/{p}'))
+        parametrizers['Polarization'] = polParametrizer
+        
+        return parametrizers
+    
+
+    def parametrize(self, top: Topology, **kwargs):
+        parametrizers = self.createParametrizers(top)
+        system = System(top, parametrizers, **kwargs)
+        return system

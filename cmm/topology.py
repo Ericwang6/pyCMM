@@ -30,6 +30,7 @@ class Topology:
         self._angles: List[Tuple[int, int, int]] = []
         self._dihedrals: List[Tuple[int, int, int, int]] = []
 
+        self._atom_symbols: List[str] = []
         self._atom_types: List[str] = []
         self._atom_sigs: List[Tuple[str, str]] = []
         self._graph = nx.Graph()
@@ -38,7 +39,7 @@ class Topology:
     def fromOpenmm(cls, omm_top: app.Topology, device: str | None = None, cutoff: int = 3):
         top = cls(device, cutoff)
         for atom in omm_top.atoms():
-            top.addAtom(atom.name, atom.residue.name)
+            top.addAtom(atom.name, atom.residue.name, atom.element.symbol)
         for bond in omm_top.bonds():
             top.addBond(bond.atom1.index, bond.atom2.index)
         top.finalize()
@@ -51,6 +52,7 @@ class Topology:
     def finalize(self):
         self._build()
         self._find_polarization_groups_and_scatter_indices()
+        self._build_excl_data()
     
     @property
     def nbonds(self) -> int:
@@ -72,9 +74,14 @@ class Topology:
     def atomSigs(self) -> List[Tuple[str, str]]:
         return self._atom_sigs
     
-    def addAtom(self, name: str = '', residue: str = ''):
+    @property
+    def atomSymbols(self) -> List[str]:
+        return self._atom_symbols
+    
+    def addAtom(self, name: str = '', residue: str = '', symbol: str = ''):
         self._atom_sigs.append((residue, name))
         self._graph.add_node(self.natoms)
+        self._atom_symbols.append(symbol)
         self.natoms += 1
     
     def addBond(self, atom1: int, atom2: int):
@@ -200,3 +207,77 @@ class Topology:
             dtype=torch.long, device=self.device, requires_grad=False
         )
         self.pol_group_segment_indices[1:] = torch.cumsum(self.pol_group_lengths_g, dim=0)
+    
+    def _build_excl_data(self):
+        excl_data = {}
+        for dist, paths in self._connect_data.items():
+            for p in paths:
+                key = (p[0], p[-1]) if p[0] < p[-1] else (p[-1], p[0])
+                val = min(dist, excl_data.get(key, 100000))
+                excl_data[key] = val
+        
+        self._excl_data = excl_data
+        self._excl_pairs = torch.tensor(list(excl_data.keys()), device=self.device)
+        self._excl_dists = torch.tensor(list(excl_data.values()), device=self.device)
+    
+        self._excl_pairs_bi = torch.vstack((self._excl_pairs, self._excl_pairs[:, [1, 0]]))
+        self._excl_dists_bi = torch.hstack((self._excl_dists, self._excl_dists))
+
+        self._connect_matrix = torch.sparse_coo_tensor(
+            indices=self._excl_pairs_bi.T.contiguous(),
+            values=self._excl_dists_bi,
+            size=(self.natoms, self.natoms),
+            device=self.device,
+            dtype=self._excl_dists_bi.dtype
+        )
+    
+    def getExclusionPairs(self, bidirection: bool = True):
+        if bidirection:
+            return self._excl_pairs_bi
+        else:
+            return self._excl_pairs
+    
+    def getConnectivityMatrix(self):
+        return self._connect_matrix
+    
+    def getIncludePairs(self, bidirection: bool = True):
+        pairs = []
+        for i in range(self.natoms):
+            for j in range(i+1, self.natoms):
+                if (i, j) in self._excl_data:
+                    continue
+                pairs.append((i, j))
+        pairs = torch.tensor(pairs, device=self.device)
+        if bidirection:
+            pairs = torch.vstack((pairs, pairs[:, [1, 0]]))
+        return pairs
+    
+    def toDict(self):
+        return {
+            "device": self.device,
+            "cutoff": self.cutoff,
+            "atom_types": self.atomTypes,
+            "atom_sigs": self.atomSigs,
+            "atom_symbols": self.atomSymbols,
+            "bonds": self._bonds
+        }
+    
+    @classmethod
+    def fromJson(cls, jfile: os.PathLike):
+        import json
+
+        with open(jfile) as f:
+            jdata = json.load(f)
+        
+        top = cls(jdata['device'], jdata['cutoff'])
+        for asig, asymbol in zip(jdata['atom_sigs'], jdata['atom_symbols']):
+            top.addAtom(asig[1], asig[0], asymbol)
+            
+        for atype in jdata['atom_types']:
+            top._atom_types.append(atype)
+        
+        for bond in jdata['bonds']:
+            top.addBond(bond[0], bond[1])
+        
+        top.finalize()
+        return top

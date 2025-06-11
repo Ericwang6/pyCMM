@@ -1,4 +1,5 @@
 import torch
+from .pbc import applyPBC
 
 __all__ = [
     "computeBondFromVecs", "computeAngleFromVecs", "computeMorseBondPotential",
@@ -11,9 +12,20 @@ __all__ = [
 def computeBondFromVecs(drVecs):
     return torch.norm(drVecs, dim=1)
 
+def computeBond(coords: torch.Tensor, bondIndices: torch.Tensor, box: torch.Tensor | None = None, boxInv: torch.Tensor | None = None):
+    return computeBondFromVecs(
+        applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], box, boxInv)
+    )
+
 def computeAngleFromVecs(drVecs1, drVecs2):
     cosVal = torch.sum(drVecs1 * drVecs2, dim=1) / torch.norm(drVecs1, dim=1) / torch.norm(drVecs2, dim=1)
     return torch.arccos(cosVal)
+
+def computeAngle(coords: torch.Tensor, angleIndices: torch.Tensor, box: torch.Tensor | None = None, boxInv: torch.Tensor | None = None):
+    return computeAngleFromVecs(
+        applyPBC(coords[angleIndices[:, 0]] - coords[angleIndices[:, 1]], box, boxInv),
+        applyPBC(coords[angleIndices[:, 2]] - coords[angleIndices[:, 1]], box, boxInv)
+    )
 
 def computeChargeFluxBond(r: torch.Tensor, req: torch.Tensor, j_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     return (-j_cf * (r - req), j_cf * (r - req))
@@ -108,3 +120,49 @@ def computeFieldDependentMorseParams(
     k_e_fd = torch.clamp(k_e_fd, 0.4 * k_e_p)
     beta_fd = torch.sqrt(k_e_fd / 2 / D_e_p)
     return (r_e_p + dr_e_p, beta_fd)
+
+
+def computeTorsionFromVecs(drVecs1: torch.Tensor, drVecs2: torch.Tensor, drVecs3: torch.Tensor):
+    n1 = torch.cross(drVecs1, drVecs2, dim=1)
+    n2 = torch.cross(drVecs2, drVecs3, dim=1)
+    norm_n1 = torch.norm(n1, dim=1)
+    norm_n2 = torch.norm(n2, dim=1)
+    cosval = torch.clamp(
+        torch.sum(n1 * n2, dim=1) / (norm_n1 * norm_n2), 
+        -0.999999999, 0.999999999
+    )
+    phi = torch.acos(cosval) * torch.sign(torch.sum(n1 * drVecs3, axis=1))
+    return phi
+
+def computeTorsion(coords: torch.Tensor, torsionIndices: torch.Tensor, box: torch.Tensor | None = None, boxInv: torch.Tensor | None = None):
+    bondVecs_ij = applyPBC(coords[torsionIndices[:, 1]] - coords[torsionIndices[:, 0]], box, boxInv)
+    bondVecs_jk = applyPBC(coords[torsionIndices[:, 2]] - coords[torsionIndices[:, 1]], box, boxInv)
+    bondVecs_kl = applyPBC(coords[torsionIndices[:, 3]] - coords[torsionIndices[:, 2]], box, boxInv)
+    torsions = computeTorsionFromVecs(bondVecs_ij, bondVecs_jk, bondVecs_kl)
+    return torsions
+
+def computePeriodicTorsionEnergy(torsions: torch.Tensor, per: torch.Tensor, phase: torch.Tensor, k: torch.Tensor):
+    if len(per.shape) == 2:
+        return k * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
+    else:
+        return k * (1 + torch.cos(torsions * per - phase))
+
+def computeTorsionBondCoupling(
+    torsions: torch.Tensor, bonds: torch.Tensor,
+    per: torch.Tensor, phase: torch.Tensor, k: torch.Tensor,
+    req: torch.Tensor
+):
+    if len(per.shape) == 2:
+        return k * torch.reshape(bonds - req, (-1, 1)) * torch.cos(torsions.reshape(-1, 1) * per - phase)
+    else:
+        return k * (bonds - req) * torch.cos(torsions * per - phase)
+
+def computeTorsionAngleAngleCoupling(
+    torsions: torch.Tensor, angles1: torch.Tensor, angles2: torch.Tensor,
+    per: torch.Tensor, phase: torch.Tensor, k: torch.Tensor,
+    theta_eq_1: torch.Tensor, theta_eq_2: torch.Tensor
+):
+    if len(per.shape) == 2:
+        return k * torch.reshape((angles2 - theta_eq_2) * (angles1 - theta_eq_1), (-1, 1)) * torch.cos(torsions.reshape(-1, 1) * per - phase)
+    else:
+        return k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * torch.cos(torsions * per - phase)
