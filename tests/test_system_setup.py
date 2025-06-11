@@ -122,7 +122,7 @@ def test_cmm_on_reference_clusters():
     settings.add("short_range", ShortRangeSettings(cutoff=15.0))
 
     ref_cluster_systems = create_system_from_xyz_file("/home/heindelj/OneDrive/Documents/Coding_Projects/python_development/pyCMM/tests/data/water_clusters.xyz", settings, requires_grad=True, device=device)
-    system = ref_cluster_systems[0]
+    system = ref_cluster_systems[-1]
     ff = CMM2(system)
     ff.forward(system)
     ff.energies['V_total'].backward()

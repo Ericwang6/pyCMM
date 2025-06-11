@@ -146,13 +146,6 @@ class CMM2(FF):
             1.60887, 1.63789, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
-        self.b_ct = torch.tensor([
-            1.89485, 2.36763, # Water
-            1.39081, 0.96508, 0.897324, 0.865887, # Halides
-            1.69562, 1.876471, 2.0527, 2.04252, 1.97119, # Alkali
-            1.5,     1.6, # Mg2+, Ca2+
-        ], device=self._device, dtype=self._dtype)
-
         self.C6_disp = torch.tensor([
             35.8289, 1.98954, # Water
             146.12, 661.859, 1115.92, 1358.97, # Halides
@@ -161,35 +154,42 @@ class CMM2(FF):
         ], device=self._device, dtype=self._dtype)
 
         self.b_pauli = torch.tensor([
-            2.1975, 1.96474, # Water
+            2.1494, 2.06669, #2.1975, 1.96474, # Water
             1.6851, 1.39256, 1.33717, 1.30314, # Halides
             2.82412, 2.9209, 2.38994, 2.34565, 2.06684, # Alkali
             2.75822, 2.21105, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.q_pauli = torch.tensor([
-            6.50923, 0.527804, # Water
+            5.65792, 0.703576, #6.50923, 0.527804, # Water
             3.61413, 5.22659, 6.36105, 9.36718, # Halides
             1.91402, 7.34252, 13.6855, 22.0153, 24.1029, # Alkali
             4.63567, 7.89129, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.Kdipo_pauli = torch.tensor([
-            -5.61925, -0.515584, # Water
+            -3.68054, -0.837987, #-5.61925, -0.515584, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.Kquad_pauli = torch.tensor([
-            -1.56567, -0.440164, # Water
+            -1.59098, -0.729813, #-1.56567, -0.440164, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
+        self.b_ct = torch.tensor([
+            1.90799, 2.34921, #1.89485, 2.36763, # Water
+            1.39081, 0.96508, 0.897324, 0.865887, # Halides
+            1.69562, 1.876471, 2.0527, 2.04252, 1.97119, # Alkali
+            1.5,     1.6, # Mg2+, Ca2+
+        ], device=self._device, dtype=self._dtype)
+
         self.q_ct_acc = torch.tensor([
-            -0.67857, 1.36735, # Water
+            -0.602327, 1.3639, #-0.67857, 1.36735, # Water
             0.271625, -1.49937, -1.65442, -1.23716, # Halides
             1.01809, 1.07641, 7.67781, 13.5199, 27.9703, # Alkali
             3.5885, 7.30099 # Mg2+, Ca2+
@@ -210,35 +210,35 @@ class CMM2(FF):
         ], device=self._device, dtype=self._dtype)
 
         self.q_ct_don = torch.tensor([
-            0.757752, 0.00888982, # Water
+            0.738013, 0.0139437, #0.757752, 0.00888982, # Water
             0.601589, 0.990161, 1.13917, 1.50009, # Halides
             -0.12094, 0.167905, 0.670336, 1.89103, 3.63343, # Alkali
             -0.499793, 0.655079, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.Kdipo_ct_don = torch.tensor([
-            -0.512036, -0.0511668, # Water
+            -0.493609, -0.0514944, #-0.512036, -0.0511668, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.Kquad_ct_don = torch.tensor([
-            -0.208186, 0.0568152, # Water
+            -0.213539, -0.0369073, #-0.208186, 0.0568152, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.b_xpol = torch.tensor([
-            2.73582, 2.04028, # Water
+            2.83838, 2.35507, #2.73582, 2.04028, # Water
             1.90554, 1.60669, 1.4814, 1.38744, # Halides
             2.6441, 2.54145, 2.2465, 2.27644, 2.0059, # Alkali
             5.14456, 3.67375, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
         self.q_xpol = torch.tensor([
-            1.26592, 0.200089, # Water
+            1.69697, 0.300891, #1.26592, 0.200089, # Water
             -0.0914759, -1.11363, -1.46248, -2.28003, # Halides
             -4.68943, -5.33155, -3.61961, -3.15899, 5.43047, # Alkali
             -445.336, -220.273, # Mg2+, Ca2+
@@ -251,7 +251,7 @@ class CMM2(FF):
         # actually the inverse hardness, rather than the hardness itself.
         # Once the code is more solid, we should change it to exactly 0.0.
         self.eta = torch.tensor([
-            6.18699e-6, 0.561535, # Water
+            0.0, 0.568357, #6.18699e-6, 0.561535, # Water
             0.0, 0.0, 0.0, 0.0, # Halides
             0.0, 0.0, 0.0, 0.0, 0.0, # Alkali
             0.0, 0.0, # Mg2+, Ca2+
@@ -266,8 +266,10 @@ class CMM2(FF):
         ], device=self._device)
 
         self.alpha = torch.stack((
-            torch.diag(torch.tensor([4.45992, 6.07259, 4.55391], device=self._device, dtype=self._dtype)), # O_water
-            torch.diag(torch.tensor([2.22001, 1.66835, 0.183855], device=self._device, dtype=self._dtype)), # H_water
+            #torch.diag(torch.tensor([4.45992, 6.07259, 4.55391], device=self._device, dtype=self._dtype)), # O_water
+            #torch.diag(torch.tensor([2.22001, 1.66835, 0.183855], device=self._device, dtype=self._dtype)), # H_water
+            torch.diag(torch.tensor([3.2917, 6.17373, 4.70342], device=self._device, dtype=self._dtype)), # O_water
+            torch.diag(torch.tensor([2.49453, 1.64139, 0.225477], device=self._device, dtype=self._dtype)), # H_water
             torch.diag(torch.tensor([11.7270176, 11.7270176, 11.7270176], device=self._device, dtype=self._dtype)), # F-
             torch.diag(torch.tensor([32.2880907, 32.2880907, 32.2880907], device=self._device, dtype=self._dtype)), # Cl-
             torch.diag(torch.tensor([42.7172275, 42.7172275, 42.7172275], device=self._device, dtype=self._dtype)), # Br-
@@ -295,19 +297,57 @@ class CMM2(FF):
             0.0, 0.0, # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
 
+        self.pair_pair_params = {
+            (("O_water", "H_water"), ("O_water", "H_water")): {
+                "j_cf_bb": torch.tensor([-0.0332338], device=self._device, dtype=self._dtype),
+                #"k_hardness_bb": torch.tensor([0.958157], device=self._device, dtype=self._dtype),
+                "k_hardness_bb": torch.tensor([0.0], device=self._device, dtype=self._dtype),
+                "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG], device=self._device, dtype=self._dtype),
+            },
+        }
+
+        self.pair_angle_params = {
+            (("O_water", "H_water"), ("H_water", "O_water", "H_water")): {
+                "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG], device=self._device, dtype=self._dtype),
+            },
+        }
+
+        self.angle_params = {
+            ("H_water", "O_water", "H_water"): {
+                "theta_eq": torch.tensor([104.4234 * math.pi / 180.0], device=self._device, dtype=self._dtype),
+                "k_theta": torch.tensor([452.183 / HARTREE2KJ], device=self._device, dtype=self._dtype),
+                "j_cf_angle": torch.tensor([0.0220891], device=self._device, dtype=self._dtype),
+                #"k_hardness_angle": torch.tensor([-0.0991956], device=self._device, dtype=self._dtype),
+                "k_hardness_angle": torch.tensor([0.0], device=self._device, dtype=self._dtype),
+            }
+        }
+
+        #:kb_water => 5151.75 / 4.184 / 627.51 * 0.529177^2,
+        #:D_water => 514.7574 / 4.184 / 627.51,
+        #:re_water => 0.959274 / .529177,
+        #:ka_water => 445.9768 / 4.184 / 627.51,
+        #:cos_angle_eq_water => cos(105.0387 * π / 180.0),
+        #:kbb_water => -45.4801 / 4.184 / 627.51 * 0.529177^2,
+        #:kba_water => -153.552 / 4.184 / 627.51 * 0.529177,
+
         self.pair_params = {
             ("O_water", "H_water"): {
                 "D": torch.tensor([524.265 / HARTREE2KJ], device=self._device, dtype=self._dtype),
                 "k_b": torch.tensor([5098.15 / HARTREE2KJ * BOHR2ANG * BOHR2ANG], device=self._device, dtype=self._dtype),
                 "r_eq": torch.tensor([0.958929 / BOHR2ANG], device=self._device, dtype=self._dtype),
-                "j_cf_pauli": torch.tensor([0.0911036], device=self._device, dtype=self._dtype),
+                #"j_cf_pauli": torch.tensor([0.0911036], device=self._device, dtype=self._dtype),
+                "j_cf_pauli": torch.tensor([0.0283793], device=self._device, dtype=self._dtype),
                 "j_cf": torch.tensor([-0.024794], device=self._device, dtype=self._dtype),
-                "k_hardness_b": torch.tensor([2.32191], device=self._device, dtype=self._dtype),
+                #"k_hardness_b": torch.tensor([2.32191], device=self._device, dtype=self._dtype),
+                "k_hardness_b": torch.tensor([0.0], device=self._device, dtype=self._dtype),
                 "dip_deriv_1": torch.tensor([0.1654220912271531], device=self._device, dtype=self._dtype),
                 "dip_deriv_2": torch.tensor([-0.012458400000000472], device=self._device, dtype=self._dtype),
-                "ct_slope_1": torch.tensor([65.0], device=self._device, dtype=self._dtype),
-                "ct_slope_2": torch.tensor([13.7812], device=self._device, dtype=self._dtype),
-                "eps": torch.tensor([1.0 / 0.380979], device=self._device, dtype=self._dtype),
+                #"ct_slope_1": torch.tensor([65.0], device=self._device, dtype=self._dtype),
+                #"ct_slope_2": torch.tensor([13.7812], device=self._device, dtype=self._dtype),
+                #"eps": torch.tensor([1.0 / 0.380979], device=self._device, dtype=self._dtype),
+                "ct_slope_1": torch.tensor([32.6196], device=self._device, dtype=self._dtype),
+                "ct_slope_2": torch.tensor([-57.7552], device=self._device, dtype=self._dtype),
+                "eps": torch.tensor([1.0 / 0.379234], device=self._device, dtype=self._dtype),
             },
             ("H_water", "F-"): {"eps": torch.tensor([1.0 / 1.78074], device=self._device, dtype=self._dtype),},
             ("H_water", "Cl-"): {"eps": torch.tensor([1.0 / 0.929684], device=self._device, dtype=self._dtype),},
@@ -480,29 +520,6 @@ class CMM2(FF):
                 "b_ct": torch.tensor([1.31385], device=self._device, dtype=self._dtype),
                 "eps": torch.tensor([1.0 / 0.577828], device=self._device, dtype=self._dtype),
             },
-        }
-
-        self.pair_pair_params = {
-            (("O_water", "H_water"), ("O_water", "H_water")): {
-                "j_cf_bb": torch.tensor([-0.0332338], device=self._device, dtype=self._dtype),
-                "k_hardness_bb": torch.tensor([0.958157], device=self._device, dtype=self._dtype),
-                "k_bb": torch.tensor([-61.1423 / HARTREE2KJ * BOHR2ANG * BOHR2ANG], device=self._device, dtype=self._dtype),
-            },
-        }
-
-        self.pair_angle_params = {
-            (("O_water", "H_water"), ("H_water", "O_water", "H_water")): {
-                "k_ba": torch.tensor([-159.886 / HARTREE2KJ * BOHR2ANG], device=self._device, dtype=self._dtype),
-            },
-        }
-
-        self.angle_params = {
-            ("H_water", "O_water", "H_water"): {
-                "theta_eq": torch.tensor([104.4234 * math.pi / 180.0], device=self._device, dtype=self._dtype),
-                "k_theta": torch.tensor([452.183 / HARTREE2KJ], device=self._device, dtype=self._dtype),
-                "j_cf_angle": torch.tensor([0.0220891], device=self._device, dtype=self._dtype),
-                "k_hardness_angle": torch.tensor([-0.0991956], device=self._device, dtype=self._dtype),
-            }
         }
 
         self.combination_rules = {
