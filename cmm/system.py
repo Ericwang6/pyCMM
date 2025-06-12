@@ -114,14 +114,14 @@ class System:
         """
         Update coordinates held by the coordinate manager.
         """
-        self.coords = new_coords.detach().clone().to(torch.get_default_dtype()).requires_grad_(self._need_coordinate_grads)
+        self.coords = new_coords.detach().clone().to(self.dtype).requires_grad_(self._need_coordinate_grads)
         self._check_for_nl_update = True
 
     def update_box(self, new_box: torch.Tensor):
         """
         Update box vectors and related quantities.
         """
-        self.box = new_box.detach().clone().to(torch.get_default_dtype()).requires_grad_(self._need_box_grads)
+        self.box = new_box.detach().clone().to(self.dtype).requires_grad_(self._need_box_grads)
         
         # Update related quantities
         self.box_inv = torch.inverse(self.box)

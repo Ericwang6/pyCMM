@@ -2,17 +2,18 @@ import torch
 import os
 import numpy as np
 
+from ase.filters import FrechetCellFilter
+from ase.optimize import LBFGS
+from ase.units import bar
+
 from cmm.topology import Topology
 from cmm.settings import Settings, MolecularDynamicsSettings, PolarizationSettings, ShortRangeSettings
-from cmm.system import create_system_from_xyz_file
 from cmm.misc_utils import read_from_tinker_xyz
-from cmm.system import System, create_system_from_ext_xyz_file
+from cmm.system import System, create_system_from_ext_xyz_file, create_system_from_xyz_file
 from cmm.force_fields.spcfw import SPCFW
 from cmm.force_fields.cmm import CMM2
-from cmm.force_field import CMM
-from cmm.coordinate_manager import CoordinateManager
-from cmm.parameters import Parameterizer
 from cmm.units import BOHR2ANG, HARTREE2KCAL
+from cmm.ase_interface import ASE_Interface
 
 def test_spcfw_water_box_setup():
     torch.set_default_dtype(torch.float64)
@@ -129,3 +130,32 @@ def test_cmm_on_reference_clusters():
     torch.set_printoptions(9)
     for key in ff.energies.keys():
         print(key, " ", ff.energies[key] * HARTREE2KCAL)
+
+def test_cmm_md_on_water_box():
+    torch.set_default_dtype(torch.float64)
+    torch.set_printoptions(9)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    settings = Settings()
+    settings.add_neighbor_list_settings(cutoff=9.0, padding=1.5)
+    settings.add_long_range_electrostatics_settings(use_long_range=True, cutoff=9.0)
+    settings.add_long_range_dispersion_settings(use_long_range=True)
+    settings.add("polarization", PolarizationSettings(tolerance=1e-6))
+    settings.add("short_range", ShortRangeSettings(cutoff=6.0))
+
+    water_box_system = create_system_from_ext_xyz_file(os.path.join(os.path.dirname(__file__), "data/water_216_ext.xyz"), settings, requires_grad=True, device=device)
+    system = water_box_system[0]
+    ff = CMM2(system)
+    ff.forward(system)
+    ff.energies['V_total'].backward()
+    import copy
+    initial_energies = copy.copy(ff.energies)
+    
+    system_2 = System.from_instance(system)
+    ff_2 = CMM2(system_2)
+    calculator = ASE_Interface(ff_2, system_2)
+    calculator.calculate()
+    fcf = FrechetCellFilter(calculator.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
+    opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')
+    opt.run(steps=2)
+    calculator.atoms.write("water216_cell_opt.xyz")
