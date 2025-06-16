@@ -82,12 +82,16 @@ def test_ewald_exact():
     ff._raw_atomic_params['b_elec'][3] = torch.tensor([10000000000.0])
     ff._raw_atomic_params['b_elec'][7] = torch.tensor([10000000000.0])
     ff.pair_params[("Na+", "Cl-")]['b_elec'] = torch.tensor([10000000000.0])
-    ff._raw_atomic_params['Z'][3] = 0.0
-    ff._raw_atomic_params['Z'][7] = 0.0
+    ff._raw_atomic_params['Z'][3] = -1.0
+    ff._raw_atomic_params['Z'][7] = 1.0
+    # NOTE(JOE): I set these Z values because the shell charge is Q = q - Z.
+    # Ordinarily, then, by setting Z=0 the total charge of a fragment will be
+    # zero. In this case, by setting the core charge for Cl- to -1.0, we get
+    # a zero shell charge. Same for Na+ with core charge of +1.0. This then tests
+    # just the long-range electrostatics.
     ff.rebuild_atomic_params()
 
     energies = ff.evaluate(cm, topology, parameters)
-    print(energies)
     elec_energy_cmm = (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ
     assert torch.isclose(torch.tensor(exactEnergy._value), elec_energy_cmm)
 
