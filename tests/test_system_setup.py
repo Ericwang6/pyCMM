@@ -145,15 +145,9 @@ def test_cmm_md_on_water_box():
 
     water_box_system = create_system_from_ext_xyz_file(os.path.join(os.path.dirname(__file__), "data/water_216_ext.xyz"), settings, requires_grad=True, device=device)
     system = water_box_system[0]
-    ff = CMM2(system)
-    ff.forward(system)
-    ff.energies['V_total'].backward()
-    import copy
-    initial_energies = copy.copy(ff.energies)
     
-    system_2 = System.from_instance(system)
-    ff_2 = CMM2(system_2)
-    calculator = ASE_Interface(ff_2, system_2)
+    ff = CMM2(system)
+    calculator = ASE_Interface(ff, system)
     calculator.calculate()
     fcf = FrechetCellFilter(calculator.atoms, hydrostatic_strain=True, scalar_pressure=1.01325 * bar)
     opt = LBFGS(fcf, trajectory='water216_cell_opt.traj')

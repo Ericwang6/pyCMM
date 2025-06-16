@@ -246,12 +246,12 @@ class CMM_ASE(Calculator):
         if self._cm.coords.grad is not None:
             self.results['forces'] = -self._cm.coords.grad.cpu().numpy() * (Hartree / Bohr)
             self.results['stress'] = (
-                torch.matmul(self._cm.coords.grad.T, self._cm.coords) / self._cm.box_volume
+                torch.matmul(self._cm.coords.grad.T, self._cm.coords) / torch.det(self._cm.box)
             ).cpu().detach().numpy() * (Hartree / Bohr**3)
             if self._cm.box.grad is not None:
                 self.results['stress'] = self.results['stress'] + ((
                     torch.matmul(self._cm.box.grad.T, self._cm.box)
-                 ) / self._cm.box_volume).cpu().detach().numpy() * (Hartree / Bohr**3)
+                 ) / torch.det(self._cm.box)).cpu().detach().numpy() * (Hartree / Bohr**3)
 
     def calculate(self, atoms=None, properties=None, system_changes=['positions', 'cell']):
         if properties is None:
