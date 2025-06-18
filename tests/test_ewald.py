@@ -140,10 +140,12 @@ def test_multipolar_ewald_water_mchem_reference():
 
 def test_long_range_polarization():
     torch.set_default_dtype(torch.float64)
+    torch.set_printoptions(9)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     coords_file = os.path.join(os.path.dirname(__file__), "data/nacl_amorph.txt")
     
     box_size = 28.2
+    #box_size = 15.0
     box_vectors = [
         mm.Vec3(box_size, 0, 0),
         mm.Vec3(0, box_size, 0), 
@@ -157,18 +159,18 @@ def test_long_range_polarization():
     )
     print(f"Created system with {system.getNumParticles()} particles")
     
-    simulation, potential_energy = calculate_single_point_energy(system, topology, positions)
-    print(f"Single point potential energy: {potential_energy}")
-
     force = system.getForces()[0]
+    force.setPolarizationType(0)
+    simulation, potential_energy, forces = calculate_single_point_energy(system, topology, positions)
+    hartree = HARTREE2KJ * mm.unit.kilojoule_per_mole
+    bohr = BOHR2NM * mm.unit.nanometer
+    print(f"Single point potential energy: {potential_energy}")
     dips = force.getInducedDipoles(simulation.context)
-    #print(dips)
 
     # Setup CMM calculation #
     positions = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/nacl_amorph.txt"), dtype=np.float64)
-    numParticles = len(positions)
-    coords = torch.tensor(positions / BOHR2NM, requires_grad=True)
-    bonds = np.empty((2, 0), dtype=np.float64)
+    coords = torch.tensor(positions / BOHR2NM, requires_grad=True, device=device)
+    bonds = np.empty((2, 0), dtype=np.int64)
     atom_type_names = ["" for i in range(coords.size(0))]
     labels = ["" for i in range(coords.size(0))]
     for i in range(coords.size(0) // 2):
@@ -178,12 +180,12 @@ def test_long_range_polarization():
         atom_type_names[i] = "Cl-"
         labels[i] = "Cl"
 
-    box = torch.tensor(np.eye(3) * box_size / BOHR2ANG, requires_grad=True)
+    box = torch.tensor(np.eye(3) * box_size / BOHR2ANG, requires_grad=True, device=device)
 
     topology = Topology(bonds, coords.size(0), device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM(ewald_tolerance=torch.tensor(1e-8), use_ewald=True, use_polarization=True)
+    ff = CMM(max_iterations=800, ewald_tolerance=torch.tensor(1e-12), use_ewald=True, use_polarization=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params
@@ -194,6 +196,7 @@ def test_long_range_polarization():
     ff._raw_atomic_params['b_elec'][3] = torch.tensor([10000000000.0])
     ff._raw_atomic_params['b_elec'][7] = torch.tensor([10000000000.0])
     ff.pair_params[("Na+", "Cl-")]['b_elec'] = torch.tensor([10000000000.0])
+    ff.pair_params[("Na+", "Cl-")]['eps'] = torch.tensor([0.0])
     ff._raw_atomic_params['Z'][3] = -1.0
     ff._raw_atomic_params['Z'][7] = 1.0
     ff._raw_atomic_params["alpha_damp_exponent"][3] = 0.0
@@ -208,12 +211,20 @@ def test_long_range_polarization():
     ff.rebuild_atomic_params()
 
     energies = ff.evaluate(cm, topology, parameters)
-    elec_energy_cmm = (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ
+    dips_cmm = ff.last_induced_multipoles[len(labels):4*len(labels)].view(-1, 3).cpu().numpy()
+    dips_cmm *= BOHR2NM
+    dips_ref = np.array(dips)
+    print(np.amax(dips_cmm - dips_ref))
+    print(energies)
+    perm_elec_energy_cmm = (energies["perm_elec"] + energies["ewald"]) * HARTREE2KJ
+    elec_energy_cmm = (energies["perm_elec"] + energies["ewald"] + energies["pol"]) * HARTREE2KJ
+    print(perm_elec_energy_cmm)
     print(elec_energy_cmm)
-    print(ff.last_induced_multipoles)
-    # HERE: Figure out why the energies DO AGREE when only using permanent electrostatics
-    # but do not agree when including polarization. After that, check on the value of the virial
-    # as computed by OpenMM compared to that computed here.
+
+    ene_pol_ref = (-777480.6953230016 - -416168.10774607956)
+    ene_pol_direct_ref = (-776204.7809410002 - -416168.10774607956)
+    #print(ene_pol_ref)
+    #print(ene_pol_direct_ref)
 
 def calculate_single_point_energy(system, topology, positions):
     """
@@ -226,10 +237,11 @@ def calculate_single_point_energy(system, topology, positions):
     simulation.context.setPositions(positions)
     
     # Get energy without any minimization or dynamics
-    state = simulation.context.getState(getEnergy=True)
+    state = simulation.context.getState(getEnergy=True, getForces=True)
     potential_energy = state.getPotentialEnergy()
+    forces = state.getForces()
     
-    return simulation, potential_energy
+    return simulation, potential_energy, forces
 
 def create_nacl_system(coordinates_file, box_vectors):
     topology = app.Topology()
@@ -269,11 +281,12 @@ def create_nacl_system(coordinates_file, box_vectors):
     
     # Set nonbonded method for periodic systems
     amoeba_force.setNonbondedMethod(mm.AmoebaMultipoleForce.PME)
-    amoeba_force.setCutoffDistance(1.2 * mm.unit.nanometer)
-    amoeba_force.setEwaldErrorTolerance(1e-7)
+    #amoeba_force.setCutoffDistance(1.2 * mm.unit.nanometer)
+    amoeba_force.setCutoffDistance(1.0 * mm.unit.nanometer)
+    amoeba_force.setEwaldErrorTolerance(1e-8)
     
     amoeba_force.setMutualInducedMaxIterations(500)
-    amoeba_force.setMutualInducedTargetEpsilon(1e-6)
+    amoeba_force.setMutualInducedTargetEpsilon(1e-8)
     
     for i, atom in enumerate(atoms):
         if atom.element.symbol == 'Na':
@@ -288,11 +301,11 @@ def create_nacl_system(coordinates_file, box_vectors):
         amoeba_force.addMultipole(
             charge * mm.unit.elementary_charge,  # charge
             np.zeros(3),  # dipole moments (x,y,z)
-            np.zeros(6),   # quadrupole moments
+            np.zeros(9),   # quadrupole moments
             mm.AmoebaMultipoleForce.NoAxisType,
             -1, -1, -1,
             thole,
-            thole,
+            0.0,
             polarizability
         )
     

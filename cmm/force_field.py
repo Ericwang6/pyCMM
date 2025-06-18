@@ -54,7 +54,7 @@ class CMM(ForceField):
         if self.use_polarization:
             self.max_iterations = max_iterations
             self.solve_tolerance = solve_tolerance if torch.is_tensor(solve_tolerance) else torch.tensor(solve_tolerance, dtype=torch.float64)
-            self.polarization_solver = CG(None, None, rtol=self.solve_tolerance, atol=0, verbose=False)
+            self.polarization_solver = CG(None, None, rtol=self.solve_tolerance, atol=0, verbose=False, maxiter=max_iterations)
         
         self.last_induced_multipoles = None
         self.last_permanent_multipoles = None
@@ -999,8 +999,11 @@ class CMM(ForceField):
         dq_pairwise = (dq_forward - dq_backward) * switch_sr
         dq_a = torch.zeros(natoms, device=pairs.device, requires_grad=True)
         dq_groups = torch.zeros(topology.n_pol_groups, device=pairs.device, requires_grad=True)
+        
         dq_a = dq_a.scatter_add(0, pairs_sr_j_a, dq_pairwise)
         dq_groups = segment_csr(dq_a[topology.pol_group_indices_a], topology.pol_group_segment_indices, reduce='sum')
+        #total_charge_groups = segment_csr(mono_lr[topology.pol_group_indices_a], topology.pol_group_segment_indices, reduce='sum')
+        #dq_groups = dq_groups + total_charge_groups
 
         polarizabilities = rotateQuadrupoles(alpha, rotation_matrices)
         polarizabilities = get_field_dependent_polarizabilities(polarizabilities, elec_field, alpha_damp_exponent, alpha_damp_max)
@@ -1026,21 +1029,6 @@ class CMM(ForceField):
             return direct_polarization_guess(
                 x, natoms, topology.n_pol_groups, polarizabilities
             )
-        
-        #def A_mm_local(x: torch.Tensor):
-        #    return compute_product_with_polarization_matrix_local(
-        #        x,
-        #        natoms,
-        #        pairs_local_i_a, pairs_local_j_a,
-        #        pol_interaction_tensor_local,
-        #        eta_times_2, inverse_polarizabilities, topology.pol_group_indices_a,
-        #        topology.pol_group_segment_indices, topology.pol_group_lengths_g
-        #    )
-
-        #def M_mm_local(x: torch.Tensor):
-        #    solver_local = CG(A_mm_local, M_mm_direct, rtol=self.solve_tolerance, atol=self.solve_tolerance, verbose=False, maxiter=4)
-        #    local_induced_multipoles = solver_local.solve(B=x, X0=None)
-        #    return local_induced_multipoles
 
         # Solve polarization equations by preconditioned conjugate gradient #
         ene_pol = torch.tensor(0.0)
@@ -1051,12 +1039,13 @@ class CMM(ForceField):
                 # Evaluate the initial guess #
                 if self.last_induced_multipoles is None:
                     self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
-                
                 self.polarization_solver.A_mm = A_mm
                 self.polarization_solver.M_mm = M_mm_direct
+                # HERE: the polarization is NOT CONVERGING!? Everything is correct except when mutual pol. is on.
+                # Is this just because of the constraints I have? I wouldn't think so.
+                # Could try explicitly removing the charge stuff. First try messing around with induced long-range.
                 self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
-                #print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
-
+                print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
             self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
 
