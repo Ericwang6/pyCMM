@@ -94,12 +94,14 @@ class CMM2(FF):
             -0.895467, 3.5489, 7.73324, 12.2026, 11.5038, # Alkali
             2.83412, 4.93631 # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
+        
         self.mono = torch.tensor([
             -0.390896, 0.195448, # Water
             -1.0, -1.0, -1.0, -1.0, # Halides
             1.0, 1.0, 1.0, 1.0, 1.0, # Alkali
             2.0, 2.0 # Mg2+, Ca2+
         ], device=self._device, dtype=self._dtype)
+
         self.dipo = torch.tensor([
             [0.0,       0.0, -0.094298], # O_water
             [0.0910288, 0.0, -0.207851], # H_water
@@ -115,6 +117,7 @@ class CMM2(FF):
             [0.0,       0.0,  0.0],      # Mg2+
             [0.0,       0.0,  0.0],      # Ca2+
         ], device=self._device, dtype=self._dtype)
+
         self.quad_s = torch.tensor([
             # Q20,       Q21c,      Q21s, Q22c,       Q22s
             [-0.330685,  0.0,       0.0,  0.869923,   0.0], # O_water

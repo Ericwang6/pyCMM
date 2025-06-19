@@ -71,7 +71,6 @@ class StoreIndices(Term):
         dists_medium_pol = dists[included_pair_indices_medium_pol]
         distance_vecs_medium_pol = distance_vecs[included_pair_indices_medium_pol]
 
-
         pairs_excl_pol = pairs[bonded_pair_indices, :]
         dists_excl_pol = dists[bonded_pair_indices]
         distance_vecs_excl_pol = distance_vecs[bonded_pair_indices]
