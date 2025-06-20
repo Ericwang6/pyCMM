@@ -45,7 +45,6 @@ def direct_polarization_guess_dipoles_only(
     elec_field: torch.Tensor,
     polarizabilities: torch.Tensor
 ):
-    dipole_part = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
     return torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
 
 def compute_product_with_polarization_matrix(
@@ -138,18 +137,17 @@ def compute_product_with_polarization_matrix_2(
         #edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
 
         # Accumulate the total potentials and fields
-        induced_field_data = torch.zeros(n_charges, 4, device=induced_dipoles.device, dtype=induced_dipoles.dtype, requires_grad=False)
-        induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
-        induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+        induced_field_data = torch.zeros(n_charges, 3, device=induced_dipoles.device, dtype=induced_dipoles.dtype, requires_grad=False)
+        induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 3), edata_point_pairwise.squeeze(2))
+        induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 3), edata_ss_pairwise.squeeze(2))
         
         if long_range_potential_function:
             induced_dipoles_i_excl_p = induced_dipoles[pairs_excl_i_a]
             edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, induced_dipoles_i_excl_p.unsqueeze(2))
             induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
         
-        induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
-        induced_electric_potential = induced_field_data[:, 0]
-        induced_electric_field = induced_field_data[:, 1:4]
+        induced_field_data.mul_(torch.tensor([-1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
+        induced_electric_field = induced_field_data
 
         # Get reciprocal space field data (ewald + self contribution)
         if long_range_potential_function:
@@ -157,10 +155,8 @@ def compute_product_with_polarization_matrix_2(
              torch.zeros(induced_dipoles.size(0), dtype=induced_dipoles.dtype, device=induced_dipoles.device),
              induced_dipoles
             )
-            induced_electric_potential = induced_electric_potential + ewald_potential
             induced_electric_field = induced_electric_field + ewald_field
 
         residual = torch.bmm(alpha_inv, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten()
-        #print(constraints)
-        #print(induced_charges)
+
         return residual

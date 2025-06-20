@@ -1846,14 +1846,15 @@ class CMM_Pol_Test(ForceField):
 
         direct_field_tensor_lr = torch.mul(undamped_tensor_1_lr, ewald_damps_lr_1) + torch.mul(undamped_tensor_2_lr, ewald_damps_lr_2) + torch.mul(undamped_tensor_3_lr, ewald_damps_lr_3)
         direct_field_tensor_excl = torch.mul(undamped_tensor_1_excl, ewald_damps_excl_1) + torch.mul(undamped_tensor_2_excl, ewald_damps_excl_2) + torch.mul(undamped_tensor_3_excl, ewald_damps_excl_3)
-        direct_field_tensor_rank_1_lr = direct_field_tensor_lr[:, :4, :4]
-        direct_field_tensor_excl_rank_1 = direct_field_tensor_excl[:, :4, :4]
+        direct_field_tensor_rank_1_lr = direct_field_tensor_lr[:, 1:4, 1:4]
+        direct_field_tensor_excl_rank_1 = direct_field_tensor_excl[:, 1:4, 1:4]
         # ^^^^ Gets just the entries needed for charges and dipoles (for polarization)
         
         cp_field_tensor_sr_i = torch.mul(undamped_tensor_1_sr, cp_damps_sr_1c_1_i) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_1c_2_i) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_1c_3_i)
         cp_field_tensor_sr_j = torch.mul(undamped_tensor_1_sr, cp_damps_sr_1c_1_j) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_1c_2_j) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_1c_3_j)
         cp_interaction_tensor_sr = torch.mul(undamped_tensor_1_sr, cp_damps_sr_2c_1) + torch.mul(undamped_tensor_2_sr, cp_damps_sr_2c_2) + torch.mul(undamped_tensor_3_sr, cp_damps_sr_2c_3)
         pol_interaction_tensor_sr = torch.mul(undamped_tensor_1_pol_sr, pol_damps_sr_2c_1) + torch.mul(undamped_tensor_2_pol_sr, pol_damps_sr_2c_2)
+        pol_interaction_tensor_sr = pol_interaction_tensor_sr[:, 1:4, 1:4]
 
         # Electrostatic charge flux #
         if topology.angle_atoms.numel() > 0:
@@ -1996,9 +1997,9 @@ class CMM_Pol_Test(ForceField):
             with torch.no_grad():
                 # Evaluate the initial guess #
                 if self.last_induced_multipoles is None:
-                    self.last_induced_multipoles = direct_field_induced_dipole_guess(natoms, topology.n_pol_groups, polarizabilities, elec_field)
+                    self.last_induced_multipoles = direct_polarization_guess_dipoles_only(elec_field, polarizabilities)
                 self.polarization_solver.A_mm = A_mm
-                self.polarization_solver.M_mm = M_mm_direct
+                self.polarization_solver.M_mm = None #M_mm_direct
                 self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
                 print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))

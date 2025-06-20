@@ -211,7 +211,7 @@ def test_long_range_polarization():
     ff.rebuild_atomic_params()
 
     energies = ff.evaluate(cm, topology, parameters)
-    dips_cmm = ff.last_induced_multipoles[len(labels):4*len(labels)].view(-1, 3).cpu().numpy()
+    dips_cmm = ff.last_induced_multipoles.view(-1, 3).cpu().numpy()
     dips_cmm *= BOHR2NM
     dips_ref = np.array(dips)
     print(np.amax(dips_cmm - dips_ref))
