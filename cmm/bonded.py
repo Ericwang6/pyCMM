@@ -153,9 +153,9 @@ def computeTorsionBondCoupling(
     req: torch.Tensor
 ):
     if len(per.shape) == 2:
-        return k * torch.reshape(bonds - req, (-1, 1)) * torch.cos(torsions.reshape(-1, 1) * per - phase)
+        return k * torch.reshape(bonds - req, (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
     else:
-        return k * (bonds - req) * torch.cos(torsions * per - phase)
+        return k * (bonds - req) * (1 + torch.cos(torsions * per - phase))
 
 def computeTorsionAngleAngleCoupling(
     torsions: torch.Tensor, angles1: torch.Tensor, angles2: torch.Tensor,
@@ -163,6 +163,6 @@ def computeTorsionAngleAngleCoupling(
     theta_eq_1: torch.Tensor, theta_eq_2: torch.Tensor
 ):
     if len(per.shape) == 2:
-        return k * torch.reshape((angles2 - theta_eq_2) * (angles1 - theta_eq_1), (-1, 1)) * torch.cos(torsions.reshape(-1, 1) * per - phase)
+        return k * torch.reshape((angles2 - theta_eq_2) * (angles1 - theta_eq_1), (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
     else:
-        return k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * torch.cos(torsions * per - phase)
+        return k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * (1 + torch.cos(torsions * per - phase))

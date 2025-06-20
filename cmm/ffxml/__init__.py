@@ -343,33 +343,35 @@ class ForceFieldXML:
         self.assignAtomTypes(top)
         
         # bond
-        bondTypes = list(zip(self.pset.find('Bonds/Bond/type1'), self.pset.find('Bonds/Bond/type2')))
-        bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
-        bondParams = [
-            'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
-            'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
-        ]
-        for p in bondParams:
-            bondParametrizer.registerParameters(p, self.pset.find(f'Bonds/Bond/{p}'))
-        parametrizers['Bond'] = bondParametrizer
+        if "Bonds" in self.pset.data and top.nbonds > 0:
+            bondTypes = list(zip(self.pset.find('Bonds/Bond/type1'), self.pset.find('Bonds/Bond/type2')))
+            bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
+            bondParams = [
+                'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
+                'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
+            ]
+            for p in bondParams:
+                bondParametrizer.registerParameters(p, self.pset.find(f'Bonds/Bond/{p}'))
+            parametrizers['Bond'] = bondParametrizer
         
         # angle
-        angleTypes = list(zip(
-            self.pset.find('Angles/Angle/type1'), 
-            self.pset.find('Angles/Angle/type2'),
-            self.pset.find('Angles/Angle/type3')
-        ))
-        angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
-        angleParams = [
-            'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
-            'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
-        ]
-        for p in angleParams:
-            angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}'))
-        parametrizers['Angle'] = angleParametrizer
+        if "Angles" in self.pset.data and top.nangles > 0:
+            angleTypes = list(zip(
+                self.pset.find('Angles/Angle/type1'), 
+                self.pset.find('Angles/Angle/type2'),
+                self.pset.find('Angles/Angle/type3')
+            ))
+            angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
+            angleParams = [
+                'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
+                'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
+            ]
+            for p in angleParams:
+                angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}'))
+            parametrizers['Angle'] = angleParametrizer
         
         # torsion
-        if 'Torsions' in self.pset.data:
+        if 'Torsions' in self.pset.data and top.ndihedrals > 0:
             torsionTypes = list(zip(
                 self.pset.find('Torsions/Torsion/type1'), self.pset.find('Torsions/Torsion/type2'),
                 self.pset.find('Torsions/Torsion/type3'), self.pset.find('Torsions/Torsion/type4')
@@ -386,7 +388,7 @@ class ForceFieldXML:
             parametrizers['Torsion'] = torsionParametrizer
         
         # angle-angle
-        if 'AngleAngleCoupling' in self.pset.data:
+        if 'AngleAngleCoupling' in self.pset.data and top.nangles > 0:
             aaTypes = list(zip(
                 self.pset.find('AngleAngleCoupling/AngleAngle/type1'), self.pset.find('AngleAngleCoupling/AngleAngle/type2'),
                 self.pset.find('AngleAngleCoupling/AngleAngle/type3'), self.pset.find('AngleAngleCoupling/AngleAngle/type4'), 
@@ -396,10 +398,11 @@ class ForceFieldXML:
             aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle')
             for p in ['theta_eq_1', 'theta_eq_2', 'k_aa']:
                 aaParametrizer.registerParameters(p, self.pset.find(f'AngleAngleCoupling/AngleAngle/{p}'))
-            parametrizers['AngleAngle'] = aaParametrizer
+            if not aaParametrizer.isEmpty:
+                parametrizers['AngleAngle'] = aaParametrizer
         
         # torsion-bond
-        if 'TorsionBondCoupling' in self.pset.data:
+        if 'TorsionBondCoupling' in self.pset.data and top.ndihedrals > 0:
             tbTypes = list(zip(
                 self.pset.find('TorsionBondCoupling/TorsionBond/type1'), 
                 self.pset.find('TorsionBondCoupling/TorsionBond/type2'),
@@ -417,10 +420,11 @@ class ForceFieldXML:
             ]
             for p in tbParams:
                 tbParametrizer.registerParameters(p, self.pset.find(f'TorsionBondCoupling/TorsionBond/{p}'))
-            parametrizers['TorsionBond'] = tbParametrizer
+            if not tbParametrizer.isEmpty:
+                parametrizers['TorsionBond'] = tbParametrizer
         
         # torsion-angle
-        if 'TorsionAngleCoupling' in self.pset.data:
+        if 'TorsionAngleCoupling' in self.pset.data and top.ndihedrals > 0:
             taTypes = list(zip(
                 self.pset.find('TorsionAngleCoupling/TorsionAngle/type1'), 
                 self.pset.find('TorsionAngleCoupling/TorsionAngle/type2'),
@@ -439,7 +443,8 @@ class ForceFieldXML:
             ]
             for p in taParams:
                 taParametrizer.registerParameters(p, self.pset.find(f'TorsionAngleCoupling/TorsionAngle/{p}'))
-            parametrizers['TorsionAngle'] = taParametrizer
+            if not taParametrizer.isEmpty:
+                parametrizers['TorsionAngle'] = taParametrizer
         
         # multipoles
         mpoleTypes = list(zip(

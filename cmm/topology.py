@@ -248,7 +248,7 @@ class Topology:
                     continue
                 pairs.append((i, j))
         pairs = torch.tensor(pairs, device=self.device)
-        if bidirection:
+        if bidirection and pairs.numel() > 0:
             pairs = torch.vstack((pairs, pairs[:, [1, 0]]))
         return pairs
     

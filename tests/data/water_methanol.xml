@@ -1,0 +1,107 @@
+<ForceField>
+    <Residues>
+        <Residue name="HOH">
+            <Atom name="O" type="ow"/>
+            <Atom name="H1" type="hw"/>
+            <Atom name="H2" type="hw"/>
+        </Residue>
+        <Residue name="MOH">
+            <Atom name="C" type="c.moh"/>
+            <Atom name="O" type="o.moh"/>
+            <Atom name="H1" type="hc.moh"/>
+            <Atom name="H2" type="hc.moh"/>
+            <Atom name="H3" type="hc.moh"/>
+            <Atom name="HO" type="ho.moh"/>
+        </Residue>
+    </Residues>
+    <Bonds>
+        <Bond type1="ow" type2="hw" r_eq="1.81211318" D="0.19968199" k_b="0.54375456" j_cf="-0.024794" j_cf_pauli="0.0911036" k_hardness_b="2.32191" dip_deriv_1="0.16542209" dip_deriv_2="-0.0124584" ct_slope_1="65.0" ct_slope_2="13.7812" />
+        <Bond type1="c.moh" type2="o.moh" r_eq="2.682085397400385" D="0.16111219123374418" k_b="0.36576401070975134" j_cf="-0.18754524136252054" j_cf_pauli="0.01" k_hardness_b="0.0" dip_deriv_1="0.0" dip_deriv_2="0.0" ct_slope_1="0.0" ct_slope_2="0.0" />
+        <Bond type1="c.moh" type2="hc.moh" r_eq="2.06198150169398" D="0.16732053335457167" k_b="0.3444480757469259" j_cf="-0.10538760958822703" j_cf_pauli="0.0911036" k_hardness_b="0.0" dip_deriv_1="0.0" dip_deriv_2="0.0" ct_slope_1="0.0" ct_slope_2="0.0" />
+        <Bond type1="o.moh" type2="ho.moh" r_eq="1.8159586055495274" D="0.18994479850654425" k_b="0.5384904905317882" j_cf="-0.027956911791764648" j_cf_pauli="0.0911036" k_hardness_b="0.0" dip_deriv_1="0.0" dip_deriv_2="0.0" ct_slope_1="0.0" ct_slope_2="0.0" />
+    </Bonds>
+    <Angles>
+        <Angle type1="hw" type2="ow" type3="hw" theta_eq="1.822532146" r_eq_1="1.81211318" r_eq_2="1.81211318" k_theta="0.1722274" k_bb="-0.006521268391698836" k_ba_1="-0.03222549577618679" k_ba_2="-0.03222549577618679" j_cf_angle="0.0220891" k_hardness_angle="-0.0991956" j_cf_bb="-0.0332338" k_hardness_bb="0.958157" />
+        <Angle type1="c.moh" type2="o.moh" type3="ho.moh" theta_eq="1.89824344" r_eq_1="2.682085397400385" r_eq_2="1.8159586055495274" k_theta="0.20304628116636098" k_bb="-0.005189500564090368" k_ba_1="-0.05427392029333329" k_ba_2="-0.01545968458516262" j_cf_angle="0.012333121226649346" k_hardness_angle="0.0" j_cf_bb="-0.027971899948009006" k_hardness_bb="0.0" />
+        <Angle type1="o.moh" type2="c.moh" type3="hc.moh" theta_eq="1.86551736" r_eq_1="2.682085397400385" r_eq_2="2.06198150169398" k_theta="0.22700566628837265" k_bb="0.011824596099280866" k_ba_1="-0.06354623896252058" k_ba_2="-0.01071127112534712" j_cf_angle="-0.001355304805185545" k_hardness_angle="0.0" j_cf_bb="0.02796719480802467" k_hardness_bb="0.0" />
+        <Angle type1="hc.moh" type2="c.moh" type3="hc.moh" theta_eq="1.89267428" r_eq_1="2.06198150169398" r_eq_2="2.06198150169398" k_theta="0.15619028844401067" k_bb="0.004503293310707631" k_ba_1="-0.01836965962414752" k_ba_2="-0.01836965962414752" j_cf_angle="-0.029482106633615175" k_hardness_angle="0.0" j_cf_bb="-0.0050210241153826815" k_hardness_bb="0.0" />
+    </Angles>
+    <Torsions>
+        <Torsion type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" per1="1" phase1="0.0" k1="-0.001794815253120209" per2="2" phase2="3.14159265359" k2="-0.00036611659950196927" per3="3" phase3="0.0" k3="0.00032125348155336557" per4="4" phase4="3.14159265359" k4="-5.304270391276514e-05" theta_eq_1="1.86551736" theta_eq_2="1.89824344" k_taa_1="-0.013269560534734062" k_taa_2="0.0" k_taa_3="0.0" k_taa_4="0.0" />
+    </Torsions>
+    <AngleAngleCoupling>
+        <AngleAngle type1="o.moh" type2="c.moh" type3="hc.moh" type4="c.moh" type5="o.moh" type6="ho.moh" ctype="2" theta_eq_1="1.86551736" theta_eq_2="1.89824344" k_aa="0.02465193128452431" />
+        <AngleAngle type1="o.moh" type2="c.moh" type3="hc.moh" type4="o.moh" type5="c.moh" type6="hc.moh" ctype="1" theta_eq_1="1.86551736" theta_eq_2="1.86551736" k_aa="-0.006923072975017132" />
+        <AngleAngle type1="hc.moh" type2="c.moh" type3="hc.moh" type4="o.moh" type5="c.moh" type6="hc.moh" ctype="1" theta_eq_1="1.89267428" theta_eq_2="1.86551736" k_aa="0.006988729163807982" />
+        <AngleAngle type1="hc.moh" type2="c.moh" type3="hc.moh" type4="hc.moh" type5="c.moh" type6="hc.moh" ctype="1" theta_eq_1="1.89267428" theta_eq_2="1.89267428" k_aa="0.0076181745368522616" />
+    </AngleAngleCoupling>
+    <TorsionBondCoupling>
+        <TorsionBond type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="c.moh" type6="o.moh" ctype="1" r_eq="2.6820854540921686" per1="1" phase1="0.0" k_tb_1="-0.003753257970302041" per2="2" phase2="3.14159265359" k_tb_2="-0.00023796662855008754" per3="3" phase3="0.0" k_tb_3="-0.0005316619256051462" per4="4" phase4="3.14159265359" k_tb_4="0.00016028713809872333" />
+        <TorsionBond type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="c.moh" type6="hc.moh" ctype="2" r_eq="2.061981463899458" per1="1" phase1="0.0" k_tb_1="-0.0019887084455897657" per2="2" phase2="3.14159265359" k_tb_2="-0.0012061599761563598" per3="3" phase3="0.0" k_tb_3="0.00016790730509079363" per4="4" phase4="3.14159265359" k_tb_4="-5.096825375584293e-05" />
+        <TorsionBond type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="o.moh" type6="ho.moh" ctype="2" r_eq="1.8159585866522663" per1="1" phase1="0.0" k_tb_1="0.0012500055318928058" per2="2" phase2="3.14159265359" k_tb_2="-0.001271591117713766" per3="3" phase3="0.0" k_tb_3="0.00030185601093289205" per4="4" phase4="3.14159265359" k_tb_4="6.757607012091476e-05" />
+        <TorsionBond type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="c.moh" type6="hc.moh" ctype="3" r_eq="2.061981463899458" per1="1" phase1="0.0" k_tb_1="-0.0003199498631270741" per2="2" phase2="3.14159265359" k_tb_2="0.00030687791645488404" per3="3" phase3="0.0" k_tb_3="-7.5438046239785204e-06" per4="4" phase4="3.14159265359" k_tb_4="-7.293410752162603e-05" />
+    </TorsionBondCoupling>
+    <TorsionAngleCoupling>
+        <TorsionAngle type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="hc.moh" type6="c.moh" type7="o.moh" ctype="1" theta_eq="1.86551736" per1="1" phase1="0.0" k_ta_1="-0.011989635011428416" per2="2" phase2="3.14159265359" k_ta_2="-0.002501728319148174" per3="3" phase3="0.0" k_ta_3="-0.0012893495581171313" per4="4" phase4="3.14159265359" k_ta_4="-0.00017457572383853376" />
+        <TorsionAngle type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="ho.moh" type6="o.moh" type7="c.moh" ctype="1" theta_eq="1.89824344" per1="1" phase1="0.0" k_ta_1="0.00014473740323014812" per2="2" phase2="3.14159265359" k_ta_2="-0.00034536637764675176" per3="3" phase3="0.0" k_ta_3="-0.00043750377365413707" per4="4" phase4="3.14159265359" k_ta_4="7.073678366103127e-05" />
+        <TorsionAngle type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="hc.moh" type6="c.moh" type7="o.moh" ctype="2" theta_eq="1.86551736" per1="1" phase1="0.0" k_ta_1="-0.0019113705919206472" per2="2" phase2="3.14159265359" k_ta_2="0.0008153534922686663" per3="3" phase3="0.0" k_ta_3="-0.000466199721224302" per4="4" phase4="3.14159265359" k_ta_4="-0.0001956291260819831" />
+        <TorsionAngle type1="hc.moh" type2="c.moh" type3="o.moh" type4="ho.moh" type5="hc.moh" type6="c.moh" type7="hc.moh" ctype="3" theta_eq="1.89267428" per1="1" phase1="0.0" k_ta_1="-0.002812849786360349" per2="2" phase2="3.14159265359" k_ta_2="-0.0006094908854442051" per3="3" phase3="0.0" k_ta_3="-0.000788966552823599" per4="4" phase4="3.14159265359" k_ta_4="-0.00014178554603563122" />
+    </TorsionAngleCoupling>
+    <Multipoles>
+        <Multipole type="ow" kz="hw" kx="hw" ky="" axistype="Bisector" c0="-0.390896" dx="0.0" dy="0.0" dz="-0.094298" q20="-0.330685" q21c="0.0" q21s="0.0" q22c="0.869923" q22s="0.0" />
+        <Multipole type="hw" kz="ow" kx="hw" ky="" axistype="ZThenX" c0="0.195448" dx="0.0910288" dy="0.0" dz="-0.207851" q20="-0.0739388" q21c="0.0929482" q21s="0.0" q22c="0.00532425" q22s="0.0" />
+        <Multipole type="c.moh" kz="o.moh" kx="ho.moh" ky="" axistype="ZThenX" c0="0.005111062896172655" dx="-0.11983842136780148" dy="0.0" dz="0.1681071220458849" q20="0.18677075216432462" q21c="-0.04234934872113734" q21s="0.0" q22c="-0.07299142970870667" q22s="0.0" />
+        <Multipole type="o.moh" kz="c.moh" kx="ho.moh" ky="" axistype="ZThenX" c0="-0.3980546197542944" dx="0.25894784169069845" dy="0.0" dz="0.1565075494832452" q20="0.4606717645435195" q21c="-0.43064968666096476" q21s="0.0" q22c="0.6485175552220961" q22s="0.0" />
+        <Multipole type="hc.moh" kz="c.moh" kx="o.moh" ky="" axistype="ZThenX" c0="0.061064743115701016" dx="0.01875033972790676" dy="0.0" dz="0.10786383055457253" q20="0.2710782413386503" q21c="-0.08138576764886365" q21s="0.0" q22c="0.04703563917413187" q22s="0.0" />
+        <Multipole type="ho.moh" kz="o.moh" kx="c.moh" ky="" axistype="ZThenX" c0="0.20974920976237457" dx="0.07323089340152447" dy="0.0" dz="-0.04414816538744861" q20="0.09453917249544598" q21c="0.12215454062887349" q21s="0.0" q22c="0.0675501435583035" q22s="0.0" />
+    </Multipoles>
+    <ChargePenetration>
+        <CP type="ow" Z="3.61565" b_elec="2.13358" />
+        <CP type="hw" Z="0.93619" b_elec="2.33322" />
+        <CP type="c.moh" Z="3.3054574601158313" b_elec="3.4546788503681785" />
+        <CP type="o.moh" Z="3.2870309766362804" b_elec="2.148618757030377" />
+        <CP type="hc.moh" Z="0.867373499770896" b_elec="2.197085857699378" />
+        <CP type="ho.moh" Z="1.3203955882965384" b_elec="2.7205600963888608" />
+    </ChargePenetration>
+    <PauliRepulsion>
+        <Pauli type="ow" q_pauli="6.50923" Kdipo_pauli="-5.61925" Kquad_pauli="-1.56567" b_pauli="2.1975" />
+        <Pauli type="hw" q_pauli="0.527804" Kdipo_pauli="-0.515584" Kquad_pauli="-0.440164" b_pauli="1.96474" />
+        <Pauli type="c.moh" q_pauli="4.997053521825645" Kdipo_pauli="-9.673741990026176" Kquad_pauli="-2.980531963609464" b_pauli="2.222835211512475" />
+        <Pauli type="o.moh" q_pauli="6.086087632432069" Kdipo_pauli="-2.9693988582935766" Kquad_pauli="-2.0465502258069184" b_pauli="2.3346835363423577" />
+        <Pauli type="hc.moh" q_pauli="0.9485261543401886" Kdipo_pauli="-0.33959004189434694" Kquad_pauli="-0.18118790269797047" b_pauli="2.095904372453364" />
+        <Pauli type="ho.moh" q_pauli="0.6204989501856049" Kdipo_pauli="-0.9788827367847797" Kquad_pauli="-0.5406369456847588" b_pauli="2.001572169759075" />
+    </PauliRepulsion>
+    <ExchangePolarization>
+        <Xpol type="ow" q_xpol="1.26592" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.73582" />
+        <Xpol type="hw" q_xpol="0.200089" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.04028" />
+        <Xpol type="c.moh" q_xpol="-0.03887367601329491" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.3335973256930904" />
+        <Xpol type="o.moh" q_xpol="1.1898718622412123" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.3538249237498112" />
+        <Xpol type="hc.moh" q_xpol="0.1256059258401997" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.4478328955369517" />
+        <Xpol type="ho.moh" q_xpol="0.1981262296751098" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.7806254756337496" />
+    </ExchangePolarization>
+    <Dispersion>
+        <Disp type="ow" C6_disp="35.8289" b_disp="1.84302" />
+        <Disp type="hw" C6_disp="1.98954" b_disp="1.30993" />
+        <Disp type="c.moh" C6_disp="33.33628503065877" b_disp="0.9247679333080354" />
+        <Disp type="o.moh" C6_disp="35.6529110042134" b_disp="1.7482186571243163" />
+        <Disp type="hc.moh" C6_disp="3.026677636513813" b_disp="2.043802121906893" />
+        <Disp type="ho.moh" C6_disp="1.7641450009062676" b_disp="1.2961946026733489" />
+    </Dispersion>
+    <ChargeTransfer>
+        <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485" />
+        <Direct type="hw" q_ct_acc="1.36735" q_ct_don="0.00888982" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.0511668" Kquad_ct_acc="0.0" Kquad_ct_don="0.0568152" b_ct="2.36763" />
+        <Direct type="c.moh" q_ct_acc="0.07322331747928122" q_ct_don="0.5417367362481617" Kdipo_ct_acc="0.0" Kdipo_ct_don="-1.272695226319905" Kquad_ct_acc="0.0" Kquad_ct_don="-0.5909637311341596" b_ct="2.09820335543293" />
+        <Direct type="o.moh" q_ct_acc="0.07793956911701773" q_ct_don="0.584640872453431" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.22423137385438324" Kquad_ct_acc="0.0" Kquad_ct_don="-0.19760557389605352" b_ct="1.9058324362085481" />
+        <Direct type="hc.moh" q_ct_acc="1.1130465867301467" q_ct_don="0.08738790117410011" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.9110882828627314" Kquad_ct_acc="0.0" Kquad_ct_don="-0.039556203121846975" b_ct="2.3853132936078234" />
+        <Direct type="ho.moh" q_ct_acc="1.1933386549238498" q_ct_don="0.04074562056371502" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.8930560220252891" Kquad_ct_acc="0.0" Kquad_ct_don="-0.31774356639411167" b_ct="2.319041635786629" />
+        <Indirect type1="ow" type2="hw" eps_ct="2.624816590940708" />
+    </ChargeTransfer>
+    <Polarization>
+        <Pol type="ow" eta="6.18699e-6" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="c.moh" eta="1.077389371285715" alpha_xx="4.313691795319699" alpha_yy="2.7691427669898276" alpha_zz="2.570614232821113" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="o.moh" eta="0.4568664768239573" alpha_xx="4.288070666872579" alpha_yy="5.3947241961858" alpha_zz="3.7311405319560635" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="hc.moh" eta="2.0898346628975584" alpha_xx="2.7362555201176364" alpha_yy="3.223357102335699" alpha_zz="3.118541430513475" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="ho.moh" eta="1.5822803847979992" alpha_xx="1.5664868875428415" alpha_yy="0.9900638150094825" alpha_zz="0.13020336067414368" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+    </Polarization>
+</ForceField>

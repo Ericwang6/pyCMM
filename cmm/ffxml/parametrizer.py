@@ -57,7 +57,7 @@ class Parametrizer(ABC):
         for name in self.params:
             if self._param_is_indices[name]:
                 self.params_expand[name] = self.params[name]
-            else:
+            elif self.paramIndices.numel() > 0:
                 self.params_expand[name] = self.params[name][self.paramIndices]
 
     def setDefaultHandleUnmatched(self):
@@ -94,6 +94,10 @@ class Parametrizer(ABC):
     
     def raiseUnmatchExcpetion(self, atoms: List[int]):
         self.raiseException(f"Atoms {'-'.join(str(x) for x in atoms)} does not match any {self.name}")
+    
+    @property
+    def isEmpty(self) -> bool:
+        return self.params['atomIndices'].numel() == 0
 
 
 class AtomicParametrizer(Parametrizer):
