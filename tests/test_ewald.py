@@ -185,7 +185,7 @@ def test_long_range_polarization():
     topology = Topology(bonds, coords.size(0), device)
     cm = CoordinateManager(coords, box, 10.0 / BOHR2ANG, labels, topology.all_intramolecular_pairs)
     pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs()
-    ff = CMM_Pol_Test(max_iterations=800, ewald_tolerance=torch.tensor(1e-12), use_ewald=True, use_polarization=True)
+    ff = CMM_Pol_Test(max_iterations=400, ewald_tolerance=torch.tensor(1e-12), use_ewald=True, use_polarization=True)
     parameters = Parameterizer(
         atom_type_names, pairs, topology.angle_atoms,
         ff.atomic_params, ff.pair_params, ff.pair_pair_params, ff.pair_angle_params, ff.angle_params

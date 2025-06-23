@@ -1980,7 +1980,7 @@ class CMM_Pol_Test(ForceField):
                 pairs_lr_i_a, pairs_lr_j_a, pairs_sr_i_a, pairs_sr_j_a,
                 pairs_excl_i_a, pairs_excl_j_a, direct_field_tensor_rank_1_lr,
                 pol_interaction_tensor_sr, direct_field_tensor_excl_rank_1,
-                inverse_polarizabilities,
+                inverse_polarizabilities, self.alpha_ewald,
                 long_range_potential_function=long_range_induced_potential_function
             )
 
@@ -2000,7 +2000,7 @@ class CMM_Pol_Test(ForceField):
                     self.last_induced_multipoles = direct_polarization_guess_dipoles_only(elec_field, polarizabilities)
                 self.polarization_solver.A_mm = A_mm
                 self.polarization_solver.M_mm = None #M_mm_direct
-                self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
+                self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=None)#self.last_induced_multipoles)
                 print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
             ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
             self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()

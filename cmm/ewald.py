@@ -154,10 +154,10 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     
     # Now add in the self contributions to potential and field
     alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
-    potential = potential - 2 * alpha_over_root_pi * q
-    field = field + alpha_over_root_pi * (4 * alpha * alpha / 3) * p
+    self_potential = -2 * alpha_over_root_pi * q
+    self_field = alpha_over_root_pi * (4 * alpha * alpha / 3) * p
 
-    return potential, field
+    return potential, self_potential, field, self_field
 
 def long_range_potential_rank_0(coords: torch.Tensor, q: torch.Tensor,
                                      box: torch.Tensor, alpha: torch.Tensor, max_hkl: torch.NumberType):
