@@ -74,7 +74,7 @@ def computeLocal2GlobalRotationMatrixBatch(positions, zAtoms, xAtoms, yAtoms, ax
     yVec = torch.zeros_like(zVec)
 
     # Z-Only
-    filterZOnly = (axisTypes == AxisTypes.ZOnly.value)
+    filterZOnly = torch.logical_or(axisTypes == AxisTypes.ZOnly.value, axisTypes == AxisTypes.NoAxisType.value)
     xVecNotZOnly = applyPBC(positions[xAtoms][~filterZOnly] - positions[~filterZOnly], box, boxInv)
     xVec[~filterZOnly] += normVec(xVecNotZOnly)
     xVec[filterZOnly, 0] += 1 - zVec[filterZOnly, 0]
@@ -109,9 +109,10 @@ def computeLocal2GlobalRotationMatrixBatch(positions, zAtoms, xAtoms, yAtoms, ax
     # No axis
     filterNoAxis = (axisTypes == AxisTypes.NoAxisType.value)
     if torch.any(filterNoAxis):
-        zVec[filterNoAxis] = torch.tensor([0.0, 0.0, 1.0])
-        xVec[filterNoAxis] = torch.tensor([1.0, 0.0, 0.0])
-        yVec[filterNoAxis] = torch.tensor([0.0, 1.0, 0.0])
+        filterNoAxis = filterNoAxis.view(-1, 1)
+        zVec = torch.where(filterNoAxis, torch.tensor([0.0, 0.0, 1.0], dtype=zVec.dtype, device=zVec.device), zVec)
+        xVec = torch.where(filterNoAxis, torch.tensor([1.0, 0.0, 0.0], dtype=xVec.dtype, device=xVec.device), xVec)
+        yVec = torch.where(filterNoAxis, torch.tensor([0.0, 1.0, 0.0], dtype=yVec.dtype, device=yVec.device), yVec)
 
     rotMatrix = torch.hstack((xVec, yVec, zVec)).reshape(-1, 3, 3)
     return rotMatrix
