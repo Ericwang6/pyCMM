@@ -359,7 +359,7 @@ class MultipoleParametrizer(AtomicParametrizer):
                     kyIndices.append(trial[3])
                     break
             else:
-                self.raiseUnmatchExcpetion(i)
+                self.raiseUnmatchExcpetion([i])
 
         self.atomIndices = torch.tensor(atomIndices, device=self.device)
         self.paramIndices = torch.tensor(paramIndices, device=self.device)
