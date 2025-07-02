@@ -71,9 +71,9 @@ def compute_product_with_polarization_matrix(
 
         # Get real field data
         #edata_point_pairwise = torch.bmm(torch.zeros_like(direct_field_tensor_lr), induced_multipoles_i_lr_p.unsqueeze(2))
-        edata_ss_pairwise = torch.bmm(torch.zeros_like(pol_interaction_tensor_sr), induced_multipoles_i_sr_p.unsqueeze(2))
+        #edata_ss_pairwise = torch.bmm(torch.zeros_like(pol_interaction_tensor_sr), induced_multipoles_i_sr_p.unsqueeze(2))
         edata_point_pairwise = torch.bmm(direct_field_tensor_lr, induced_multipoles_i_lr_p.unsqueeze(2))
-        #edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
+        edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
 
         # Accumulate the total potentials and fields
         induced_field_data = torch.zeros(n_charges, 4, device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype, requires_grad=False)

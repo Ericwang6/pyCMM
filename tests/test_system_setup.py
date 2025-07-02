@@ -116,8 +116,8 @@ def test_cmm_on_reference_clusters():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     settings = Settings()
-    settings.add_neighbor_list_settings(cutoff=30.0, padding=1.5)
-    settings.add_long_range_electrostatics_settings(use_long_range=False, cutoff=30.0)
+    settings.add_neighbor_list_settings(cutoff=40.0, padding=1.5)
+    settings.add_long_range_electrostatics_settings(use_long_range=False, cutoff=40.0)
     settings.add_long_range_dispersion_settings(use_long_range=False)
     settings.add("polarization", PolarizationSettings(tolerance=1e-10))
     settings.add("short_range", ShortRangeSettings(cutoff=15.0))
