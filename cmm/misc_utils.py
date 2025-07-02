@@ -87,7 +87,9 @@ def read_from_tinker_xyz(xyz_file: str, requires_grad=True, device="cpu"):
     coords = torch.tensor(coords / BOHR2ANG, dtype=torch.get_default_dtype(), requires_grad=requires_grad, device=device)
     return coords, atom_types, bonds, labels
     
-if __name__ == "__main__":
-    grid = torch.linspace(-10.0, 10.0, 10)
-    positions = torch.cartesian_prod(grid, grid, grid)
-    write_xyz("temp.xyz", ["He" for _ in range(positions.size()[0])], positions)
+def get_bonds_for_water_in_ohh_order(num_waters: int):
+    bonds = []
+    for i in range(0, 3 * num_waters, 3):
+        bonds.append([i, i+1])
+        bonds.append([i, i+2])
+    return np.array(bonds).T
