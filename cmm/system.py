@@ -127,6 +127,7 @@ class System(nn.Module):
         self.pairs_excl_j = self.pairs_excl[:, 1]
 
         self.last_induced_multipoles: torch.Tensor | None = None
+        self.last_perm_multipoles: torch.Tensor | None = None
 
         self._expand_parametrizers_during_init = expand_parametrizers_during_init
         if self._expand_parametrizers_during_init:
@@ -155,7 +156,6 @@ class System(nn.Module):
         return self.parametrizers[force_name].getExpandParameters(param_name, *args, **kwargs)
     
     def getEnergy(self, coords: torch.Tensor, box: torch.Tensor | None = None):
-        
         if not self._expand_parametrizers_during_init:
             self.expandParametrizers()
         
@@ -363,6 +363,7 @@ class System(nn.Module):
             quad = rotateQuadrupoles(self.getParameters('Multipoles', 'quad'), rotMatrices)
 
             multipoles = convertMultipolesToPolytensor(mono, dipo, quad)
+            self.last_perm_multipoles = multipoles
 
             # Pauli
             pauli_mpoles = scaleMultipoles(
