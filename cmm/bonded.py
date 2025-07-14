@@ -74,8 +74,9 @@ def computeMorseBondPotential(r: torch.Tensor, req: torch.Tensor, d: torch.Tenso
     return d * (1 - torch.exp(-a * (r - req))) ** 2
 
 
-def computeBondBondCoupling(r1: torch.Tensor, r2: torch.Tensor, req1: torch.Tensor, req2: torch.Tensor, k: torch.Tensor):
-    return k * (r1 - req1) * (r2 - req2)
+def computeBondBondCoupling(r1: torch.Tensor, r2: torch.Tensor, req1: torch.Tensor, req2: torch.Tensor, k: torch.Tensor, minv: float = -0.002):
+    energy = k * (r1 - req1) * (r2 - req2)
+    return torch.where(energy > minv, energy, minv)
 
 def computeHarmonicAnglePotential(theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor):
     return 0.5 * k * (theta - thetaeq)**2
@@ -84,8 +85,9 @@ def computeCosAnglePotential(theta: torch.Tensor, thetaeq: torch.Tensor, k: torc
     return k / 2 * (torch.cos(theta) - torch.cos(thetaeq)) ** 2
 
 
-def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor):
-    return k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
+def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor, minv: float = -0.002):
+    energy = k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
+    return torch.where(energy > minv, energy, minv)
 
 def computeFieldDependentMorseParams(
         bond_dists_p: torch.Tensor, bond_vecs_p: torch.Tensor,
@@ -150,19 +152,24 @@ def computePeriodicTorsionEnergy(torsions: torch.Tensor, per: torch.Tensor, phas
 def computeTorsionBondCoupling(
     torsions: torch.Tensor, bonds: torch.Tensor,
     per: torch.Tensor, phase: torch.Tensor, k: torch.Tensor,
-    req: torch.Tensor
+    req: torch.Tensor,
+    minv: float = -0.002
 ):
     if len(per.shape) == 2:
-        return k * torch.reshape(bonds - req, (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
+        energy = k * torch.reshape(bonds - req, (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
     else:
-        return k * (bonds - req) * (1 + torch.cos(torsions * per - phase))
+        energy = k * (bonds - req) * (1 + torch.cos(torsions * per - phase))
+    return torch.where(energy > minv, energy, minv)
+    
 
 def computeTorsionAngleAngleCoupling(
     torsions: torch.Tensor, angles1: torch.Tensor, angles2: torch.Tensor,
     per: torch.Tensor, phase: torch.Tensor, k: torch.Tensor,
-    theta_eq_1: torch.Tensor, theta_eq_2: torch.Tensor
+    theta_eq_1: torch.Tensor, theta_eq_2: torch.Tensor,
+    minv: float = -0.002
 ):
     if len(per.shape) == 2:
-        return k * torch.reshape((angles2 - theta_eq_2) * (angles1 - theta_eq_1), (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
+        energy = k * torch.reshape((angles2 - theta_eq_2) * (angles1 - theta_eq_1), (-1, 1)) * (1 + torch.cos(torsions.reshape(-1, 1) * per - phase))
     else:
-        return k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * (1 + torch.cos(torsions * per - phase))
+        energy = k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * (1 + torch.cos(torsions * per - phase))
+    return torch.where(energy > minv, energy, minv)
