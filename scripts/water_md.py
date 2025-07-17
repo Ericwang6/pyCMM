@@ -1,342 +1,145 @@
-import itertools
-from pprint import pprint
-import math
-import time
-
+import torch
+import os
 import numpy as np
 
-import torch
-torch.set_printoptions(precision=8)
-import torch.nn as nn
-from torch_scatter import scatter
+from ase.optimize import LBFGS
+from ase.filters import FrechetCellFilter
+from ase.md import VelocityVerlet, MDLogger
+from ase.md.nptberendsen import NPTBerendsen
+from ase.md.langevin import Langevin
+from ase.io import Trajectory, read
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
+from ase.units import fs, bar, kB
 
-import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-import cmm
-from cmm.misc_utils import read_from_tinker_xyz
+import openmm.app as app
 
-def read_tinker_xyz(fname):
-    atoms = []
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+from cmm.interfaces import CMMCalculator
+from cmm.ffxml import ForceFieldXML
+from cmm.topology import Topology
+from cmm.units import BOHR2NM, BOHR2ANG
+
+
+def read_coords_from_xyz(xyz, device):
     coords = []
-    with open(fname) as f:
-        num_atoms = int(f.readline().strip().split()[0])
-        for _ in range(num_atoms):
-            line = f.readline().strip().split()
-            atoms.append(line[1])
-            coords.append([float(x) for x in line[2: 5]])
-    return atoms, coords
-
-
-class CMMWater(nn.Module):
-    def __init__(self, num_waters: int, rcut: float = 10, use_pme: bool = False, do_polarization: bool = True):
-        Z = torch.tensor([3.61565, 0.93619])
-        #mono = torch.tensor([-0.390896, 0.195448])
-        mono = torch.tensor([-0.51966, 0.25983])
-        qShell = mono - Z
-        dipo = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0]
-        ])
-        quad_s = torch.tensor([
-            # Q20, Q21c, Q21s, Q22c, Q22s
-            [0.0, 0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0, 0.0]
-        ])
-        #dipo = torch.tensor([
-        #    [0.0,       0.0, -0.094298],
-        #    [0.0910288, 0.0, -0.207851]
-        #])
+    with open(xyz) as f:
+        natoms = int(f.readline().strip())
+        f.readline()
+        for _ in range(natoms):
+            coord = [float(x) / BOHR2ANG for x in f.readline().strip().split()[1:4]]
+            coords.append(coord)
+    coords = torch.tensor(coords, device=device, requires_grad=True)
+    return coords
     
-        #quad_s = torch.tensor([
-        #    # Q20,       Q21c,      Q21s, Q22c,       Q22s
-        #    [-0.330685,  0.0,       0.0,  0.869923,   0.0],
-        #    [-0.0739388, 0.0929482, 0.0,  0.00532425, 0.0]
-        #])
 
-        # NOTE(JOE): These should end up being in the force field itself.
-        # The force field has raw parameters and given a topology and
-        # list of atom types and positions can build the atomic and
-        # pairwise parameters.
-        self.nb_params_raw = {
-            # elec
-            "Z": Z,
-            "q_shell": qShell,
-            "mono": mono,
-            "dipo": dipo,
-            "quad_s": quad_s,
-            "quad": cmm.computeCartesianQuadrupoles(quad_s),
-            "b": torch.tensor([2.13358, 2.33322]),
-            # Pauli repulsion
-            "b_pauli": torch.tensor([2.1975, 1.96474]),
-            "Kmono_pauli": torch.tensor([6.50923, 0.527804]) / qShell,
-            "Kdipo_pauli": torch.tensor([-5.61925, -0.515584]),
-            "Kquad_pauli": torch.tensor([-1.56567, -0.440164]),
-            # Dispersion
-            "C6_disp": torch.tensor([35.8289, 1.98954]),
-            "b_disp": torch.tensor([1.84302, 1.30993]),
-            # Polarization
-            "alpha": torch.tensor([
-                [[4.45992, 0.0, 0.0], [0.0, 6.07259, 0.0], [0.0, 0.0, 4.55391]],
-                [[2.22001, 0.0, 0.0], [0.0, 1.66835, 0.0], [0.0, 0.0, 0.183855]]
-            ]),
-            "eta": torch.tensor([6.18699e-6, 0.561535]) * 2,          
-            # Exchange-polarization
-            "b_xpol": torch.tensor([2.73582, 2.04028]),
-            "Kmono_xpol": torch.tensor([1.26592, 0.200089]) / qShell,
-            "Kdipo_xpol": torch.zeros((2,)),
-            "Kquad_xpol": torch.zeros((2,)),
-            # Charge Transfer
-            "b_ct": torch.tensor([1.89485, 2.36763]),
-            "Kmono_ct_acc": torch.tensor([-0.67857, 1.36735]) / qShell,
-            "Kdipo_ct_acc": torch.tensor([0.0, 0.0]),
-            "Kquad_ct_acc": torch.tensor([0.0, 0.0]),
-            "Kmono_ct_don": torch.tensor([0.757752, 0.00888982]) / qShell,
-            "Kdipo_ct_don": torch.tensor([-0.512036, -0.0511668]),
-            "Kquad_ct_don": torch.tensor([-0.208186, 0.0568152]),
-            "eps": torch.tensor([[1e15, 0.380979], [0.380979, 1e15]])
-        }
-        
-        # expand parameters to atoms/pairs
-        paramIndices = torch.tensor([0, 1, 1] * num_waters, dtype=torch.long)
-        self.nb_params = {}
-        for key in self.nb_params_raw:
-            if key == 'eps':
-                self.nb_params[key] = self.nb_params_raw[key][torch.meshgrid(paramIndices, paramIndices, indexing='xy')]
-            else:
-                self.nb_params[key] = self.nb_params_raw[key][paramIndices]
+def create_all_logger(filename: str, atoms, dynamics):
+    """
+    Create a logging function for MD simulations that writes a header to the given file and
+    returns a callable `log_all()` to record step, time (fs), temperature (K),
+    total energy (eV), and density (g/cm3) at each interval.
+    """
+    # Open the log file and write the header line
+    f = open(filename, 'w')
+    header = '# step    time(fs)    temperature(K)    total_energy(eV)    density(g/cm3)'
+    f.write(header+'\n')
+    print(header)
 
-        # compute ref atoms for rotate multipoles
-        zatoms, xatoms, yatoms, axistypes = [], [], [], []
-        for i in range(num_waters * 3):
-            if i % 3 == 0:
-                zatoms.append(i + 1)
-                xatoms.append(i + 2)
-                axistypes.append(1)
-            elif i % 3 == 1:
-                zatoms.append(i - 1)
-                xatoms.append(i + 1)
-                axistypes.append(0)
-            else:
-                zatoms.append(i - 2)
-                xatoms.append(i - 1)
-                axistypes.append(0)
-            yatoms.append(-1)
+    def log_all():
+        # Get current step number
+        step = dynamics.get_number_of_steps()
+        # Get current simulation time in femtoseconds
+        time_fs = dynamics.get_time() / fs
 
-        self.nb_params.update({
-            "zatoms": torch.tensor(zatoms, dtype=torch.long),
-            "xatoms": torch.tensor(xatoms, dtype=torch.long),
-            "yatoms": torch.tensor(yatoms, dtype=torch.long),
-            "axistypes": torch.tensor(axistypes, dtype=torch.long),
-            "groups": [[i, i + 1, i + 2] for i in range(0, num_waters * 3, 3)],
-            "groups_scatter": torch.concat([torch.tensor([i, i, i], dtype=torch.long) for i in range(num_waters)]),
-            "groupCharges": torch.zeros(num_waters),
-        })
+        # Compute temperature: T = 2 * E_kinetic / (3 * N * k_B)
+        E_kin = atoms.get_kinetic_energy()
+        N = atoms.get_number_of_atoms()
+        temperature = 2 * E_kin / (3 * N * kB)
 
-        self.bonds = []
-        self.bbs = torch.tensor([[i, i+1] for i in range(0, num_waters * 2, 2)], dtype=torch.long).T
-        self.bas = torch.vstack((
-            torch.arange(num_waters * 2, dtype=torch.long),
-            torch.concat([torch.tensor([i, i], dtype=torch.long) for i in range(num_waters)])
-        ))
+        # Compute total energy: potential + kinetic
+        E_pot = atoms.get_potential_energy()
+        total_energy = E_kin + E_pot
 
-        for i in range(0, num_waters * 3, 3):
-            self.bonds.append([i, i+1])
-            self.bonds.append([i, i+2])
-        self.bonds = torch.tensor(self.bonds, dtype=torch.long).T
+        # Compute density: mass (amu) to grams, volume in Å^3 to cm^3
+        total_mass_amu = sum(atoms.get_masses())
+        volume_A3 = atoms.get_volume()
+        # 1 amu = 1.66054e-24 g; 1 Å^3 = 1e-24 cm^3
+        density = total_mass_amu * 1.66054e-24 / (volume_A3 * 1e-24)
 
-        self.bonded_params_raw = {
-            "D": torch.tensor([524.265 / cmm.HARTREE2KJ]),
-            "k_b": torch.tensor([5098.15 / cmm.HARTREE2KJ * cmm.BOHR2ANG * cmm.BOHR2ANG]),
-            "b_eq": torch.tensor([0.958413 / cmm.BOHR2ANG]),
-            "k_bb": torch.tensor([-61.1423 / cmm.HARTREE2KJ * cmm.BOHR2ANG * cmm.BOHR2ANG]),
-            "k_ba": torch.tensor([-159.886 / cmm.HARTREE2KJ * cmm.BOHR2ANG]),
-            "theta_eq": torch.tensor([104.4234 * math.pi / 180.00]),
-            "k_theta": torch.tensor([452.183 / cmm.HARTREE2KJ])
-        }
-        self.bonded_params_raw['beta'] = torch.sqrt(self.bonded_params_raw['k_b'] / 2 / self.bonded_params_raw['D'])
+        # Write a line of data to the log file
+        msg = f'{step:6d}  {time_fs:8.2f}  {temperature:10.2f}  {total_energy:12.6f}  {density:12.6f}'
+        f.write(msg+'\n')
+        print(msg)
 
-        # expand bonded parameters
-        self.bonded_params = {}
-        for key in self.bonded_params_raw:
-            if key in ['d_oh', 'k_b', 'b_eq', 'beta', 'k_ba', 'D']:
-                self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters * 2, dtype=torch.long)]
-            else:
-                self.bonded_params[key] = self.bonded_params_raw[key][torch.zeros(num_waters, dtype=torch.long)]
-        
-        self.all_pairs = cmm.getPairsFromGroups(self.nb_params['groups'])
-        self.rcut = rcut / cmm.BOHR2ANG
-
-        self.use_pme = use_pme
-        self.do_polarization = do_polarization
-
-    def computeEnergy(self, coords: torch.Tensor, box: torch.Tensor):
-        boxInv = torch.linalg.inv(box)
-        #bondVecs = cmm.applyPBC(coords[self.bonds[1]] - coords[self.bonds[0]], box, boxInv)
-        #bonds = torch.norm(bondVecs, dim=1)
-        # morse-bond
-        #ene_bond_list = cmm.computeMorseBondPotential(bonds, self.bonded_params['b_eq'], self.bonded_params['D'], self.bonded_params['beta'])
-        #ene_bonds = torch.sum(ene_bond_list)
-
-        # bond-bond couplings
-        #ene_bbs_list = cmm.computeBondBondCoupling(
-        #    bonds[self.bbs[0]], bonds[self.bbs[1]],
-        #    self.bonded_params['b_eq'][self.bbs[0]], self.bonded_params['b_eq'][self.bbs[1]],
-        #    self.bonded_params['k_bb']
-        #)
-        #ene_bbs = torch.sum(ene_bbs_list)
-
-        # angles
-        #angles = cmm.computeAngleFromVecs(bondVecs[self.bbs[0]], bondVecs[self.bbs[1]])
-        #ene_angles_list = cmm.computeCosAnglePotential(
-        #    angles, self.bonded_params['theta_eq'], self.bonded_params['k_theta']
-        #)
-        #ene_angles = torch.sum(ene_angles_list)
-
-        # bond-angle couplings
-        #ene_bas_list = cmm.computeBondAngleCoupling(
-        #    bonds[self.bas[0]], self.bonded_params['b_eq'][self.bas[0]],
-        #    angles[self.bas[1]], self.bonded_params['theta_eq'][self.bas[1]],
-        #    self.bonded_params['k_ba']
-        #)
-        #ene_bas = torch.sum(ene_bas_list)
-
-        # non-bonded interactions
-        rotMatrix = cmm.computeLocal2GlobalRotationMatrix(
-            coords, 
-            coords[self.nb_params['zatoms']],
-            coords[self.nb_params['xatoms']],
-            coords[self.nb_params['yatoms']],
-            self.nb_params['axistypes'],
-            box,
-            boxInv
-        )
-
-        #mPoles = cmm.rotateMultipoles(
-        #    self.nb_params['q_shell'],
-        #    self.nb_params['dipo'],
-        #    self.nb_params['quad'],
-        #    rotMatrix
-        #) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
-
-        #polarizabilities = cmm.rotateQuadrupoles(self.nb_params['alpha'], rotMatrix)
-
-        #pairs, drVecs = self.computeNeighborList(coords, box, boxInv)
-
-        # direct charge-transfer
-        #mPoles_ct_acc = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_ct_acc'], self.nb_params['Kdipo_ct_acc'], self.nb_params['Kquad_ct_acc'])
-        #mPoles_ct_don = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_ct_don'], self.nb_params['Kdipo_ct_don'], self.nb_params['Kquad_ct_don'])
-
-        #ct_direct_pairwise, dq_pairwise = cmm.computePairwiseChargeTransfer(
-        #    drVecs,
-        #    mPoles_ct_acc[pairs[0]], mPoles_ct_acc[pairs[1]],
-        #    mPoles_ct_don[pairs[0]], mPoles_ct_don[pairs[1]],
-        #    self.nb_params['b_ct'][pairs[0]], self.nb_params['b_ct'][pairs[1]],
-        #    self.nb_params['eps'][pairs[0], pairs[1]],
-        #    torch.ones(pairs[0].size(0))
-        #)
-        #ene_ct_direct = torch.sum(ct_direct_pairwise) / 2
-        #dq = scatter(dq_pairwise, pairs[1])
-
-        #dq_groups = scatter(dq, self.nb_params['groups_scatter'])
-
-        # elec, pol and charge-transfer
-        #groupCharges = self.nb_params['groupCharges'] + dq_groups
-        #ene_perm_elec, ene_pol = cmm.computePermElecAndPolarizationEnergy(
-        #    coords,
-        #    self.nb_params['groups'],
-        #    mPoles,
-        #    self.nb_params['Z'],
-        #    self.nb_params['b'],
-        #    self.do_polarization,
-        #    polarizabilities,
-        #    self.nb_params['eta'],
-        #    groupCharges,
-        #    pairs = pairs
-        #)
-        
-        # Pauli repulsion
-        #mPoles_pauli = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_pauli'], self.nb_params['Kdipo_pauli'], self.nb_params['Kquad_pauli'])
-        #pauli_pairwise = cmm.computeShortRangeEnergy(
-        #    drVecs,
-        #    mPoles_pauli[pairs[0]], mPoles_pauli[pairs[1]],
-        #    self.nb_params['b_pauli'][pairs[0]], self.nb_params['b_pauli'][pairs[1]]
-        #)
-        #ene_pauli = torch.sum(pauli_pairwise) / 2
-
-        # dispersion
-        #disp_pairwise = cmm.computeDispersion(
-        #    drVecs, 
-        #    self.nb_params['C6_disp'][pairs[0]], self.nb_params['C6_disp'][pairs[1]],
-        #    self.nb_params['b_disp'][pairs[0]], self.nb_params['b_disp'][pairs[1]]
-        #)
-        #ene_disp = torch.sum(disp_pairwise) / 2
-
-        # exchange-polarization
-        #mPoles_xpol = cmm.scaleMultipoles(mPoles, self.nb_params['Kmono_xpol'], self.nb_params['Kdipo_xpol'], self.nb_params['Kquad_xpol'])
-        #xpol_pairwise = cmm.computeShortRangeEnergy(
-        #    drVecs,
-        #    mPoles_xpol[pairs[0]], mPoles_xpol[pairs[1]],
-        #    self.nb_params['b_xpol'][pairs[0]], self.nb_params['b_xpol'][pairs[1]],
-        #    False
-        #)
-        #ene_xpol = torch.sum(xpol_pairwise) / 2
-
-        #Multipolar Ewald Summation
-        mono = self.nb_params['mono']
-        dipo = cmm.rotateDipoles(self.nb_params['dipo'], rotMatrix).squeeze(1)
-        quad = cmm.rotateQuadrupoles(self.nb_params['quad'], rotMatrix)
-        ene_ewald = cmm.compute_ewald(coords, mono, dipo, quad, box, kappa=0.1930453722791694, rcutoff=8.0, kcutoff=1.5)
-
-        #Total energy
-        #ene_tot = ene_perm_elec + ene_pol + ene_xpol + ene_pauli + ene_disp + ene_ct_direct + ene_bonds + ene_angles + ene_bas + ene_bbs + ene_ewald
-        ene_tot = ene_ewald
-        energies = {
-            #"perm_elec": ene_perm_elec,
-            #"pol": ene_pol,
-            #"ct_direct": ene_ct_direct,
-            #"xpol": ene_xpol,
-            #"pauli": ene_pauli,
-            #"disp": ene_disp,
-            #"bond": ene_bonds,
-            #"angle": ene_angles,
-            #"bond_bond": ene_bbs,
-            #"bond_angle": ene_angles,
-            "ewald": ene_ewald,
-            "total": ene_tot
-        }
-        return energies
-        
-    def computeNeighborList(self, coords: torch.Tensor, box: torch.Tensor, boxInv: torch.Tensor):
-        drVecs = cmm.pbc.applyPBC(coords[self.all_pairs[1]] - coords[self.all_pairs[0]], box, boxInv)
-        mask = torch.norm(drVecs, dim=1) < self.rcut
-        pairs = self.all_pairs[:, mask]
-        drVecs = drVecs[mask]
-        return pairs, drVecs
+    return log_all
 
 
 if __name__ == '__main__':
+    device = 'cuda'
     torch.set_default_dtype(torch.float64)
-    model = CMMWater(216, rcut=8.0, do_polarization=True)
-    coords, atom_types, bonds, _ = read_from_tinker_xyz(os.path.join(os.path.dirname(__file__), "../tests/data/water_216.xyz"), requires_grad=True)
-    box = torch.tensor(np.eye(3) * 18.643 / cmm.BOHR2ANG, requires_grad=True)
-    energies = model.computeEnergy(coords, box)
-    #energies['total'].backward()
-    #grad = coords.grad
 
-    for key in energies:
-        energies[key] *= cmm.HARTREE2KCAL
-    pprint(energies)
+    ff_path = 'water.xml'
+    pdb_path = 'water_216.pdb'
 
-    #with torch.no_grad():
-    #    grad_numerical = np.zeros_like(coords.detach().numpy())
-    #    for i in range(coords.shape[0]):
-    #        for j in range(coords.shape[1]):
-    #            h = 0.01
-    #            coords[i, j] += h
-    #            ene_u = model.computeEnergy(coords, box)['total']
-    #            coords[i, j] -= 2 * h
-    #            ene_d = model.computeEnergy(coords, box)['total']
-    #            grad_numerical[i, j] += (ene_u.detach().item() - ene_d.detach().item()) / (2 * h)
-    #            coords[i, j] += h
-    #
-    #print(grad, grad_numerical, sep='\n')    
+    ff = ForceFieldXML(ff_path, device='cuda')
+    pdb = app.PDBFile(pdb_path)
+    top = Topology.fromOpenmm(pdb.topology, device)
+    system = ff.parametrize(top, use_fd_morse=True)
+
+    coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
+    box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=True)
+
+    # prev = read('water216_npt_298K_50ps.traj', index=-1)
+    # coords = torch.tensor(prev.get_positions() / BOHR2ANG, device=device, requires_grad=True)
+    # box = torch.tensor(prev.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
+    # vel = prev.get_velocities()
+
+    calc = CMMCalculator(system, top, coords, box)
+    atoms = calc.atoms
+
+    # Optimization
+    opt = LBFGS(atoms, logfile='opt.log')
+    opt.run(fmax=0.05, steps=2000)
+    atoms.write('opt.xyz')
+    print("Optimization finished")
+
+    # # NVT
+    temperature = 298.15
+    MaxwellBoltzmannDistribution(atoms, temperature_K=temperature, force_temp=True)
+    Stationary(atoms)
+    # atoms.set_velocities(vel)
+    Stationary(atoms)
+    dyn = Langevin(
+        atoms,
+        timestep=1.0 * fs,
+        temperature_K=temperature,
+        friction=0.01 / fs,
+    )
+
+    traj = Trajectory('water216_nvt_298K_2ps.traj', 'a', atoms)
+    dyn.attach(traj.write, interval=5)
+    
+    log = create_all_logger('water216_nvt_298K_2ps.log', atoms, dyn)
+    dyn.attach(log, interval=5)
+    
+    dyn.run(2000)
+
+    atoms.write('nvt.xyz')
+    print("NVT finished")
+
+    # NPT
+    # atoms.set_velocities(vel)
+    # Stationary(atoms)
+
+    dyn = NPTBerendsen(atoms, timestep=1.0 * fs, temperature_K=temperature,
+                   taut=100 * fs, pressure_au=1.01325 * bar,
+                   taup=1000 * fs, compressibility_au=4.57e-5 / bar)
+    
+    traj = Trajectory('nvt_298K_500ps.traj', 'a', atoms)
+    dyn.attach(traj.write, interval=1000)
+
+    log = create_all_logger('nvt_298K_500ps.log', atoms, dyn)
+    dyn.attach(log, interval=1000)
+
+    dyn.run(500000)
+    atoms.write('nvt_298K_500ps.xyz')

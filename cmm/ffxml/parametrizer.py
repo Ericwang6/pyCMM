@@ -346,6 +346,14 @@ class MultipoleParametrizer(AtomicParametrizer):
                     if kz != kx and kx != i:
                         trials.append([i, kz, kx, -1])
             
+            # ZBisect ky (HN in methylamine)
+            for kz in neighbors:
+                for kx in self.top.getNeighborAtoms(kz):
+                    if kz != kx and kx != i:
+                        for ky in self.top.getNeighborAtoms(kz):
+                            if ky != kx and ky != i:
+                                trials.append([i, kz, kx, ky])
+            
             for trial in trials:
                 key = []
                 for t in trial:

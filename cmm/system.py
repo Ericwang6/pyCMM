@@ -63,6 +63,7 @@ class System(nn.Module):
         polarization_solver: str = 'cg',
         polarization_max_iteration: int = 400,
         polarization_tolerance: float = 1e-7,
+        use_cutoff: bool = True,
         cutoff_vdw: float = 9.0,
         cutoff_ewald: float = 9.0,
         cutoff_sr: float = 5.0,
@@ -91,14 +92,19 @@ class System(nn.Module):
             self.polarization_tolerance = polarization_tolerance
         
         # cutoff settings
-        self.cutoff_vdw = cutoff_vdw / BOHR2ANG
-        self.cutoff_ewald = cutoff_ewald / BOHR2ANG
-        self.cutoff_sr = cutoff_sr / BOHR2ANG
-        self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
+        self.use_cutoff = use_cutoff
+        if self.use_cutoff:
+            self.cutoff_vdw = cutoff_vdw / BOHR2ANG
+            self.cutoff_ewald = cutoff_ewald / BOHR2ANG
+            self.cutoff_sr = cutoff_sr / BOHR2ANG
+            self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
+            self.use_switch = use_switch
+        else:
+            self.use_switch = False
 
         # switch function settings - use to smoothly zero-ing interactions
         self.switch_buf = switch_buffer
-        if use_switch:
+        if self.use_switch:
             s = lambda x: 1 - 10 * x**3 + 15 * x**4 - 6 * x**5
             self.switch_func = lambda dists: torch.clamp(s((dists - self.cutoff_sr + self.switch_buf) / self.switch_buf), min=0.0, max=1.0)
         else:
@@ -153,7 +159,15 @@ class System(nn.Module):
                 break
     
     def getParameters(self, force_name, param_name, *args, **kwargs):
-        return self.parametrizers[force_name].getExpandParameters(param_name, *args, **kwargs)
+        batch_size = kwargs.pop("batch_size", None)
+        param = self.parametrizers[force_name].getExpandParameters(param_name, *args, **kwargs)
+        if batch_size is None:
+            return param
+        elif param_name == 'atomIndices':
+                ...
+        else:
+            return param.repeat(batch_size, *tuple(1 for _ in range(len(param.shape)-1)))
+
     
     def getEnergy(self, coords: torch.Tensor, box: torch.Tensor | None = None):
         if not self._expand_parametrizers_during_init:
@@ -331,14 +345,15 @@ class System(nn.Module):
             # pairs
             all_distVecs = applyPBC(coords[self.all_pairs_j] - coords[self.all_pairs_i], box, boxInv)
             all_dists = torch.norm(all_distVecs, dim=1)
-            mask = all_dists < self.cutoff_max
+
+            if self.use_cutoff:
+                mask = all_dists < self.cutoff_max
+            else:
+                mask = torch.ones_like(all_dists, device=all_dists.device, dtype=torch.bool)
 
             pairs = self.all_pairs[mask]
             pairs_i = pairs[:, 0]
             pairs_j = pairs[:, 1]
-
-            # distVecs = applyPBC(coords[pairs_j] - coords[pairs_i], box, boxInv)
-            # dists = torch.norm(distVecs, dim=1)
 
             distVecs = all_distVecs[mask]
             dists = all_dists[mask]
@@ -442,6 +457,40 @@ class System(nn.Module):
             ct_direct_pairwise_ji = torch.bmm(ct_acc_mpoles[pairs_j].unsqueeze(1), torch.bmm(ct_tensor, ct_don_mpoles[pairs_i].unsqueeze(2))).flatten()
             ene_ct_direct = 0.5 * torch.sum((ct_direct_pairwise_ij + ct_direct_pairwise_ji) * switch_sr)
 
+            # compute transferred charges
+            drInvDamp_ct = ct_tensor[:, 0, 0].flatten()
+            dq_forward = ct_don_mpoles[pairs_i][:, 0] * ct_acc_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
+            dq_backward = ct_acc_mpoles[pairs_i][:, 0] * ct_don_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
+            dq_pairwise = (dq_forward - dq_backward) * switch_sr
+            dq_a = torch.zeros(self.natoms, device=pairs.device, requires_grad=True, dtype=coords.dtype)
+            dq_groups = torch.zeros(self.top.n_pol_groups, device=pairs.device, requires_grad=True, dtype=coords.dtype)
+            dq_a = dq_a.scatter_add(0, pairs_j, dq_pairwise)
+            dq_groups = segment_csr(dq_a[self.top.pol_group_indices_a], self.top.pol_group_segment_indices, reduce='sum')
+
+            # Charge penetration
+            # shell-shell
+            cp_mpoles_i, cp_mpoles_j = cp_mpoles[pairs_i], cp_mpoles[pairs_j]
+            elec_cp_ss_pairwise = computeShortRangeEnergyFromPairs(
+                dists, distVecs, cp_mpoles_i, cp_mpoles_j, b_elec_ij,
+                switch_sr, False, dists_inv
+            )
+            
+            # core-shell
+            # TODO(Eric): there might be some duplicated calculation if the pairs are bi-directional
+            cp_damps_i = -computeShortRangeOneCenterDampFactors(dists, b_elec[pairs_i])
+            cp_damps_j = -computeShortRangeOneCenterDampFactors(dists, b_elec[pairs_j])
+            cp_tensor_i = computeInteractionTensor(distVecs, cp_damps_i, dists_inv, 2)
+            cp_tensor_j = computeInteractionTensor(distVecs, cp_damps_j, dists_inv, 2)
+
+            Z_mpoles = torch.zeros_like(multipoles)
+            Z_mpoles[:, 0] += Z
+
+            edata_cs_pairwise_ij = torch.bmm(cp_tensor_i, cp_mpoles_i.unsqueeze(2)) * mask_nb[:, None, None]
+            elec_cs_pairwise_ji = torch.bmm(cp_mpoles_j.unsqueeze(1), torch.bmm(cp_tensor_j, Z_mpoles[pairs_i].unsqueeze(2))).flatten()
+            elec_cs_pairwise_ij = torch.bmm(Z_mpoles[pairs_j].unsqueeze(1), edata_cs_pairwise_ij).flatten()
+            elec_cp_pairwise = elec_cp_ss_pairwise + elec_cs_pairwise_ji + elec_cs_pairwise_ij
+            ene_elec_cp = 0.5 * torch.sum(elec_cp_pairwise * switch_sr)
+
             if self.use_ewald:
                 # Recip-space electrostatics
                 if self.alpha_ewald is None:
@@ -466,30 +515,6 @@ class System(nn.Module):
                 realSpaceTensor = computeInteractionTensor(distVecs, erfcDamps, dists_inv, 2)
                 edata_pairwise_real = torch.bmm(realSpaceTensor, multipoles[pairs_i].unsqueeze(2)) * mask_ewald[:, None, None]
                 ene_perm_elec_real = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_real).flatten())
-
-                # Charge penetration
-                # shell-shell
-                cp_mpoles_i, cp_mpoles_j = cp_mpoles[pairs_i], cp_mpoles[pairs_j]
-                elec_cp_ss_pairwise = computeShortRangeEnergyFromPairs(
-                    dists, distVecs, cp_mpoles_i, cp_mpoles_j, b_elec_ij,
-                    switch_sr, False, dists_inv
-                )
-                
-                # core-shell
-                # TODO(Eric): there might be some duplicated calculation if the pairs are bi-directional
-                cp_damps_i = -computeShortRangeOneCenterDampFactors(dists, b_elec[pairs_i])
-                cp_damps_j = -computeShortRangeOneCenterDampFactors(dists, b_elec[pairs_j])
-                cp_tensor_i = computeInteractionTensor(distVecs, cp_damps_i, dists_inv, 2)
-                cp_tensor_j = computeInteractionTensor(distVecs, cp_damps_j, dists_inv, 2)
-
-                Z_mpoles = torch.zeros_like(multipoles)
-                Z_mpoles[:, 0] += Z
-
-                edata_cs_pairwise_ij = torch.bmm(cp_tensor_i, cp_mpoles_i.unsqueeze(2)) * mask_nb[:, None, None]
-                elec_cs_pairwise_ji = torch.bmm(cp_mpoles_j.unsqueeze(1), torch.bmm(cp_tensor_j, Z_mpoles[pairs_i].unsqueeze(2))).flatten()
-                elec_cs_pairwise_ij = torch.bmm(Z_mpoles[pairs_j].unsqueeze(1), edata_cs_pairwise_ij).flatten()
-                elec_cp_pairwise = elec_cp_ss_pairwise + elec_cs_pairwise_ji + elec_cs_pairwise_ij
-                ene_elec_cp = 0.5 * torch.sum(elec_cp_pairwise * switch_sr)
 
                 # accumulate electric potential and field
                 edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
@@ -532,17 +557,8 @@ class System(nn.Module):
                             x, self.natoms, self.top.n_pol_groups, polarizabilities
                         )
                     
-                    drInvDamp_ct = ct_tensor[:, 0, 0].flatten()
-                    dq_forward = ct_don_mpoles[pairs_i][:, 0] * ct_acc_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
-                    dq_backward = ct_acc_mpoles[pairs_i][:, 0] * ct_don_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
-                    dq_pairwise = (dq_forward - dq_backward) * switch_sr
-                    dq_a = torch.zeros(self.natoms, device=pairs.device, requires_grad=True, dtype=coords.dtype)
-                    dq_groups = torch.zeros(self.top.n_pol_groups, device=pairs.device, requires_grad=True, dtype=coords.dtype)
-                    dq_a = dq_a.scatter_add(0, pairs_j, dq_pairwise)
-                    dq_groups = segment_csr(dq_a[self.top.pol_group_indices_a], self.top.pol_group_segment_indices, reduce='sum')
-                    
                     b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
-                    self.b_vector = b_vector.clone().detach()
+                    # self.b_vector = b_vector.clone().detach()
                     with torch.no_grad():
                         # Evaluate the initial guess #
                         if self.last_induced_multipoles is None:
@@ -559,12 +575,43 @@ class System(nn.Module):
                 else:
                     ene_pol = 0.0
             else:
-                ene_elec = 0.0
-                ene_pol = 0.0
-                epot = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
-                efield = torch.zeros((self.natoms, 3), device=coords.device, dtype=coords.dtype)
-                dq_a = torch.zeros(self.natoms, device=pairs.device, requires_grad=True, dtype=coords.dtype)
-                raise NotImplementedError("No Ewald has not been implemented yet")
+                eTensor = computeInteractionTensor(distVecs, None, dists_inv, 2)
+                edata_pairwise_mpoles = torch.bmm(eTensor, multipoles[pairs_i].unsqueeze(2))
+                ene_perm_elec_mpoles = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_mpoles).flatten())
+                ene_elec = ene_elec_cp + ene_perm_elec_mpoles
+                if self.use_polarization:
+                     # accumulate electric potential and field
+                    edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
+                    index = pairs_j.unsqueeze(1).expand(-1, 10)
+                    edata = edata.scatter_add(0, index, edata_pairwise_mpoles.squeeze(2))
+                    edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
+                    epot = edata[:, 0]
+                    efield = -edata[:, 1:4]
+                    b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
+
+                    polDamps_i = 1 - computeShortRangePolarizationDampFactors(dists, b_elec_ij)
+                    polTensor = computeInteractionTensor(distVecs, polDamps_i, rank=1)
+
+                    dimA = self.top.natoms * 4 + self.top.n_pol_groups
+                    A_matrix = torch.zeros((dimA, dimA), dtype=dists.dtype, device=dists.device)
+                    arange = torch.arange(self.top.natoms, device=A_matrix.device)
+                    A_matrix[arange, arange] += eta_times_2
+
+                    polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
+                    polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+                    inverse_polarizabilities = torch.linalg.inv(polarizabilities)
+                    A_matrix[self.top.natoms:self.top.natoms*4, self.top.natoms:self.top.natoms*4] = torch.block_diag(*inverse_polarizabilities.unbind(0))
+
+                    for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
+                        # dipo-dipo 
+                        matA[aj*3+offset: (aj+1)*3+offset, ai*3+offset: (ai+1)*3+offset] += polTensor[i, -3:, -3:]
+                        # charge-charge
+                        matA[aj, ai] += polTensor[i, 0, 0]
+                        # charge-dipo
+                        matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
+                        matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
+                else:
+                    ene_pol = 0.0
         
 
         # Field-dependent morse
