@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
 from cmm.units import BOHR2NM, BOHR2ANG
