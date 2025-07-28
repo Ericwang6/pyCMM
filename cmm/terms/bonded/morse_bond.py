@@ -22,6 +22,6 @@ class MorseBond(Term):
         D_morse = system.parameterizer.get_pair_parameters('D', bonded_pair_indices)
         beta_morse = system.storage.get('beta_morse')
         r_eq_morse = system.storage.get('r_eq_morse')
-        
         V_bond_pairs = computeMorseBondPotential(dists[bonded_pair_indices], r_eq_morse, D_morse, beta_morse)
+        
         return {'V_bond': torch.sum(V_bond_pairs)}

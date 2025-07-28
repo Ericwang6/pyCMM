@@ -47,7 +47,7 @@ class FieldDependentMorseParams(Term):
                 (elec_field)[system.topology.bonded_atoms[1]],
                 dq_a[system.topology.bonded_atoms[1]]
             )
-            
+        
         system.storage.add('beta_morse', beta_morse)
         system.storage.add('r_eq_morse', r_eq_morse)
 

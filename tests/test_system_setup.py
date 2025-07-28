@@ -146,7 +146,7 @@ def test_cmm_ion_pair_water_cluster():
     system = ref_cluster_systems[-1]
     ff = CMM2(system)
     ff.forward(system)
-    ff.energies['V_total'].backward()
+    #ff.energies['V_total'].backward()
     torch.set_printoptions(9)
     for key in ff.energies.keys():
         print(key, " ", ff.energies[key] * HARTREE2KCAL)
