@@ -2,7 +2,7 @@ import torch
 
 
 def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor, 
-                           t: torch.Tensor, box: torch.Tensor, alpha: torch.Tensor, max_hkl: torch.NumberType):
+                           t: torch.Tensor, box: torch.Tensor, alpha: float, max_hkl: int):
     """
     Parameters
     ----------
@@ -18,7 +18,7 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
         Box vectors (3, 3)
     alpha: torch.Tensor
         Ewald splitting parameter
-    max_hkl: torch.NumberType
+    max_hkl: int
         Maximum h,k,l index values for reciprocal space sum
     
     Returns
@@ -83,7 +83,8 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
     field = 2 * (
         torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
     ) / V
-    k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
+    # k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
+    k_outer = torch.einsum('bi,bj->bij', kvectors, kvectors).reshape(-1, 9)
     field_grad = 4 * torch.pi * (
         torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
     ) / V
@@ -97,7 +98,7 @@ def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor,
     return potential, field, field_grad
 
 def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor, 
-                                     box: torch.Tensor, alpha: torch.Tensor, max_hkl: torch.NumberType):
+                                     box: torch.Tensor, alpha: float, max_hkl: int):
     # @SPEED: It is possible to exploit symmetry even more when we are just using dipoles, I think...
     # So, can potentially speed this up quite a bit which is nice since this gets called for every
     # polarization iteration.
@@ -160,7 +161,7 @@ def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.
     return potential, field
 
 def long_range_potential_rank_0(coords: torch.Tensor, q: torch.Tensor,
-                                     box: torch.Tensor, alpha: torch.Tensor, max_hkl: torch.NumberType):
+                                     box: torch.Tensor, alpha: float, max_hkl: int):
     # Reciprocal lattice vectors
     V = torch.det(box)  # volume of box
     reciprocal_box = torch.stack((
