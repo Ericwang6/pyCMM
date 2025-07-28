@@ -50,9 +50,16 @@ def guess_bond_connectivity(coordinates, atomic_labels, covalent_radii=COVALENT_
     if coordinates.shape != (n_atoms, 3):
         raise ValueError("Coordinates shape must be (n_atoms, 3)")
     
+    ion_labels = ['Li', 'Na', 'K', 'Rb', 'Cs', 'F', 'Cl', 'Br', 'I', 'Mg', 'Ca']
+
     bonded_pairs = []
     for i in range(n_atoms):
+        if atomic_labels[i] in ion_labels:
+            continue
         for j in range(i + 1, n_atoms):
+            if atomic_labels[j] in ion_labels:
+                continue
+
             radius_i = covalent_radii.get(atomic_labels[i])
             radius_j = covalent_radii.get(atomic_labels[j])
             

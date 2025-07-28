@@ -20,7 +20,12 @@ def create_system_from_xyz_file(
     mols = load_many(file_name, fmt="xyz")
     systems = []
     for mol in mols:
-        atomic_numbers_to_name = {8: "O_water", 1: "H_water"}
+        atomic_numbers_to_name = {
+            8: "O_water", 1: "H_water",
+            9: "F-", 17: "Cl-", 35: "Br-", 53: "I-",
+            3: "Li+", 11: "Na+", 19: "K+", 37: "Rb+", 55: "Cs+",
+            12: "Mg2+", 20: "Ca2+"
+        }
         atom_type_names = [atomic_numbers_to_name[mol.atnums[i]] for i in range(len(mol.atnums))]
         if mol.cellvecs is None:
             box = torch.from_numpy(np.eye(3) * 1000.0).requires_grad_(False).to(device)
@@ -86,6 +91,17 @@ class System:
         types_to_labels = {
             'O_water': 'O',
             'H_water': 'H',
+            'F-': 'F',
+            'Cl-': 'Cl',
+            'Br-': 'Br',
+            'I-': 'I',
+            'Li+': 'Li',
+            'Na+': 'Na',
+            'K+': 'K',
+            'Rb+': 'Rb',
+            'Cs+': 'Cs',
+            'Mg2+': 'Mg',
+            'Ca2+': 'Ca'
         }
         self.labels = [types_to_labels[name] for name in atom_type_names]
 

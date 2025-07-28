@@ -131,6 +131,26 @@ def test_cmm_on_reference_clusters():
     for key in ff.energies.keys():
         print(key, " ", ff.energies[key] * HARTREE2KCAL)
 
+def test_cmm_ion_pair_water_cluster():
+    torch.set_default_dtype(torch.float64)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    settings = Settings()
+    settings.add_neighbor_list_settings(cutoff=40.0, padding=1.5)
+    settings.add_long_range_electrostatics_settings(use_long_range=False, cutoff=40.0)
+    settings.add_long_range_dispersion_settings(use_long_range=False)
+    settings.add("polarization", PolarizationSettings(tolerance=1e-10))
+    settings.add("short_range", ShortRangeSettings(cutoff=15.0))
+
+    ref_cluster_systems = create_system_from_xyz_file(os.path.join(os.path.dirname(__file__), "data/w10_na_cl.xyz"), settings, requires_grad=True, device=device)
+    system = ref_cluster_systems[-1]
+    ff = CMM2(system)
+    ff.forward(system)
+    ff.energies['V_total'].backward()
+    torch.set_printoptions(9)
+    for key in ff.energies.keys():
+        print(key, " ", ff.energies[key] * HARTREE2KCAL)
+
 def test_cmm_md_on_water_box():
     torch.set_default_dtype(torch.float64)
     torch.set_printoptions(9)
