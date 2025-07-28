@@ -2,6 +2,7 @@ import torch
 from .multipole import computeInteractionTensor
 from typing import Optional
 
+@torch.compile
 def computeShortRangeOneCenterDampFactors(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
     u2 = u * u
@@ -17,6 +18,7 @@ def computeShortRangeOneCenterDampFactors(dr: torch.Tensor, b: torch.Tensor):
 
     return torch.stack([p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
+@torch.compile
 def computeShortRangeTwoCenterDampFactors(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
@@ -36,6 +38,7 @@ def computeShortRangeTwoCenterDampFactors(dr: torch.Tensor, bij: torch.Tensor):
 
     return torch.stack([p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
+@torch.compile
 def computeShortRangePolarizationDampFactors(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
@@ -49,6 +52,7 @@ def computeShortRangePolarizationDampFactors(dr: torch.Tensor, bij: torch.Tensor
     p5 = 1 + u + 101/297 * u2 + 2/297 * u3 + 43/2145 * u4 - 10/117 * u5 + 1/45 * u6
     return torch.stack([p * exp_u for p in [p1, p3, p5]], dim=0)
 
+@torch.compile
 def scaleMultipoles(
     mPoles: torch.Tensor, 
     monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor
@@ -81,6 +85,7 @@ def computeShortRangeEnergy(
     enes = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return enes
 
+@torch.compile
 def computeShortRangeEnergyFromPairs(
     dists_p: torch.Tensor, dist_vecs_p: torch.Tensor,
     mPoles_i_p: torch.Tensor, mPoles_j_p: torch.Tensor,
@@ -93,7 +98,7 @@ def computeShortRangeEnergyFromPairs(
 
     damps = computeShortRangeTwoCenterDampFactors(dists_p, b_ij_p)
     if not positive:
-        damps = [-d for d in damps]
+        damps = -1.0 * damps
 
     iTensor = computeInteractionTensor(dist_vecs_p, damps, drInv_p, 2)
     enes = torch.bmm(mPoles_j_p.unsqueeze(1), torch.bmm(iTensor, mPoles_i_p.unsqueeze(2))).flatten()

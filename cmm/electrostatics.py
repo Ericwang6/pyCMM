@@ -1,9 +1,11 @@
+import math
 from typing import List, Union, Optional
 import torch
 from torch_scatter import scatter
 from .multipole import computeInteractionTensor
 
-def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
+@torch.compile
+def computeDampFactorsErf(dr: torch.Tensor, b: float):
     u = b * dr
     erf_u = torch.erf(u)
     exp2_u = torch.exp(-u * u)
@@ -18,16 +20,17 @@ def computeDampFactorsErf(dr: torch.Tensor, b: torch.Tensor):
     u5 = u3 * u2
     u7 = u5 * u2
     
-    p1 = torch.tensor(0)
+    p1 = torch.tensor(0, device=dr.device)
     p3  = u / m3
     p5  = (3*u + 2*u3) / m5
     p7  = (15*u + 10*u3 + 4*u5) / m7
     p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
-    prefactor = 2 / torch.sqrt(torch.tensor(torch.pi))
+    prefactor = 2 / math.sqrt(math.pi)
 
     return torch.stack([erf_u - prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-def computeDampFactorsErfc(dr: torch.Tensor, b: torch.Tensor):
+@torch.compile
+def computeDampFactorsErfc(dr: torch.Tensor, b: float):
     u = b * dr
     erfc_u = torch.erfc(u)
     exp2_u = torch.exp(-u * u)
@@ -42,15 +45,16 @@ def computeDampFactorsErfc(dr: torch.Tensor, b: torch.Tensor):
     u5 = u3 * u2
     u7 = u5 * u2
     
-    p1 = torch.tensor(0)
+    p1 = torch.tensor(0, device=dr.device)
     p3  = u / m3
     p5  = (3*u + 2*u3) / m5
     p7  = (15*u + 10*u3 + 4*u5) / m7
     p9  = (8*u7 + 28*u5 + 70*u3 + 105*u) / m9
-    prefactor = 2 / torch.sqrt(torch.tensor(torch.pi))
+    prefactor = 2 / math.sqrt(math.pi)
 
     return torch.stack([erfc_u + prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
+@torch.compile
 def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
     u2 = u * u
@@ -66,7 +70,7 @@ def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
 
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-
+@torch.compile
 def computeTwoCenterDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
@@ -86,7 +90,7 @@ def computeTwoCenterDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
 
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-
+@torch.compile
 def computePolarizationDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
@@ -113,7 +117,7 @@ def getPairsFromGroups(groups: List[List[int]]):
     return pairs
 
 def computePermanentElectricPotentialExpansion(
-    natoms: torch.NumberType,
+    natoms: int,
     drVec: torch.Tensor,
     pairs: torch.Tensor,
     mPoles: torch.Tensor,
@@ -180,7 +184,7 @@ def computePermanentElectricPotentialExpansion(
     return E_potentials, E_fields, E_field_grads
 
 def computePermanentElectricPotentialExpansionAndEnergyFromPairs(
-    natoms: torch.NumberType,
+    natoms: int,
     pairs_i_a: torch.Tensor,
     pairs_j_a: torch.Tensor,
     dists_p: torch.Tensor,

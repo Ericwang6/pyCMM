@@ -1,5 +1,5 @@
 import math
-from typing import Dict
+from typing import Dict, Optional
 import torch
 import torch.nn as nn
 from torch_scatter import segment_csr
@@ -7,7 +7,7 @@ from torch_scatter import segment_csr
 from .units import BOHR2ANG, HARTREE2KCAL
 from .neighbor_list import NeighborList, VerletList
 # from .ffxml import ParameterSet
-# from .ffxml.parametrizer import Parametrizer
+from .ffxml.parametrizer import Parametrizer
 from .topology import Topology
 from .pbc import applyPBC
 from .bonded import (
@@ -42,7 +42,8 @@ from .polarization import (
     direct_polarization_guess,
     direct_field_induced_dipole_guess
 )
-from .polarization_solver import cg_solve, CG
+from .switching_functions import SwitchFunction
+from .polarization_solver import cg_solve, CG, CMMPolarization
 
 
 class System(nn.Module):
@@ -50,7 +51,7 @@ class System(nn.Module):
     def __init__(
         self,
         top: Topology,
-        parametrizers,
+        parametrizers: Dict[str, Parametrizer],
         expand_parametrizers_during_init: bool = True,
         periodic: bool = True,
         use_fd_morse: bool = True,
@@ -71,6 +72,12 @@ class System(nn.Module):
         super().__init__()
 
         self.top = top
+        self.natoms = self.top.natoms
+        self.nbonds = self.top.nbonds
+        self.nangles = self.top.nangles
+        self.ndihedrals = self.top.ndihedrals
+
+        self._has_torsions = self.ndihedrals > 0
         
         # base settings
         self.periodic = periodic
@@ -86,36 +93,41 @@ class System(nn.Module):
 
         # polarization settings
         self.use_polarization = use_polarization
-        if self.use_polarization:
-            self.polarization_solver = CG(None, None, rtol=polarization_tolerance, atol=0, verbose=False)
-            self.polarization_max_iteration = polarization_max_iteration
-            self.polarization_tolerance = polarization_tolerance
+        self.n_pol_groups = self.top.n_pol_groups
+        self.pol_group_indices_a = self.top.pol_group_indices_a
+        self.pol_group_segment_indices = self.top.pol_group_segment_indices
+        self.pol_group_lengths_g = self.top.pol_group_lengths_g
+
+        self.polarization_solver = CMMPolarization(
+            self.natoms, 
+            self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
+            rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
+            verbose=False, use_lr=True
+        )
+        self.polarization_max_iteration = polarization_max_iteration
+        self.polarization_tolerance = polarization_tolerance
         
         # cutoff settings
         self.use_cutoff = use_cutoff
-        if self.use_cutoff:
-            self.cutoff_vdw = cutoff_vdw / BOHR2ANG
-            self.cutoff_ewald = cutoff_ewald / BOHR2ANG
-            self.cutoff_sr = cutoff_sr / BOHR2ANG
-            self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
-            self.use_switch = use_switch
-        else:
-            self.use_switch = False
+        self.cutoff_vdw = cutoff_vdw / BOHR2ANG
+        self.cutoff_ewald = cutoff_ewald / BOHR2ANG
+        self.cutoff_sr = cutoff_sr / BOHR2ANG
+        self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
 
-        # switch function settings - use to smoothly zero-ing interactions
+        # switch functions for interactions with cutoff
+        self.use_switch = use_switch if self.use_cutoff else False
         self.switch_buf = switch_buffer
-        if self.use_switch:
-            s = lambda x: 1 - 10 * x**3 + 15 * x**4 - 6 * x**5
-            self.switch_func = lambda dists: torch.clamp(s((dists - self.cutoff_sr + self.switch_buf) / self.switch_buf), min=0.0, max=1.0)
-        else:
-            self.switch_func = lambda dists: torch.ones_like(dists)
+        self.switch_func = SwitchFunction(self.use_switch, self.cutoff_sr, self.switch_buf)
 
         # ewald settings
         self.ewald_tolerance = ewald_tolerance
-        self.alpha_ewald = None
-        self.k_max = None
+        self.alpha_ewald = 0.0
+        self.k_max = 0
+        self._set_ewald = False
 
-        self.parametrizers = parametrizers
+        # self.parametrizers = parametrizers
+        self.parametrizers = nn.ModuleDict(parametrizers)
+
         # self.nblist: NeighborList = ...
         self.all_pairs = self.top.getIncludePairs()
 
@@ -132,22 +144,22 @@ class System(nn.Module):
         self.pairs_excl_i = self.pairs_excl[:, 0]
         self.pairs_excl_j = self.pairs_excl[:, 1]
 
-        self.last_induced_multipoles: torch.Tensor | None = None
-        self.last_perm_multipoles: torch.Tensor | None = None
+        self.last_induced_multipoles = torch.zeros(0, device=self.top.device)
+        self.last_perm_multipoles = torch.zeros(0, device=self.top.device)
 
         self._expand_parametrizers_during_init = expand_parametrizers_during_init
         if self._expand_parametrizers_during_init:
             self.expandParametrizers()
-
+        else:
+            raise NotImplementedError('expand_parametrizers_during_init=False not supported yet')
+        
     def expandParametrizers(self):
-        for p in self.parametrizers:
-            self.parametrizers[p].expandParameters()
-    
-    @property
-    def natoms(self) -> int:
-        return self.top.natoms
+        for _, parametrizer in self.parametrizers.items():
+            parametrizer.expandParameters()
     
     def setEwaldParameters(self, box: torch.Tensor):
+        if self._set_ewald:
+            return
         maxBoxLen = torch.max(torch.norm(box, dim=1)).item()
         # Find appropriate ewald parameters. This should really be done by the CM.
         self.alpha_ewald = math.sqrt(-math.log10(2 * self.ewald_tolerance)) / self.cutoff_ewald
@@ -157,24 +169,18 @@ class System(nn.Module):
             if error_estimate < self.ewald_tolerance:
                 self.k_max = i
                 break
-    
-    def getParameters(self, force_name, param_name, *args, **kwargs):
-        batch_size = kwargs.pop("batch_size", None)
-        param = self.parametrizers[force_name].getExpandParameters(param_name, *args, **kwargs)
-        if batch_size is None:
-            return param
-        elif param_name == 'atomIndices':
-                ...
-        else:
-            return param.repeat(batch_size, *tuple(1 for _ in range(len(param.shape)-1)))
-
+        if hasattr(self, 'polarization_solver'):
+            self.polarization_solver.alpha_ewald = self.alpha_ewald
+            self.polarization_solver.k_max = self.k_max
+        self._set_ewald = True
     
     def getEnergy(self, coords: torch.Tensor, box: torch.Tensor | None = None):
-        if not self._expand_parametrizers_during_init:
-            self.expandParametrizers()
+
+        # if not self._expand_parametrizers_during_init:
+        #     self.expandParametrizers()
+
         
         boxInv = None if box is None else torch.linalg.inv(box)
-        boxV = None if box is None else torch.linalg.det(box)
 
         # Charge flux
         charge_flux = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
@@ -182,13 +188,13 @@ class System(nn.Module):
         hardness_change = torch.ones(self.natoms, device=coords.device, dtype=coords.dtype)
         hardness_flux = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
         
-        if self.top.nbonds > 0:
-            bondIndices = self.getParameters("Bond", "atomIndices")
+        if not self.parametrizers['Bond'].is_empty:
+            bondIndices = self.parametrizers['Bond'].getExpandParameters("atomIndices")
             bondVecs = applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], box, boxInv)
             bonds = computeBondFromVecs(bondVecs)
-            j_cf = self.getParameters("Bond", "j_cf")
-            j_cf_pauli = self.getParameters("Bond", "j_cf_pauli")
-            r_eq = self.getParameters("Bond", "r_eq")
+            j_cf = self.parametrizers['Bond'].getExpandParameters("j_cf")
+            j_cf_pauli = self.parametrizers['Bond'].getExpandParameters("j_cf_pauli")
+            r_eq = self.parametrizers['Bond'].getExpandParameters("r_eq")
             flux_bond = computeChargeFluxBond(bonds, r_eq, j_cf)
             flux_pauli_bond = computeChargeFluxBond(bonds, r_eq, j_cf_pauli)
             charge_flux.scatter_add_(0, bondIndices[:, 0], flux_bond[0])
@@ -196,24 +202,24 @@ class System(nn.Module):
             charge_flux_pauli.scatter_add_(0, bondIndices[:, 0], flux_pauli_bond[0])
             charge_flux_pauli.scatter_add_(0, bondIndices[:, 1], flux_pauli_bond[1])
             
-            k_hardness_b = self.getParameters("Bond", "k_hardness_b")
+            k_hardness_b = self.parametrizers['Bond'].getExpandParameters("k_hardness_b")
             hardness_change_bond = computeHardnessChangeBond(bonds, r_eq, k_hardness_b)
             # NOTE(Eric): here can we use in-place operations?
             hardness_change = hardness_change.scatter_reduce(0, bondIndices[:, 1], hardness_change_bond, 'prod')
         
-        if self.top.nangles > 0:
-            angleIndices = self.getParameters("Angle", "atomIndices")
-            r_eq_1 = self.getParameters("Angle", "r_eq_1")
-            r_eq_2 = self.getParameters("Angle", "r_eq_2")
-            theta_eq = self.getParameters("Angle", "theta_eq")
-            j_cf_bb = self.getParameters("Angle", "j_cf_bb")
-            j_cf_angle = self.getParameters("Angle", "j_cf_angle")
-            k_th = self.getParameters("Angle", "k_theta")
-            k_bb = self.getParameters("Angle", "k_bb")
-            k_hardness_bb = self.getParameters("Angle", "k_hardness_bb")
-            k_hardness_angle = self.getParameters("Angle", "k_hardness_angle")
-            k_ba_1 = self.getParameters("Angle", "k_ba_1")
-            k_ba_2 = self.getParameters("Angle", "k_ba_2")
+        if not self.parametrizers['Angle'].is_empty:
+            angleIndices = self.parametrizers['Angle'].getExpandParameters("atomIndices")
+            r_eq_1 = self.parametrizers['Angle'].getExpandParameters("r_eq_1")
+            r_eq_2 = self.parametrizers['Angle'].getExpandParameters("r_eq_2")
+            theta_eq = self.parametrizers['Angle'].getExpandParameters("theta_eq")
+            j_cf_bb = self.parametrizers['Angle'].getExpandParameters("j_cf_bb")
+            j_cf_angle = self.parametrizers['Angle'].getExpandParameters("j_cf_angle")
+            k_th = self.parametrizers['Angle'].getExpandParameters("k_theta")
+            k_bb = self.parametrizers['Angle'].getExpandParameters("k_bb")
+            k_hardness_bb = self.parametrizers['Angle'].getExpandParameters("k_hardness_bb")
+            k_hardness_angle = self.parametrizers['Angle'].getExpandParameters("k_hardness_angle")
+            k_ba_1 = self.parametrizers['Angle'].getExpandParameters("k_ba_1")
+            k_ba_2 = self.parametrizers['Angle'].getExpandParameters("k_ba_2")
             
             bondVecs_ij = applyPBC(coords[angleIndices[:, 0]] - coords[angleIndices[:, 1]], box, boxInv)
             bondVecs_kj = applyPBC(coords[angleIndices[:, 2]] - coords[angleIndices[:, 1]], box, boxInv)
@@ -246,19 +252,19 @@ class System(nn.Module):
             ene_bb = torch.sum(computeBondBondCoupling(r1, r2, r_eq_1, r_eq_2, k_bb))
             ene_ba = torch.sum(computeBondAngleCoupling(r1, r_eq_1, theta, theta_eq, k_ba_1) + computeBondAngleCoupling(r2, r_eq_2, theta, theta_eq, k_ba_2))
         else:
-            ene_angle = 0.0
-            ene_bb = 0.0
-            ene_ba = 0.0
-        
+            ene_angle = torch.tensor(0.0, device=coords.device)
+            ene_bb = torch.tensor(0.0, device=coords.device)
+            ene_ba = torch.tensor(0.0, device=coords.device)
 
-        if self.top.ndihedrals > 0:
-            torsionIndices = self.getParameters("Torsion", "atomIndices")
-            # per = self.getParameters("Torsion", "periodicity")
-            # phase = self.getParameters("Torsion", "phase")
-            # k = self.getParameters("Torsion", "k")
-            teq1 = self.getParameters("Torsion", "theta_eq_1")
-            teq2 = self.getParameters("Torsion", "theta_eq_2")
-            # k_taa = self.getParameters("Torsion", "k_taa")
+        # Torsion
+        if not self.parametrizers['Torsion'].is_empty:
+            torsionIndices = self.parametrizers['Torsion'].getExpandParameters("atomIndices")
+            # per = self.parametrizers['Torsion'].getExpandParameters("periodicity")
+            # phase = self.parametrizers['Torsion'].getExpandParameters("phase")
+            # k = self.parametrizers['Torsion'].getExpandParameters("k")
+            teq1 = self.parametrizers['Torsion'].getExpandParameters("theta_eq_1")
+            teq2 = self.parametrizers['Torsion'].getExpandParameters("theta_eq_2")
+            # k_taa = self.parametrizers['Torsion'].getExpandParameters("k_taa")
 
             bondVecs_ij = applyPBC(coords[torsionIndices[:, 1]] - coords[torsionIndices[:, 0]], box, boxInv)
             bondVecs_jk = applyPBC(coords[torsionIndices[:, 2]] - coords[torsionIndices[:, 1]], box, boxInv)
@@ -271,55 +277,58 @@ class System(nn.Module):
             ene_torsion_angle_angle = torch.zeros(torsionIndices.shape[0], dtype=coords.dtype, device=coords.device)
 
             for i in range(4):
-                per = self.getParameters('Torsion', f'per{i+1}')
-                phase = self.getParameters('Torsion', f'phase{i+1}')
-                k = self.getParameters('Torsion', f'k{i+1}')
-                k_taa = self.getParameters('Torsion', f'k_taa_{i+1}')
+                per = self.parametrizers['Torsion'].getExpandParameters(f'per{i+1}')
+                phase = self.parametrizers['Torsion'].getExpandParameters(f'phase{i+1}')
+                k = self.parametrizers['Torsion'].getExpandParameters(f'k{i+1}')
+                k_taa = self.parametrizers['Torsion'].getExpandParameters(f'k_taa_{i+1}')
                 ene_torsion += computePeriodicTorsionEnergy(torsions, per, phase, k)
                 ene_torsion_angle_angle += computeTorsionAngleAngleCoupling(torsions, angles1, angles2, per, phase, k_taa, teq1, teq2)
             
             ene_torsion = torch.sum(ene_torsion)
             ene_torsion_angle_angle = torch.sum(ene_torsion_angle_angle)
+        else:
+            ene_torsion = torch.tensor(0.0, device=coords.device)
+            ene_torsion_angle_angle = torch.tensor(0.0, device=coords.device)
 
-            # Torsion-bond coupling
-            torsionBondIndices = self.getParameters("TorsionBond", "atomIndices")
-            req = self.getParameters("TorsionBond", "r_eq")
+        # Torsion-bond coupling
+        if not self.parametrizers['TorsionBond'].is_empty:
+            torsionBondIndices = self.parametrizers['TorsionBond'].getExpandParameters("atomIndices")
+            req = self.parametrizers['TorsionBond'].getExpandParameters("r_eq")
             torsions_tb = computeTorsion(coords, torsionBondIndices, box, boxInv)
             bonds_tb = computeBond(coords, torsionBondIndices[:, 4:], box, boxInv)
 
             ene_torsion_bond = torch.zeros(torsionBondIndices.shape[0], device=coords.device, dtype=coords.dtype)
             for i in range(4):
-                per_tb = self.getParameters("TorsionBond", f"per{i+1}")
-                phase_tb = self.getParameters("TorsionBond", f"phase{i+1}")
-                k_tb = self.getParameters("TorsionBond", f"k_tb_{i+1}")
+                per_tb = self.parametrizers['TorsionBond'].getExpandParameters(f"per{i+1}")
+                phase_tb = self.parametrizers['TorsionBond'].getExpandParameters(f"phase{i+1}")
+                k_tb = self.parametrizers['TorsionBond'].getExpandParameters(f"k_tb_{i+1}")
                 ene_torsion_bond += computeTorsionBondCoupling(torsions_tb, bonds_tb, per_tb, phase_tb, k_tb, req)
             ene_torsion_bond = torch.sum(ene_torsion_bond)
+        else:
+            ene_torsion_bond = torch.tensor(0.0, device=coords.device)
 
-            # Torsion-angle coupling
-            torsionAngleIndices = self.getParameters("TorsionAngle", "atomIndices")
-            teq = self.getParameters("TorsionAngle", "theta_eq")
+        # Torsion-angle coupling
+        if not self.parametrizers['TorsionAngle'].is_empty:
+            torsionAngleIndices = self.parametrizers['TorsionAngle'].getExpandParameters("atomIndices")
+            teq = self.parametrizers['TorsionAngle'].getExpandParameters("theta_eq")
             torsions_ta = computeTorsion(coords, torsionAngleIndices, box, boxInv)
             angles_ta = computeAngle(coords, torsionAngleIndices[:, 4:], box, boxInv)
             ene_torsion_angle = torch.zeros(torsionAngleIndices.shape[0], device=coords.device, dtype=coords.dtype)
             for i in range(4):
-                per_ta = self.getParameters("TorsionAngle", f"per{i+1}")
-                phase_ta = self.getParameters("TorsionAngle", f"phase{i+1}")
-                k_ta = self.getParameters("TorsionAngle", f"k_ta_{i+1}")
+                per_ta = self.parametrizers['TorsionAngle'].getExpandParameters(f"per{i+1}")
+                phase_ta = self.parametrizers['TorsionAngle'].getExpandParameters(f"phase{i+1}")
+                k_ta = self.parametrizers['TorsionAngle'].getExpandParameters(f"k_ta_{i+1}")
                 ene_torsion_angle += computeTorsionBondCoupling(torsions_ta, angles_ta, per_ta, phase_ta, k_ta, teq)
             ene_torsion_angle = torch.sum(ene_torsion_angle)
-        
         else:
-            ene_torsion = 0.0
-            ene_torsion_bond = 0.0
-            ene_torsion_angle = 0.0
-            ene_torsion_angle_angle = 0.0
+            ene_torsion_angle = torch.tensor(0.0, device=coords.device)
 
         # angle-angle coupling
-        if "AngleAngle" in self.parametrizers:
-            aaIndices = self.getParameters("AngleAngle", 'atomIndices')
-            theta_eq_1 = self.getParameters("AngleAngle", "theta_eq_1")
-            theta_eq_2 = self.getParameters("AngleAngle", "theta_eq_2")
-            k_aa = self.getParameters("AngleAngle", "k_aa")
+        if not self.parametrizers['AngleAngle'].is_empty:
+            aaIndices = self.parametrizers['AngleAngle'].getExpandParameters('atomIndices')
+            theta_eq_1 = self.parametrizers['AngleAngle'].getExpandParameters("theta_eq_1")
+            theta_eq_2 = self.parametrizers['AngleAngle'].getExpandParameters("theta_eq_2")
+            k_aa = self.parametrizers['AngleAngle'].getExpandParameters("k_aa")
             angles1 = computeAngle(coords, aaIndices[:, :3], box, boxInv)
             angles2 = computeAngle(coords, aaIndices[:, -3:], box, boxInv)
             ene_angle_angle = torch.sum(computeBondBondCoupling(
@@ -328,19 +337,19 @@ class System(nn.Module):
                 k_aa
             ))
         else:
-            ene_angle_angle = 0.0
+            ene_angle_angle = torch.tensor(0.0, device=coords.device)
 
         # Nonbonded interactions from this point
         if not self._has_nb:
-            ene_elec = 0.0
-            ene_pol = 0.0
-            ene_ct_direct = 0.0
-            ene_xpol = 0.0
-            ene_pauli = 0.0
-            ene_disp = 0.0
+            ene_elec = torch.tensor(0.0, device=coords.device)
+            ene_pol = torch.tensor(0.0, device=coords.device)
+            ene_ct_direct = torch.tensor(0.0, device=coords.device)
+            ene_xpol = torch.tensor(0.0, device=coords.device)
+            ene_pauli = torch.tensor(0.0, device=coords.device)
+            ene_disp = torch.tensor(0.0, device=coords.device)
             # these two variables are used in evaluate fd-morse
             efield = torch.zeros((self.natoms, 3), device=coords.device, dtype=coords.dtype)
-            dq_a = torch.zeros(self.natoms, device=coords.device, requires_grad=True, dtype=coords.dtype)
+            dq_a = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
         else:
             # pairs
             all_distVecs = applyPBC(coords[self.all_pairs_j] - coords[self.all_pairs_i], box, boxInv)
@@ -367,15 +376,15 @@ class System(nn.Module):
             mask_ewald = torch.logical_and(dists < self.cutoff_ewald, mask_nb)
             switch_sr = self.switch_func(dists) * mask_nb
 
-            axistypes = self.getParameters('Multipoles', 'axistype')
-            kzIndices = self.getParameters('Multipoles', 'kzIndices')
-            kxIndices = self.getParameters('Multipoles', 'kxIndices')
-            kyIndices = self.getParameters('Multipoles', 'kxIndices')
+            axistypes = self.parametrizers['Multipoles'].getExpandParameters('axistype')
+            kzIndices = self.parametrizers['Multipoles'].getExpandParameters('kzIndices')
+            kxIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
+            kyIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
             rotMatrices = computeLocal2GlobalRotationMatrixBatch(coords, kzIndices, kxIndices, kyIndices, axistypes, box, boxInv)
 
-            mono = self.getParameters('Multipoles', 'mono') + charge_flux
-            dipo = rotateDipoles(self.getParameters('Multipoles', 'dipo'), rotMatrices).squeeze(1)
-            quad = rotateQuadrupoles(self.getParameters('Multipoles', 'quad'), rotMatrices)
+            mono = self.parametrizers['Multipoles'].getExpandParameters('mono') + charge_flux
+            dipo = rotateDipoles(self.parametrizers['Multipoles'].getExpandParameters('dipo'), rotMatrices).squeeze(1)
+            quad = rotateQuadrupoles(self.parametrizers['Multipoles'].getExpandParameters('quad'), rotMatrices)
 
             multipoles = convertMultipolesToPolytensor(mono, dipo, quad)
             self.last_perm_multipoles = multipoles
@@ -383,11 +392,11 @@ class System(nn.Module):
             # Pauli
             pauli_mpoles = scaleMultipoles(
                 multipoles,
-                self.getParameters("Pauli", "q_pauli") + charge_flux_pauli,
-                self.getParameters("Pauli", "Kdipo_pauli"),
-                self.getParameters("Pauli", "Kquad_pauli")
+                self.parametrizers['Pauli'].getExpandParameters("q_pauli") + charge_flux_pauli,
+                self.parametrizers['Pauli'].getExpandParameters("Kdipo_pauli"),
+                self.parametrizers['Pauli'].getExpandParameters("Kquad_pauli")
             )
-            b_pauli_ij = self.getParameters("Pauli", "b_pauli", pairs)
+            b_pauli_ij = self.parametrizers['Pauli'].getExpandParameters("b_pauli", pairs)
             pauli_pairwise = computeShortRangeEnergyFromPairs(
                 dists, distVecs, 
                 pauli_mpoles[pairs_i], pauli_mpoles[pairs_j], b_pauli_ij, 
@@ -395,14 +404,22 @@ class System(nn.Module):
             )
             ene_pauli = 0.5 * torch.sum(pauli_pairwise)
 
+            # ene_elec = torch.tensor(0.0, device=coords.device)
+            # ene_xpol = torch.tensor(0.0, device=coords.device)
+            ene_pol = torch.tensor(0.0, device=coords.device)
+            # ene_ct_direct = torch.tensor(0.0, device=coords.device)
+            # ene_disp = torch.tensor(0.0, device=coords.device)
+            # efield = torch.zeros((self.natoms, 3), device=coords.device, dtype=coords.dtype)
+            # dq_a = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
+
             # XPol
             xpol_mpoles = scaleMultipoles(
                 multipoles,
-                self.getParameters("ExchangePolarization", "q_xpol"),
-                self.getParameters("ExchangePolarization", "Kdipo_xpol"),
-                self.getParameters("ExchangePolarization", "Kquad_xpol")
+                self.parametrizers['ExchangePolarization'].getExpandParameters("q_xpol"),
+                self.parametrizers['ExchangePolarization'].getExpandParameters("Kdipo_xpol"),
+                self.parametrizers['ExchangePolarization'].getExpandParameters("Kquad_xpol")
             )
-            b_xpol_ij = self.getParameters("ExchangePolarization", "b_xpol", pairs)
+            b_xpol_ij = self.parametrizers['ExchangePolarization'].getExpandParameters("b_xpol", pairs)
             xpol_pairwise = computeShortRangeEnergyFromPairs(
                 dists, distVecs, 
                 xpol_mpoles[pairs_i], xpol_mpoles[pairs_j], b_xpol_ij, 
@@ -411,43 +428,44 @@ class System(nn.Module):
             ene_xpol = 0.5 * torch.sum(xpol_pairwise)
 
             # Dispersion
-            c6_disp_ij = self.getParameters("Dispersion", "C6_disp", pairs)
-            b_disp_ij = self.getParameters("Dispersion", "b_disp", pairs)
+            c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs)
+            b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs)
             disp_pairwise = computeDispersionFromPairs(dists, c6_disp_ij, b_disp_ij)
             ene_disp = 0.5 * torch.sum(disp_pairwise * mask_vdw)
 
-            if self.use_lr_dispersion:
+            if self.use_lr_dispersion and box is not None:
+                boxV = torch.linalg.det(box)
                 ene_disp = ene_disp + computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_vdw, self.natoms, boxV)
             
             # Charge penetration parameters
-            Z = self.getParameters("ChargePenetration", "Z")
-            b_elec = self.getParameters("ChargePenetration", "b_elec")
-            b_elec_ij = self.getParameters("ChargePenetration", "b_elec", pairs)
+            Z = self.parametrizers['ChargePenetration'].getExpandParameters("Z")
+            b_elec = self.parametrizers['ChargePenetration'].getExpandParameters("b_elec")
+            b_elec_ij = self.parametrizers['ChargePenetration'].getExpandParameters("b_elec", pairs)
             cp_mpoles = convertMultipolesToPolytensor(mono - Z, dipo, quad)
 
             # Polarization parameters
-            eta = self.getParameters("Polarization", "eta") * hardness_change + hardness_flux
+            eta = self.parametrizers['Polarization'].getExpandParameters("eta") * hardness_change + hardness_flux
             eta_times_2 = eta * 2
 
-            alpha = self.getParameters("Polarization", "alpha")
-            alpha_damp_exponent = self.getParameters("Polarization", "alpha_damp_exponent")
-            alpha_damp_max = self.getParameters("Polarization", "alpha_damp_max")
+            alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
+            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")
+            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")
 
             # Charge Transfer
-            eps_ct = self.getParameters("ChargeTransfer", "eps_ct", pairs)
+            eps_ct = self.parametrizers['ChargeTransfer'].getExpandParameters("eps_ct", pairs)
             ct_acc_mpoles = scaleMultipoles(
                 multipoles,
-                self.getParameters("ChargeTransfer", "q_ct_acc"),
-                self.getParameters("ChargeTransfer", "Kdipo_ct_acc"),
-                self.getParameters("ChargeTransfer", "Kquad_ct_acc")
+                self.parametrizers['ChargeTransfer'].getExpandParameters("q_ct_acc"),
+                self.parametrizers['ChargeTransfer'].getExpandParameters("Kdipo_ct_acc"),
+                self.parametrizers['ChargeTransfer'].getExpandParameters("Kquad_ct_acc")
             )
             ct_don_mpoles = scaleMultipoles(
                 multipoles,
-                self.getParameters("ChargeTransfer", "q_ct_don"),
-                self.getParameters("ChargeTransfer", "Kdipo_ct_don"),
-                self.getParameters("ChargeTransfer", "Kquad_ct_don")
+                self.parametrizers['ChargeTransfer'].getExpandParameters("q_ct_don"),
+                self.parametrizers['ChargeTransfer'].getExpandParameters("Kdipo_ct_don"),
+                self.parametrizers['ChargeTransfer'].getExpandParameters("Kquad_ct_don")
             )
-            b_ct_ij = self.getParameters("ChargeTransfer", "b_ct", pairs)
+            b_ct_ij = self.parametrizers['ChargeTransfer'].getExpandParameters("b_ct", pairs)
             ct_tensor = computeInteractionTensor(
                 distVecs,
                 -computeShortRangeTwoCenterDampFactors(dists, b_ct_ij),
@@ -462,10 +480,10 @@ class System(nn.Module):
             dq_forward = ct_don_mpoles[pairs_i][:, 0] * ct_acc_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
             dq_backward = ct_acc_mpoles[pairs_i][:, 0] * ct_don_mpoles[pairs_j][:, 0] * drInvDamp_ct * eps_ct
             dq_pairwise = (dq_forward - dq_backward) * switch_sr
-            dq_a = torch.zeros(self.natoms, device=pairs.device, requires_grad=True, dtype=coords.dtype)
-            dq_groups = torch.zeros(self.top.n_pol_groups, device=pairs.device, requires_grad=True, dtype=coords.dtype)
+            dq_a = torch.zeros(self.natoms, device=pairs.device, dtype=coords.dtype)
+            # dq_groups = torch.zeros(self.n_pol_groups, device=pairs.device, dtype=coords.dtype)
             dq_a = dq_a.scatter_add(0, pairs_j, dq_pairwise)
-            dq_groups = segment_csr(dq_a[self.top.pol_group_indices_a], self.top.pol_group_segment_indices, reduce='sum')
+            dq_groups = segment_csr(dq_a[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
 
             # Charge penetration
             # shell-shell
@@ -491,10 +509,9 @@ class System(nn.Module):
             elec_cp_pairwise = elec_cp_ss_pairwise + elec_cs_pairwise_ji + elec_cs_pairwise_ij
             ene_elec_cp = 0.5 * torch.sum(elec_cp_pairwise * switch_sr)
 
-            if self.use_ewald:
+            if self.use_ewald and box is not None:
                 # Recip-space electrostatics
-                if self.alpha_ewald is None:
-                    self.setEwaldParameters(box)
+                self.setEwaldParameters(box)
                 ewald_potential, ewald_field, ewald_field_gradient = long_range_potential(coords, mono, dipo, quad, box, self.alpha_ewald, self.k_max)
                 ene_perm_elec_recip_raw = 0.5 * (
                     torch.einsum("n,n->", mono, ewald_potential) -
@@ -517,7 +534,7 @@ class System(nn.Module):
                 ene_perm_elec_real = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_real).flatten())
 
                 # accumulate electric potential and field
-                edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
+                edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype)
                 index = pairs_j.unsqueeze(1).expand(-1, 10)
                 edata = edata.scatter_add(0, index, edata_pairwise_real.squeeze(2))
                 edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
@@ -531,7 +548,8 @@ class System(nn.Module):
                     polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
                     polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
                     inverse_polarizabilities = torch.linalg.inv(polarizabilities)
-                    long_range_induced_potential_function = lambda charges, dipoles : long_range_potential_rank_1(coords, charges, dipoles, box, self.alpha_ewald, self.k_max)
+                    # def long_range_induced_potential_function(charges, dipoles):
+                    #     return long_range_potential_rank_1(coords, charges, dipoles, box, self.alpha_ewald, self.k_max)
 
                     pol_tensor = computeInteractionTensor(
                         distVecs,
@@ -540,41 +558,70 @@ class System(nn.Module):
                         1
                     )
 
-                    def A_mm(x: torch.Tensor):
-                        return compute_product_with_polarization_matrix(
-                            x,
-                            self.natoms,
-                            pairs_i[mask_ewald], pairs_j[mask_ewald], pairs_i[mask_sr], pairs_j[mask_sr],
-                            self.pairs_excl_i, self.pairs_excl_j, realSpaceTensor[mask_ewald, :4, :4],
-                            pol_tensor[mask_sr], realSpaceTensor_excl[:, :4, :4],
-                            eta_times_2, inverse_polarizabilities, self.top.pol_group_indices_a,
-                            self.top.pol_group_segment_indices, self.top.pol_group_lengths_g,
-                            long_range_potential_function=long_range_induced_potential_function
-                        )
+                    # def A_mm(x: torch.Tensor):
+                    #     return compute_product_with_polarization_matrix(
+                    #         x,
+                    #         self.natoms,
+                    #         pairs_i[mask_ewald], pairs_j[mask_ewald], pairs_i[mask_sr], pairs_j[mask_sr],
+                    #         self.pairs_excl_i, self.pairs_excl_j, realSpaceTensor[mask_ewald, :4, :4],
+                    #         pol_tensor[mask_sr], realSpaceTensor_excl[:, :4, :4],
+                    #         eta_times_2, inverse_polarizabilities, self.top.pol_group_indices_a,
+                    #         self.top.pol_group_segment_indices, self.top.pol_group_lengths_g,
+                    #         long_range_potential_function=long_range_induced_potential_function
+                    #     )
 
-                    def M_mm_direct(x: torch.Tensor):
-                        return direct_polarization_guess(
-                            x, self.natoms, self.top.n_pol_groups, polarizabilities
-                        )
+                    # def M_mm_direct(x: torch.Tensor):
+                    #     return direct_polarization_guess(
+                    #         x, self.natoms, self.top.n_pol_groups, polarizabilities
+                    #     )
                     
                     b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
                     # self.b_vector = b_vector.clone().detach()
                     with torch.no_grad():
                         # Evaluate the initial guess #
-                        if self.last_induced_multipoles is None:
-                            self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.top.n_pol_groups, polarizabilities, efield)
+                        if self.last_induced_multipoles.numel() == 0:
+                            self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
                         
-                        self.polarization_solver.A_mm = A_mm
-                        self.polarization_solver.M_mm = M_mm_direct
-                        self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
+                        self.last_induced_multipoles = self.polarization_solver(
+                            coords,
+                            box,
+                            b_vector,
+                            self.last_induced_multipoles,
+                            pairs_i[mask_ewald], pairs_j[mask_ewald],
+                            pairs_i[mask_sr], pairs_j[mask_sr],
+                            self.pairs_excl_i, self.pairs_excl_j,
+                            realSpaceTensor[mask_ewald, :4, :4],
+                            pol_tensor[mask_sr],
+                            realSpaceTensor_excl[:, :4, :4],
+                            eta_times_2,
+                            polarizabilities,
+                            inverse_polarizabilities
+                        )
+                        
+                        # self.polarization_solver.A_mm = A_mm
+                        # self.polarization_solver.M_mm = M_mm_direct
+                        # self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
                         #print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
                         # print(self.last_induced_multipoles)
-
-                    ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * A_mm(self.last_induced_multipoles) - b_vector))
+                    
+                    tmp = self.polarization_solver.compute_product_with_polarization_matrix(
+                            coords, box,
+                            self.last_induced_multipoles,
+                            pairs_i[mask_ewald], pairs_j[mask_ewald],
+                            pairs_i[mask_sr], pairs_j[mask_sr],
+                            self.pairs_excl_i, self.pairs_excl_j,
+                            realSpaceTensor[mask_ewald, :4, :4],
+                            pol_tensor[mask_sr],
+                            realSpaceTensor_excl[:, :4, :4],
+                            eta_times_2,
+                            inverse_polarizabilities
+                    )
+                    ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * tmp - b_vector))
                     self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
                 else:
-                    ene_pol = 0.0
+                    ene_pol = torch.tensor(0.0, device=coords.device)
             else:
+                raise NotImplementedError('No ewald is not supported')
                 eTensor = computeInteractionTensor(distVecs, None, dists_inv, 2)
                 edata_pairwise_mpoles = torch.bmm(eTensor, multipoles[pairs_i].unsqueeze(2))
                 ene_perm_elec_mpoles = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_mpoles).flatten())
@@ -602,33 +649,33 @@ class System(nn.Module):
                     inverse_polarizabilities = torch.linalg.inv(polarizabilities)
                     A_matrix[self.top.natoms:self.top.natoms*4, self.top.natoms:self.top.natoms*4] = torch.block_diag(*inverse_polarizabilities.unbind(0))
 
-                    for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
-                        # dipo-dipo 
-                        matA[aj*3+offset: (aj+1)*3+offset, ai*3+offset: (ai+1)*3+offset] += polTensor[i, -3:, -3:]
-                        # charge-charge
-                        matA[aj, ai] += polTensor[i, 0, 0]
-                        # charge-dipo
-                        matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
-                        matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
+                    # for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
+                    #     # dipo-dipo 
+                    #     matA[aj*3+offset: (aj+1)*3+offset, ai*3+offset: (ai+1)*3+offset] += polTensor[i, -3:, -3:]
+                    #     # charge-charge
+                    #     matA[aj, ai] += polTensor[i, 0, 0]
+                    #     # charge-dipo
+                    #     matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
+                    #     matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
                 else:
-                    ene_pol = 0.0
+                    ene_pol = torch.tensor(0.0, device=coords.device)
         
 
         # Field-dependent morse
-        if self.top.nbonds > 0:
-            bondIndices = self.getParameters("Bond", "atomIndices")
+        if not self.parametrizers['Bond'].is_empty:
+            bondIndices = self.parametrizers['Bond'].getExpandParameters("atomIndices")
             bondVecs = applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], box, boxInv)
             bonds = computeBondFromVecs(bondVecs)
             
-            r_eq = self.getParameters("Bond", 'r_eq')
-            k_b = self.getParameters("Bond", 'k_b')
-            D = self.getParameters("Bond", 'D')
+            r_eq = self.parametrizers['Bond'].getExpandParameters('r_eq')
+            k_b = self.parametrizers['Bond'].getExpandParameters('k_b')
+            D = self.parametrizers['Bond'].getExpandParameters('D')
 
             if self.use_fd_morse:
-                dip_deriv_1 = self.getParameters("Bond", 'dip_deriv_1')
-                dip_deriv_2 = self.getParameters("Bond", 'dip_deriv_2')
-                ct_slope_1 = self.getParameters("Bond", 'ct_slope_1')
-                ct_slope_2 = self.getParameters("Bond", 'ct_slope_2')
+                dip_deriv_1 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_1')
+                dip_deriv_2 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_2')
+                ct_slope_1 = self.parametrizers['Bond'].getExpandParameters('ct_slope_1')
+                ct_slope_2 = self.parametrizers['Bond'].getExpandParameters('ct_slope_2')
                 r_eq_fd, beta_fd = computeFieldDependentMorseParams(
                     bonds, bondVecs,
                     k_b, D, r_eq, dip_deriv_1, dip_deriv_2,
@@ -643,7 +690,7 @@ class System(nn.Module):
             
             ene_bond = torch.sum(ene_bond_list)
         else:
-            ene_bond = 0.0
+            ene_bond = torch.tensor(0.0, device=coords.device)
 
 
         energies = {
@@ -664,7 +711,7 @@ class System(nn.Module):
             "disp": ene_disp
         }
 
-        ene_total = 0.0
+        ene_total = torch.tensor(0.0, device=coords.device)
         for key in energies.values():
             ene_total = ene_total + key
         energies['total'] = ene_total

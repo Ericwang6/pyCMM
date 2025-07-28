@@ -10,13 +10,13 @@ def get_field_dependent_polarizabilities(
         alpha_damp_exponent_a: torch.Tensor,
         alpha_damp_max_a: torch.Tensor
     ):
-    elec_field_mag_sq_a = torch.func.vmap(torch.dot)(elec_field_a, elec_field_a)
+    elec_field_mag_sq_a = torch.sum(elec_field_a * elec_field_a, dim=1)
     damp_factor_a = alpha_damp_max_a * (1 - torch.exp(-alpha_damp_exponent_a * elec_field_mag_sq_a))
     return polarizabilities_a - damp_factor_a.view(-1, 1, 1) * polarizabilities_a
 
 def direct_field_induced_dipole_guess(
-    n_charges: torch.NumberType,
-    n_groups: torch.NumberType,
+    n_charges: int,
+    n_groups: int,
     polarizabilities: torch.Tensor,
     elec_field: torch.Tensor
 ):
@@ -30,8 +30,8 @@ def direct_field_induced_dipole_guess(
 
 def direct_polarization_guess(
     x: torch.Tensor,
-    n_charges: torch.NumberType,
-    n_groups: torch.NumberType,
+    n_charges: int,
+    n_groups: int,
     polarizabilities: torch.Tensor
 ):
     elec_field = torch.narrow(x, 0, n_charges, 3 * n_charges).reshape(n_charges, 3)

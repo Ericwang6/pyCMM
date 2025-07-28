@@ -270,6 +270,8 @@ class ForceFieldXML:
 
         self.loadAtomTypeDefs()
         self.loadParameterSet()
+
+        self._empty_tensor = torch.tensor([], device=device)
     
     def processFileNames(self, files):
         dirname = os.path.dirname(__file__)
@@ -343,108 +345,99 @@ class ForceFieldXML:
         self.assignAtomTypes(top)
         
         # bond
-        if "Bonds" in self.pset.data and top.nbonds > 0:
-            bondTypes = list(zip(self.pset.find('Bonds/Bond/type1'), self.pset.find('Bonds/Bond/type2')))
-            bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
-            bondParams = [
-                'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
-                'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
-            ]
-            for p in bondParams:
-                bondParametrizer.registerParameters(p, self.pset.find(f'Bonds/Bond/{p}'))
-            parametrizers['Bond'] = bondParametrizer
+        bondTypes = list(zip(self.pset.find('Bonds/Bond/type1', []), self.pset.find('Bonds/Bond/type2', [])))
+        bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
+        bondParams = [
+            'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
+            'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
+        ]
+        for p in bondParams:
+            bondParametrizer.registerParameters(p, self.pset.find(f'Bonds/Bond/{p}', self._empty_tensor))
+        parametrizers['Bond'] = bondParametrizer
         
         # angle
-        if "Angles" in self.pset.data and top.nangles > 0:
-            angleTypes = list(zip(
-                self.pset.find('Angles/Angle/type1'), 
-                self.pset.find('Angles/Angle/type2'),
-                self.pset.find('Angles/Angle/type3')
-            ))
-            angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
-            angleParams = [
-                'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
-                'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
-            ]
-            for p in angleParams:
-                angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}'))
-            parametrizers['Angle'] = angleParametrizer
+        angleTypes = list(zip(
+            self.pset.find('Angles/Angle/type1', []), 
+            self.pset.find('Angles/Angle/type2', []),
+            self.pset.find('Angles/Angle/type3', [])
+        ))
+        angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
+        angleParams = [
+            'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
+            'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
+        ]
+        for p in angleParams:
+            angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}', self._empty_tensor))
+        parametrizers['Angle'] = angleParametrizer
         
         # torsion
-        if 'Torsions' in self.pset.data and top.ndihedrals > 0:
-            torsionTypes = list(zip(
-                self.pset.find('Torsions/Torsion/type1'), self.pset.find('Torsions/Torsion/type2'),
-                self.pset.find('Torsions/Torsion/type3'), self.pset.find('Torsions/Torsion/type4')
-            ))
-            torsionParametrizer = TorsionParametrizer(torsionTypes, top, 'Torsion')
-            torsionParams = [
-                'per1', 'phase1', 'k1', 'per2', 'phase2', 'k2',
-                'per3', 'phase3', 'k3', 'per4', 'phase4', 'k4',
-                'theta_eq_1', 'theta_eq_2', 
-                'k_taa_1', 'k_taa_2', 'k_taa_3', 'k_taa_4',
-            ]
-            for p in torsionParams:
-                torsionParametrizer.registerParameters(p, self.pset.find(f'Torsions/Torsion/{p}'))
-            parametrizers['Torsion'] = torsionParametrizer
+        torsionTypes = list(zip(
+            self.pset.find('Torsions/Torsion/type1', []), self.pset.find('Torsions/Torsion/type2', []),
+            self.pset.find('Torsions/Torsion/type3', []), self.pset.find('Torsions/Torsion/type4', [])
+        ))
+        torsionParametrizer = TorsionParametrizer(torsionTypes, top, 'Torsion')
+        torsionParams = [
+            'per1', 'phase1', 'k1', 'per2', 'phase2', 'k2',
+            'per3', 'phase3', 'k3', 'per4', 'phase4', 'k4',
+            'theta_eq_1', 'theta_eq_2', 
+            'k_taa_1', 'k_taa_2', 'k_taa_3', 'k_taa_4',
+        ]
+        for p in torsionParams:
+            torsionParametrizer.registerParameters(p, self.pset.find(f'Torsions/Torsion/{p}', self._empty_tensor))
+        parametrizers['Torsion'] = torsionParametrizer
         
         # angle-angle
-        if 'AngleAngleCoupling' in self.pset.data and top.nangles > 0:
-            aaTypes = list(zip(
-                self.pset.find('AngleAngleCoupling/AngleAngle/type1'), self.pset.find('AngleAngleCoupling/AngleAngle/type2'),
-                self.pset.find('AngleAngleCoupling/AngleAngle/type3'), self.pset.find('AngleAngleCoupling/AngleAngle/type4'), 
-                self.pset.find('AngleAngleCoupling/AngleAngle/type5'), self.pset.find('AngleAngleCoupling/AngleAngle/type6'),
-                self.pset.find('AngleAngleCoupling/AngleAngle/ctype') # coupling type
-            ))
-            aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle')
-            for p in ['theta_eq_1', 'theta_eq_2', 'k_aa']:
-                aaParametrizer.registerParameters(p, self.pset.find(f'AngleAngleCoupling/AngleAngle/{p}'))
-            if not aaParametrizer.isEmpty:
-                parametrizers['AngleAngle'] = aaParametrizer
+        aaTypes = list(zip(
+            self.pset.find('AngleAngleCoupling/AngleAngle/type1', []), self.pset.find('AngleAngleCoupling/AngleAngle/type2', []),
+            self.pset.find('AngleAngleCoupling/AngleAngle/type3', []), self.pset.find('AngleAngleCoupling/AngleAngle/type4', []), 
+            self.pset.find('AngleAngleCoupling/AngleAngle/type5', []), self.pset.find('AngleAngleCoupling/AngleAngle/type6', []),
+            self.pset.find('AngleAngleCoupling/AngleAngle/ctype', []) # coupling type
+        ))
+        aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle')
+        for p in ['theta_eq_1', 'theta_eq_2', 'k_aa']:
+            aaParametrizer.registerParameters(p, self.pset.find(f'AngleAngleCoupling/AngleAngle/{p}', self._empty_tensor))
+        parametrizers['AngleAngle'] = aaParametrizer
         
         # torsion-bond
-        if 'TorsionBondCoupling' in self.pset.data and top.ndihedrals > 0:
-            tbTypes = list(zip(
-                self.pset.find('TorsionBondCoupling/TorsionBond/type1'), 
-                self.pset.find('TorsionBondCoupling/TorsionBond/type2'),
-                self.pset.find('TorsionBondCoupling/TorsionBond/type3'), 
-                self.pset.find('TorsionBondCoupling/TorsionBond/type4'), 
-                self.pset.find('TorsionBondCoupling/TorsionBond/type5'), 
-                self.pset.find('TorsionBondCoupling/TorsionBond/type6'),
-                self.pset.find('TorsionBondCoupling/TorsionBond/ctype') # coupling type
-            ))
-            tbParametrizer = TorsionBondParametrizer(tbTypes, top, 'TorsionBond')
-            tbParams = [
-                'per1', 'phase1', 'per2', 'phase2',
-                'per3', 'phase3', 'per4', 'phase4',
-                'r_eq', 'k_tb_1', 'k_tb_2', 'k_tb_3', 'k_tb_4',
-            ]
-            for p in tbParams:
-                tbParametrizer.registerParameters(p, self.pset.find(f'TorsionBondCoupling/TorsionBond/{p}'))
-            if not tbParametrizer.isEmpty:
-                parametrizers['TorsionBond'] = tbParametrizer
+        tbTypes = list(zip(
+            self.pset.find('TorsionBondCoupling/TorsionBond/type1', []), 
+            self.pset.find('TorsionBondCoupling/TorsionBond/type2', []),
+            self.pset.find('TorsionBondCoupling/TorsionBond/type3', []), 
+            self.pset.find('TorsionBondCoupling/TorsionBond/type4', []), 
+            self.pset.find('TorsionBondCoupling/TorsionBond/type5', []), 
+            self.pset.find('TorsionBondCoupling/TorsionBond/type6', []),
+            self.pset.find('TorsionBondCoupling/TorsionBond/ctype', []) # coupling type
+        ))
+        tbParametrizer = TorsionBondParametrizer(tbTypes, top, 'TorsionBond')
+        tbParams = [
+            'per1', 'phase1', 'per2', 'phase2',
+            'per3', 'phase3', 'per4', 'phase4',
+            'r_eq', 'k_tb_1', 'k_tb_2', 'k_tb_3', 'k_tb_4',
+        ]
+        for p in tbParams:
+            tbParametrizer.registerParameters(p, self.pset.find(f'TorsionBondCoupling/TorsionBond/{p}', self._empty_tensor))
+        parametrizers['TorsionBond'] = tbParametrizer
         
         # torsion-angle
-        if 'TorsionAngleCoupling' in self.pset.data and top.ndihedrals > 0:
-            taTypes = list(zip(
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type1'), 
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type2'),
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type3'), 
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type4'), 
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type5'), 
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type6'),
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/type7'),
-                self.pset.find('TorsionAngleCoupling/TorsionAngle/ctype') # coupling type
-            ))
-            taParametrizer = TorsionAngleParametrizer(taTypes, top, 'TorsionAngle')
-            taParams = [
-                'per1', 'phase1', 'per2', 'phase2',
-                'per3', 'phase3', 'per4', 'phase4',
-                'theta_eq', 'k_ta_1', 'k_ta_2', 'k_ta_3', 'k_ta_4',
-            ]
-            for p in taParams:
-                taParametrizer.registerParameters(p, self.pset.find(f'TorsionAngleCoupling/TorsionAngle/{p}'))
-            if not taParametrizer.isEmpty:
-                parametrizers['TorsionAngle'] = taParametrizer
+        taTypes = list(zip(
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type1', []), 
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type2', []),
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type3', []), 
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type4', []), 
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type5', []), 
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type6', []),
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/type7', []),
+            self.pset.find('TorsionAngleCoupling/TorsionAngle/ctype', []) # coupling type
+        ))
+        taParametrizer = TorsionAngleParametrizer(taTypes, top, 'TorsionAngle')
+        taParams = [
+            'per1', 'phase1', 'per2', 'phase2',
+            'per3', 'phase3', 'per4', 'phase4',
+            'theta_eq', 'k_ta_1', 'k_ta_2', 'k_ta_3', 'k_ta_4',
+        ]
+        for p in taParams:
+            taParametrizer.registerParameters(p, self.pset.find(f'TorsionAngleCoupling/TorsionAngle/{p}', self._empty_tensor))
+        parametrizers['TorsionAngle'] = taParametrizer
         
         # multipoles
         mpoleTypes = list(zip(
@@ -574,6 +567,10 @@ class ForceFieldXML:
         for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz', 'alpha_damp_exponent', 'alpha_damp_max']:
             polParametrizer.registerParameters(p, self.pset.find(f'Polarization/Pol/{p}'))
         parametrizers['Polarization'] = polParametrizer
+
+        # for param in parametrizers:
+        #     for k, v in parametrizers[param].params.items():
+        #         print(param, k, v.storage().data_ptr())
         
         return parametrizers
     

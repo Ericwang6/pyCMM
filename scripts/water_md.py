@@ -1,6 +1,7 @@
 import torch
 import os
 import numpy as np
+import time
 
 from ase.optimize import LBFGS
 from ase.filters import FrechetCellFilter
@@ -14,7 +15,7 @@ from ase.units import fs, bar, kB
 import openmm.app as app
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from cmm.interfaces import CMMCalculator
 from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
@@ -41,9 +42,10 @@ def create_all_logger(filename: str, atoms, dynamics):
     """
     # Open the log file and write the header line
     f = open(filename, 'w')
-    header = '# step    time(fs)    temperature(K)    total_energy(eV)    density(g/cm3)'
+    header = '# step    time(fs)    temperature(K)    total_energy(eV)    density(g/cm3)   time'
     f.write(header+'\n')
     print(header)
+    start = time.time()
 
     def log_all():
         # Get current step number
@@ -66,8 +68,15 @@ def create_all_logger(filename: str, atoms, dynamics):
         # 1 amu = 1.66054e-24 g; 1 Å^3 = 1e-24 cm^3
         density = total_mass_amu * 1.66054e-24 / (volume_A3 * 1e-24)
 
+         # record time
+        end = time.time()
+        dur = int(end - start)
+        hrs, secs = divmod(dur, 3600)
+        mins, secs = divmod(secs, 60)
+        timestr = f'{hrs:02}:{mins:02}:{secs:02}'
+
         # Write a line of data to the log file
-        msg = f'{step:6d}  {time_fs:8.2f}  {temperature:10.2f}  {total_energy:12.6f}  {density:12.6f}'
+        msg = f'{step:6d}  {time_fs:8.2f}  {temperature:10.2f}  {total_energy:12.6f}  {density:12.6f}  {timestr}'
         f.write(msg+'\n')
         print(msg)
 
@@ -84,7 +93,7 @@ if __name__ == '__main__':
     ff = ForceFieldXML(ff_path, device='cuda')
     pdb = app.PDBFile(pdb_path)
     top = Topology.fromOpenmm(pdb.topology, device)
-    system = ff.parametrize(top, use_fd_morse=True)
+    system = ff.parametrize(top, use_fd_morse=True, use_polarization=True)
 
     coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
     box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=True)
@@ -122,7 +131,7 @@ if __name__ == '__main__':
     log = create_all_logger('water216_nvt_298K_2ps.log', atoms, dyn)
     dyn.attach(log, interval=5)
     
-    dyn.run(2000)
+    dyn.run(1000)
 
     atoms.write('nvt.xyz')
     print("NVT finished")
@@ -136,10 +145,10 @@ if __name__ == '__main__':
                    taup=1000 * fs, compressibility_au=4.57e-5 / bar)
     
     traj = Trajectory('nvt_298K_500ps.traj', 'a', atoms)
-    dyn.attach(traj.write, interval=1000)
+    dyn.attach(traj.write, interval=5)
 
     log = create_all_logger('nvt_298K_500ps.log', atoms, dyn)
-    dyn.attach(log, interval=1000)
+    dyn.attach(log, interval=5)
 
-    dyn.run(500000)
+    dyn.run(1000)
     atoms.write('nvt_298K_500ps.xyz')

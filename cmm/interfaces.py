@@ -5,11 +5,11 @@ from ase.stress import (
     full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 )
 
-from cmm.parameters import Parameterizer
-from cmm.coordinate_manager import CoordinateManager
-from cmm.topology import Topology
-from cmm.system import System
-from cmm.units import BOHR2ANG
+# from cmm.parameters import Parameterizer
+# from cmm.coordinate_manager import CoordinateManager
+# from cmm.topology import Topology
+# from cmm.system import System
+# from cmm.units import BOHR2ANG
 import numpy as np
 import torch
 import os
@@ -23,8 +23,8 @@ class CMMCalculator(Calculator):
 
     def __init__(
         self, 
-        system: System, 
-        topology: Topology,
+        system, 
+        topology,
         coords: torch.Tensor,
         box: torch.Tensor,
         output_folder: os.PathLike = ".",

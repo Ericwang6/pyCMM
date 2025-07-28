@@ -1,14 +1,27 @@
 import warnings
 from abc import ABC, abstractmethod
 import itertools
-from typing import List, Dict, Any, Iterable, Callable, Tuple
+from typing import List, Dict, Any, Iterable, Callable, Tuple, Optional
 import torch
+import torch.nn as nn
 from torch_scatter import scatter
 from ..topology import Topology
 from ..multipole import AxisTypes, computeCartesianQuadrupoles
 
 
-class Parametrizer(ABC):
+def format_types(types: Iterable, check=False):
+    if isinstance(types, str):
+        if check:
+            assert '/' not in types, f'A valide string "/" in {types}'
+        return types
+    else:
+        if check:
+            for t in types:
+                assert '/' not in t, f'A valide string "/" in {t}'
+        return '/'.join(str(t) for t in types)
+
+
+class Parametrizer(ABC, nn.Module):
     def __init__(
         self, 
         types: Iterable, 
@@ -16,18 +29,21 @@ class Parametrizer(ABC):
         name: str = '',
         handle_unmatched: str = 'default'
     ):
+        super().__init__()
         self.top = top
         assert top.atomTypes, 'Atom types are not assigned'
 
         self.atomTypes = self.top.atomTypes
         self.typesAsDict = {}
         
-        self._num = 1 if isinstance(types[0], str) else len(types[0])
-        for i, t in enumerate(types):
-            typ = t if isinstance(t, str) else tuple(str(x) for x in t)
-            n = 1 if isinstance(typ, str) else len(typ)
-            assert self._num == n, "Number of types not consistent"
-            self.typesAsDict[typ] = i
+        if len(types) > 0:
+            self._num = 1 if isinstance(types[0], str) else len(types[0])
+            for i, t in enumerate(types):
+                # typ = t if isinstance(t, str) else tuple(str(x) for x in t)
+                typ = format_types(t, True)
+                n = 1 if isinstance(t, str) else len(t)
+                assert self._num == n, "Number of types not consistent"
+                self.typesAsDict[typ] = i
         
         self.name = name if name else self.__class__.__name__[:-12]
         self.params = {}
@@ -49,16 +65,17 @@ class Parametrizer(ABC):
             raise ValueError(f"Invalid value: '{handle_unmatched}' (valid values: 'default', 'error', 'warning' or empty string)")
         
         self._param_is_indices = {}
-        self.initIndices()
-        self.registerIndices('atomIndices', self.atomIndices)
-        self.registerIndices('paramIndices', self.paramIndices)
+        atomIndices, paramIndices = self.initIndices()
+        self.registerIndices('atomIndices', atomIndices)
+        self.registerIndices('paramIndices', paramIndices)
+        self.is_empty: bool = self.params['atomIndices'].numel() == 0
     
     def expandParameters(self):
         for name in self.params:
             if self._param_is_indices[name]:
-                self.params_expand[name] = self.params[name]
-            elif self.paramIndices.numel() > 0:
-                self.params_expand[name] = self.params[name][self.paramIndices]
+                self.params_expand[name] = self.params[name].clone()
+            elif self.params['paramIndices'].numel() > 0:
+                self.params_expand[name] = self.params[name][self.params['paramIndices']]
 
     def setDefaultHandleUnmatched(self):
         self.raise_error = False
@@ -71,19 +88,27 @@ class Parametrizer(ABC):
         return self.params_expand[name]
 
     @abstractmethod
-    def initIndices(self, *args, **kwargs):
-        self.atomIndices = ...
-        self.paramIndices = ...
+    def initIndices(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         ...
 
     def registerParameters(self, name: str, params: torch.Tensor):
         assert params.shape[0] == len(self.typesAsDict), \
                 f"Length of input parameters not correct, should be {len(self.typesAsDict)}, but found {params.shape[0]}"
-        self.params[name] = params
+        # When adding an empty tensor, by default they all point to the same stoarge 
+        # and this will make torch.jit.script fails
+        if params.numel() == 0:
+            self.params[name] = torch.empty(1, device=self.device)[:0]
+        else:
+            self.params[name] = params
         self._param_is_indices[name] = False
     
     def registerIndices(self, name: str, indices: torch.Tensor):
-        self.params[name] = indices
+        # When adding an empty tensor, by default they all point to the same stoarge 
+        # and this will make torch.jit.script fails
+        if indices.numel() == 0:
+            self.params[name] = torch.empty(1, device=self.device)[:0]
+        else:
+            self.params[name] = indices
         self._param_is_indices[name] = True
         
     def raiseException(self, msg):
@@ -94,10 +119,6 @@ class Parametrizer(ABC):
     
     def raiseUnmatchExcpetion(self, atoms: List[int]):
         self.raiseException(f"Atoms {'-'.join(str(x) for x in atoms)} does not match any {self.name}")
-    
-    @property
-    def isEmpty(self) -> bool:
-        return self.params['atomIndices'].numel() == 0
 
 
 class AtomicParametrizer(Parametrizer):
@@ -112,8 +133,12 @@ class AtomicParametrizer(Parametrizer):
         for i, atype in enumerate(self.atomTypes):
             paramIndices.append(self.typesAsDict[atype])
             atomIndices.append(i)
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        atomIndices = torch.tensor(atomIndices, device=self.device)
+        paramIndices = torch.tensor(paramIndices, device=self.device)
+        return atomIndices, paramIndices
+    
+    def expandParameters(self):
+        return super().expandParameters()
     
 
 class BondParametrizer(Parametrizer):
@@ -127,8 +152,11 @@ class BondParametrizer(Parametrizer):
         paramIndices = []
         atomIndices = []
         for term in terms:
-            typ1 = tuple(self.atomTypes[t] for t in term)
-            typ2 = tuple(reversed(typ1))
+            types = tuple(self.atomTypes[t] for t in term)
+            # typ1 = types
+            # typ2 = tuple(reversed(typ1))
+            typ1 = format_types(types, True)
+            typ2 = format_types(types, True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
@@ -137,8 +165,8 @@ class BondParametrizer(Parametrizer):
                 atomIndices.append(list(reversed(term)))
             else:
                 self.raiseUnmatchExcpetion(term)
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
     
 
 class AngleParametrizer(Parametrizer):
@@ -155,8 +183,11 @@ class AngleParametrizer(Parametrizer):
         paramIndices = []
         atomIndices = []
         for term in terms:
-            typ1 = tuple(self.atomTypes[t] for t in term)
-            typ2 = tuple(reversed(typ1))
+            types = tuple(self.atomTypes[t] for t in term)
+            # typ1 = types
+            # typ2 = tuple(reversed(typ1))
+            typ1 = format_types(types, True)
+            typ2 = format_types(types, True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
@@ -165,8 +196,7 @@ class AngleParametrizer(Parametrizer):
                 atomIndices.append(list(reversed(term)))
             else:
                 self.raiseUnmatchExcpetion(term)
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
 
 
 class AngleAngleParametrizer(Parametrizer):
@@ -196,7 +226,8 @@ class AngleAngleParametrizer(Parametrizer):
                     angle2+angle, angle2+angle[::-1], angle2[::-1]+angle, angle2[::-1]+angle,
                 ]
                 for trial in trials:
-                    key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    # key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    key = format_types([self.atomTypes[t] for t in trial] + [couple_type])
                     if key in self.typesAsDict:
                         paramIndices.append(self.typesAsDict[key])
                         atomIndices.append(trial)
@@ -204,8 +235,7 @@ class AngleAngleParametrizer(Parametrizer):
                 else:
                     self.raiseUnmatchExcpetion(trials[0])
 
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
 
 
 class TorsionBondParametrizer(Parametrizer):
@@ -236,7 +266,8 @@ class TorsionBondParametrizer(Parametrizer):
             for bo, couple_type in zip(bonds, couple_types, strict=True):
                 trials = [dihe+bo, dihe+bo[::-1], dihe[::-1]+bo, dihe[::-1]+bo[::-1]]
                 for trial in trials:
-                    key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    # key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    key = format_types([self.atomTypes[t] for t in trial] + [couple_type])
                     if key in self.typesAsDict:
                         paramIndices.append(self.typesAsDict[key])
                         atomIndices.append(trial)
@@ -244,8 +275,7 @@ class TorsionBondParametrizer(Parametrizer):
                 else:
                     self.raiseUnmatchExcpetion(trials[0])
 
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
 
 
 class TorsionAngleParametrizer(Parametrizer):
@@ -286,7 +316,8 @@ class TorsionAngleParametrizer(Parametrizer):
             for angle, couple_type in zip(angles, couple_types, strict=True):
                 trials = [dihe+angle, dihe+angle[::-1], dihe[::-1]+angle, dihe[::-1]+angle[::-1]]
                 for trial in trials:
-                    key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    # key = tuple([self.atomTypes[t] for t in trial] + [couple_type])
+                    key = format_types([self.atomTypes[t] for t in trial] + [couple_type])
                     if key in self.typesAsDict:
                         paramIndices.append(self.typesAsDict[key])
                         atomIndices.append(trial)
@@ -294,8 +325,7 @@ class TorsionAngleParametrizer(Parametrizer):
                 else:
                     self.raiseUnmatchExcpetion(trials[0])
 
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
 
 
 class TorsionParametrizer(Parametrizer):
@@ -309,8 +339,11 @@ class TorsionParametrizer(Parametrizer):
         paramIndices = []
         atomIndices = []
         for term in terms:
-            typ1 = tuple(self.atomTypes[t] for t in term)
-            typ2 = tuple(reversed(typ1))
+            types = tuple(self.atomTypes[t] for t in term)
+            # typ1 = types
+            # typ2 = tuple(reversed(typ1))
+            typ1 = format_types(types, True)
+            typ2 = format_types(types, True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
@@ -319,8 +352,7 @@ class TorsionParametrizer(Parametrizer):
                 atomIndices.append(list(reversed(term)))
             else:
                 self.raiseUnmatchExcpetion(term)
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
 
 
 class MultipoleParametrizer(AtomicParametrizer):
@@ -358,7 +390,8 @@ class MultipoleParametrizer(AtomicParametrizer):
                 key = []
                 for t in trial:
                     key.append('' if t == -1 else self.atomTypes[t])
-                key = tuple(key)
+                # key = tuple(key)
+                key = format_types(key)
                 if key in self.typesAsDict:
                     paramIndices.append(self.typesAsDict[key])
                     atomIndices.append(i)
@@ -369,14 +402,13 @@ class MultipoleParametrizer(AtomicParametrizer):
             else:
                 self.raiseUnmatchExcpetion([i])
 
-        self.atomIndices = torch.tensor(atomIndices, device=self.device)
-        self.paramIndices = torch.tensor(paramIndices, device=self.device)
         self.kzIndices = torch.tensor(kzIndices, device=self.device)
         self.kxIndices = torch.tensor(kxIndices, device=self.device)
         self.kyIndices = torch.tensor(kyIndices, device=self.device)
         self.registerIndices('kzIndices', self.kzIndices)
         self.registerIndices('kxIndices', self.kxIndices)
         self.registerIndices('kyIndices', self.kyIndices)
+        return torch.tensor(atomIndices, device=self.device), torch.tensor(paramIndices, device=self.device)
     
     def expandParameters(self):
         dipo = torch.vstack((self.params['dx'], self.params['dy'], self.params['dz'])).T.contiguous()
@@ -388,16 +420,25 @@ class MultipoleParametrizer(AtomicParametrizer):
         self.params['quad'] = quad
         self._param_is_indices['quad'] = False
 
-        super().expandParameters()
+        for name in self.params:
+            if self._param_is_indices[name]:
+                self.params_expand[name] = self.params[name]
+            elif self.params['paramIndices'].numel() > 0:
+                self.params_expand[name] = self.params[name][self.params['paramIndices']]
 
 
 class PolarizationParametrizer(AtomicParametrizer):
 
     def expandParameters(self):
-        alpha = torch.vmap(torch.diag)(torch.vstack([self.params['alpha_xx'], self.params['alpha_yy'], self.params['alpha_zz']]).T)
+        # alpha = torch.vmap(torch.diag)(torch.vstack([self.params['alpha_xx'], self.params['alpha_yy'], self.params['alpha_zz']]).T)
+        alpha = torch.diag_embed(torch.vstack([self.params['alpha_xx'], self.params['alpha_yy'], self.params['alpha_zz']]).T)
         self.params['alpha'] = alpha
         self._param_is_indices['alpha'] = False
-        super().expandParameters()
+        for name in self.params:
+            if self._param_is_indices[name]:
+                self.params_expand[name] = self.params[name].clone()
+            elif self.params['paramIndices'].numel() > 0:
+                self.params_expand[name] = self.params[name][self.params['paramIndices']]
 
 
 def symmetric_pairing_function(pairs: torch.Tensor) -> torch.Tensor:
@@ -424,13 +465,14 @@ class PairParametrizer(AtomicParametrizer):
         types: Iterable, 
         top: Topology, 
         name: str,
-        combination_rule: Callable = lambda x, y: torch.sqrt(x * y),
+        combination_rule: str = 'geometric',
     ):
         super().__init__(types, top, name)
         self.combination_rule = combination_rule
+        assert combination_rule == 'geometric', f'Combination rule {combination_rule} not supported'
 
-        self.specific_pair_param_indices: Dict[str, torch.Tensor] = {}
-        self.specific_pair_params: Dict[str, torch.Tensor] = {}
+        self.specific_pair_param_indices: Dict[str, torch.Tensor] = {'_dummy_': torch.Tensor([])}
+        self.specific_pair_params: Dict[str, torch.Tensor] = {'_dummy_': torch.Tensor([])}
 
         atom_type_pairs = []
         for i in range(len(self.typesAsDict)):
@@ -467,13 +509,17 @@ class PairParametrizer(AtomicParametrizer):
     def expandParameters(self):
         for name in self.params:
             if self._param_is_indices[name]:
-                self.params_expand[name] = self.params[name]
+                self.params_expand[name] = self.params[name].clone()
             else:
                 # we also want to keep track of the non-paired values
-                self.params_expand[name] = self.params[name][self.paramIndices]
+                self.params_expand[name] = self.params[name][self.params['paramIndices']]
                 if self._param_is_pairwise[name]:
+                    if self.combination_rule == 'geometric':
+                        pairwise_params_as_types = torch.sqrt(self.params[name][self.atom_type_pairs[:, 0]] * self.params[name][self.atom_type_pairs[:, 1]])
+                    else:
+                        pairwise_params_as_types = (self.params[name][self.atom_type_pairs[:, 0]] + self.params[name][self.atom_type_pairs[:, 1]]) / 2
                     pairwise_param = scatter(
-                        self.combination_rule(self.params[name][self.atom_type_pairs[:, 0]], self.params[name][self.atom_type_pairs[:, 1]]),
+                        pairwise_params_as_types,
                         self.atom_type_pairs_after_pairing_func
                     )
                     if name in self.specific_pair_param_indices:
@@ -482,6 +528,6 @@ class PairParametrizer(AtomicParametrizer):
 
     def getExpandParameters(self, name: str, pairs: torch.Tensor | None = None):
         if pairs is None:
-            return super().getExpandParameters(name)
+            return self.params_expand[name]
         else:
-            return self.params_expand[name+'_ij'][symmetric_pairing_function(self.paramIndices[pairs])]
+            return self.params_expand[name+'_ij'][symmetric_pairing_function(self.params['paramIndices'][pairs])]
