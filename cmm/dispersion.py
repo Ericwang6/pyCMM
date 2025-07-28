@@ -1,4 +1,6 @@
 import torch
+from typing import Optional
+
 
 def computeDispersion(
     drVec: torch.Tensor, 
@@ -18,6 +20,7 @@ def computeDispersion(
     damp = 1 - exp_u * (1 + u + u2 / 2 + u3 / 6 + u4 / 24 + u5 / 120 + u6 / 720)
     return -damp * c6_ij / torch.pow(dr, 6)
 
+@torch.compile
 def computeDispersionFromPairs(
     dists_p: torch.Tensor, 
     c6_ij_p: torch.Tensor,b_ij_p: torch.Tensor
@@ -31,6 +34,7 @@ def computeDispersionFromPairs(
     exp_u = torch.exp(-u)
     damp = 1 - exp_u * (1 + u + u2 / 2 + u3 / 6 + u4 / 24 + u5 / 120 + u6 / 720)
     return -damp * c6_ij_p / torch.pow(dists_p, 6)
+
 
 def computeDispersionFromPairsWithSwitching(
     dists_p: torch.Tensor, 
@@ -48,8 +52,10 @@ def computeDispersionFromPairsWithSwitching(
     return -damp * c6_ij_p * switching_values / torch.pow(dists_p, 6)
 
 def compute_long_range_dispersion_correction(
-    C6_ij_p: torch.Tensor, cutoff_vdw: torch.Tensor,
-    natoms: torch.Tensor, box_volume: torch.Tensor
+    C6_ij_p: torch.Tensor, 
+    cutoff_vdw: float,
+    natoms: int, 
+    box_volume: torch.Tensor
 ):
     # NOTE(JOE): There is a chance that this correction should be a factor of 2 larger.
     # But I'm not really sure. Leaving as is since this is what is in the Gromacs manual:
