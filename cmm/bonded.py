@@ -16,7 +16,8 @@ def computeAngleFromVecs(drVecs1, drVecs2):
     return torch.arccos(cosVal)
 
 def computeChargeFluxBond(r: torch.Tensor, req: torch.Tensor, j_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    return (-j_cf * (r - req), j_cf * (r - req))
+    flux = j_cf * (r - req)
+    return (-flux, flux)
 
 def computeChargeFluxBondBond(
         r1: torch.Tensor, r2: torch.Tensor,

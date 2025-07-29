@@ -9,11 +9,12 @@ AVOGADRO = constants.Avogadro
 
 INV_4PI_EPS0 = 8.987551e9 * ELE_CHG * ELE_CHG * 1e7 * AVOGADRO / 4.184 # in kcal/mol * A / e^-2
 
-DEBYE2EA = 0.2081943
-
 HARTREE2KJ = constants.value("atomic unit of energy") * AVOGADRO / 1000
 HARTREE2KCAL = 627.51 #HARTREE2KJ / 4.184
 
+# Dipoles
 
-if __name__ == '__main__':
-    print(HARTREE2KCAL, HARTREE2KJ)
+# 1 Debye = 0.2081943 e*Angstrom
+DEBYE2EA = 0.2081943
+# 1 Debye = 0.393430 e*Bohr
+DEBYE2AU = DEBYE2EA / BOHR2ANG

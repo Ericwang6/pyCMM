@@ -176,6 +176,29 @@ def computeCartesianQuadrupoles(quad_s: torch.Tensor):
     return quad
 
 
+def computeSphericalQuadrupoles(quad_c: torch.Tensor):
+    """
+    Compute cartesian quadrupoles from spheric-harmonics quadrupoles
+
+    Parameters
+    ----------
+    quad_c: torch.Tensor
+        Quadrupoles in cartesian form (Qxx, Qxy, Qxz, Qyy, Qyz, Qzz), shape (N, 6).
+
+    Returns
+    -------
+    quad_s: torch.Tensor
+        Quadrupoles in spherical harmonics form, shape (N, 5)
+    """
+    q20  = quad_c[:, 5] 
+    q21c = quad_c[:, 2] / HALF_SQRT3
+    q21s = quad_c[:, 4] / HALF_SQRT3
+    q22c = (quad_c[:, 0] - quad_c[:, 3]) / HALF_SQRT3 / 2
+    q22s = quad_c[:, 1] / HALF_SQRT3
+    quad_s = torch.vstack((q20, q21c, q21s, q22c, q22s)).T
+    return quad_s
+
+
 def computeInteractionTensor(drVec: torch.Tensor, dampFactors: Optional[List[torch.Tensor]] = None, drInv: Optional[torch.Tensor] = None, rank: int = 2):
     """
     drVec: N x 3

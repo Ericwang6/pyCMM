@@ -504,7 +504,7 @@ def computePermElecAndPolarizationEnergy(
         # diag qq - hardness
         matA[numRange, numRange] += eta
         # diag dd - inv polarizabilities
-        alpha_inv = torch.linalg.inv(alpha)
+        alpha_inv = torch.linalg.inv(alpha) # shape numSites x 3 x 3
         offset = numSites + numGroups
         for i in range(numSites):
             matA[i*3+offset:(i+1)*3+offset, i*3+offset:(i+1)*3+offset] += alpha_inv[i]
@@ -525,7 +525,8 @@ def computePermElecAndPolarizationEnergy(
             matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
 
         # solution vector
-        vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
+        # vecSolution = torch.matmul(torch.linalg.inv(matA), vecB)
+        vecSolution = torch.linalg.solve(matA, vecB)
         pol = torch.matmul(vecSolution.T, (0.5 * torch.matmul(matA, vecSolution) - vecB)).squeeze()
         
         return elec, pol
