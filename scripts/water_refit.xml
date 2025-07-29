@@ -38,7 +38,7 @@
         <Indirect type1="ow" type2="hw" eps_ct="2.624816590940708" />
     </ChargeTransfer>
     <Polarization>
-        <Pol type="ow" eta="6.18699e-6" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="ow" eta="0.0" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
         <Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
     </Polarization>
 </ForceField>
