@@ -18,6 +18,8 @@ class Molecule:
     forces: np.ndarray = None
     energy: np.ndarray = None
     hessian: np.ndarray = None
+    polarizability: np.ndarray = None
+    name: str = "Molecule"
 
 
 def init_logger(logname: Optional[os.PathLike] = None) -> logging.Logger:

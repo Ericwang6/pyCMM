@@ -122,14 +122,14 @@ class QChemWriter:
     def write_rem(config: Dict[str, Any], file: Optional[TextIO] = None):
         maxlen = max([len(key) for key in config.keys()])
         tmpl = "   {:<" + str(maxlen) + "}  =  {}\n"
-        lines = ['$rem']
+        lines = ['$rem\n']
         for key, value in config.items():
             if isinstance(value, bool): 
                 value = str(value).lower()
             line = tmpl.format(key.upper(), value)
             lines.append(line)
         lines.append('$end')
-        remstr = '\n'.join(lines)
+        remstr = ''.join(lines)
         if file:
             file.write(remstr)
         return remstr
@@ -137,7 +137,7 @@ class QChemWriter:
     @staticmethod
     def write_molecule(atoms: List[str], coords: np.ndarray, charge: int, mult: int, file: Optional[TextIO] = None):
         assert coords.shape == (len(atoms), 3), "Coordinates do not match with the atoms"
-        lines = ["$molecule", f'{charge} {mult}']
+        lines = ["$molecule\n", f'{charge} {mult}\n']
         for at, crd in zip(atoms, coords):
             lines.append(f"{at:>3} {crd[0]:>13.7f} {crd[1]:>13.7f} {crd[2]:>13.7f}")
         lines.append('$end')
@@ -149,14 +149,14 @@ class QChemWriter:
     @staticmethod
     def write_molecule_list(atoms: List[List[str]], coords: List[np.ndarray], charges: List[int], mults: List[int], total_mult: int = 1, names: Optional[List[str]] = None, file: Optional[TextIO] = None):
         total_charge = sum(charges)
-        lines = ["$molecule", f'{total_charge} {total_mult}']
+        lines = ["$molecule\n", f'{total_charge} {total_mult}\n']
         names = ["" for _ in range(len(atoms))] if names is None else names
         for i in range(len(atoms)):
             lines.append(f"-- {names[i]}\n{charges[i]} {mults[i]}\n")
             for at, crd in zip(atoms[i], coords[i]):
                 lines.append(f"{at:>3} {crd[0]:>13.7f} {crd[1]:>13.7f} {crd[2]:>13.7f}\n")
         lines.append('$end')
-        molstr = '\n'.join(lines)
+        molstr = ''.join(lines)
         if file:
             file.write(molstr)
         return molstr
@@ -240,7 +240,10 @@ class QChemReader:
         total_charge, total_mult = tuple(map(int, coords_lines[0].split()))
         charges, mults = [], []
         for line in coords_lines[1:]:
-            if line.startswith('-'):
+            if not line:
+                continue
+            
+            if line.startswith('--'):
                 _new = True
                 continue
             
@@ -259,6 +262,10 @@ class QChemReader:
         
         coords = [np.array(coord) for coord in coords]
 
+        for key in res:
+            if res[key] is None:
+                raise RuntimeError(f"Fail to parse {out}")
+
         assert abs(res["ELEC"] + res["PAULI"] - res["CLS_ELEC"] - res["MOD_PAULI"]) < 2e-4
         frozen_error = abs(res["FROZEN"] - res["CLS_ELEC"] - res['MOD_PAULI'] - res['DISP'])
         assert frozen_error < 2e-4, f"{frozen_error} too large"
@@ -275,6 +282,7 @@ class QChemReader:
     @staticmethod
     def read_out(out: Union[TextIO, os.PathLike]):
         _read_coord = False
+        polarizability = None
         with open(out) as f:
             for line in f:
                 if line.strip().startswith("Standard Nuclear Orientation"):
@@ -297,10 +305,21 @@ class QChemReader:
                 if line.strip().startswith('Dipole Moment (Debye)'):
                     content = f.readline().strip().split()
                     dipo = [float(content[1]), float(content[3]), float(content[5])]
+                elif line.strip().startswith('Charge (ESU x 10^10)'):
+                    charge = int(float(f.readline().strip()))
+                elif line.strip().startswith('Polarizability Matrix (a.u.)'):
+                    f.readline()
+                    polarizability = [
+                        list(map(float, f.readline().strip().split()[1:])),
+                        list(map(float, f.readline().strip().split()[1:])),
+                        list(map(float, f.readline().strip().split()[1:]))
+                    ]
+                    polarizability = -np.array(polarizability)
         
         coords = np.array(coords)
         dipo = np.array(dipo)
-        return atoms, coords, dipo
+        molecule = Molecule(atoms, coords, charge=charge, dipo=dipo, polarizability=polarizability)
+        return molecule
 
 
 class QChemTask(Task):
