@@ -11,7 +11,7 @@ class XTBWriter:
     @staticmethod
     def write_inp(tag: str, config: Dict[str, Any], file: Union[os.PathLike, TextIO, None] = None):
         maxlen = max([len(key) for key in config.keys()])
-        tmpl = "   {:<" + str(maxlen) + "}  =  {}\n"
+        tmpl = "   {:<" + str(maxlen) + "}  =  {}"
         lines = [f'${tag}']
         for key, value in config.items():
             if isinstance(value, bool): 
@@ -43,7 +43,8 @@ class XTBMDTask(Task):
     def __init__(self, wdir: os.PathLike, molecule: Molecule, config: Dict[str, Any] = dict(), name: str = 'xtbmd', logger: Optional[logging.Logger] = None):
         super().__init__(name, wdir, logger)
         self.molecule = molecule
-        self.config = self.default_config.copy().update(config)
+        self.config = self.default_config.copy()
+        self.config.update(config)
         self.xyz = self.wdir / f'{self.name}.xyz'
         self.input = self.stdin
         self.stdin = None
@@ -51,6 +52,6 @@ class XTBMDTask(Task):
     def prep(self):
         XTBWriter.write_inp('md', self.config, self.input)
         XYZWriter(self.xyz).write(self.molecule)
-        self.cmd = f'xtb {self.xyz} --input {self.input} --md --chrg {self.molecule.charge} --uhf --ceasefiles'
+        self.cmd = f'xtb {self.xyz} --input {self.input} --md --chrg {self.molecule.charge} --uhf 0 --ceasefiles'
         return self.cmd
 

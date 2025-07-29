@@ -1,7 +1,8 @@
 import torch
+from typing import Optional
 
 
-def applyPBC(drVecs: torch.Tensor, box: torch.Tensor | None = None, boxInv: torch.Tensor | None = None):
+def applyPBC(drVecs: torch.Tensor, box: Optional[torch.Tensor] = None, boxInv: Optional[torch.Tensor] = None):
     """
     Apply periodic boundary conditions to a set of vectors
 

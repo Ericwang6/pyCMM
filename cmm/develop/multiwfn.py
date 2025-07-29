@@ -8,7 +8,7 @@ from .base import Task
 
 class MultiwfnTask(Task):
 
-    multiwfn_in = '\n'.join([])
+    multiwfn_in = '\n'.join(['7', '13', '6', '3', '0.8', '1.0', '1.2', '1.4', '1.6', '1.8', '2.0', 'q', '1', '1', '0', 'y', '0', '0', 'q'])
 
     def __init__(self, wdir: os.PathLike, fchk_file: os.PathLike, name: str = 'multiwfn', logger: Optional[logging.Logger] = None):
         super().__init__(name, wdir, logger)
