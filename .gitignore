@@ -2,7 +2,7 @@
 */temp.xyz
 
 # Notebooks
-notebooks/
+# notebooks/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
