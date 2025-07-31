@@ -536,8 +536,13 @@ class System(nn.Module):
             else:
                 realSpaceTensor_excl_pol = None
 
+            print(multipoles)
+
             # Real-space electrostatics
-            erfcDamps = computeDampFactorsErfc(dists, self.alpha_ewald)
+            if self.use_ewald:
+                erfcDamps = computeDampFactorsErfc(dists, self.alpha_ewald)
+            else:
+                erfcDamps = torch.ones_like(dists)
             realSpaceTensor = computeInteractionTensor(distVecs, erfcDamps, dists_inv, 2)
             edata_pairwise_real = torch.bmm(realSpaceTensor, multipoles[pairs_i].unsqueeze(2)) * mask_ewald[:, None, None]
             ene_perm_elec_real = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_real).flatten())
@@ -556,6 +561,8 @@ class System(nn.Module):
                 epot = epot + ewald_potential
                 efield = efield + ewald_field
 
+            print(ene_elec_cp)
+            print(ene_perm_elec_real)
             ene_elec = ene_elec_cp + ene_perm_elec_real
             if self.use_ewald:
                 ene_elec = ene_elec + ene_perm_elec_recip
