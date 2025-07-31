@@ -6,9 +6,6 @@ checkpoint*.json
 tests/scratch/*
 water216_cell_*.json
 
-# Notebooks
-notebooks/
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

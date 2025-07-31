@@ -5,8 +5,8 @@ from typing import List, Tuple
 import networkx as nx
 import torch
 import openmm.app as app
+from .misc_utils import extract_frame_as_pdb_string, temporary_pdb_file
 
-    
 class Topology:
     def __init__(
         self, 
@@ -48,6 +48,12 @@ class Topology:
     @classmethod
     def fromPDB(cls, pdb_file: os.PathLike, device: str | None = None, cutoff: int = 3):
         return cls.fromOpenmm(app.PDBFile(pdb_file).topology, device, cutoff)
+    
+    @classmethod
+    def fromMultiPDB(cls, pdb_file: os.PathLike, device: str | None = None, cutoff: int = 3, frame_index: int = 0,):
+        frame_content = extract_frame_as_pdb_string(pdb_file, frame_index)
+        with temporary_pdb_file(frame_content) as temp_pdb_path:
+            return cls.fromOpenmm(app.PDBFile(temp_pdb_path).topology, device, cutoff)
 
     def finalize(self):
         self._build()
