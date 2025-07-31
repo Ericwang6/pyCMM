@@ -102,13 +102,19 @@ class System(nn.Module):
             self.natoms, 
             self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
             rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
-            verbose=False, use_lr=True
+            verbose=False, use_lr=self.use_ewald
         )
         self.polarization_max_iteration = polarization_max_iteration
         self.polarization_tolerance = polarization_tolerance
         
         # cutoff settings
         self.use_cutoff = use_cutoff
+        if self.use_cutoff == False:
+            # Set a really large cutoff to make sure we capture all interactions
+            self.cutoff_vdw = 1000.0
+            self.cutoff_ewald = 1000.0
+            self.cutoff_sr = 1000.0
+            self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
         self.cutoff_vdw = cutoff_vdw / BOHR2ANG
         self.cutoff_ewald = cutoff_ewald / BOHR2ANG
         self.cutoff_sr = cutoff_sr / BOHR2ANG
@@ -523,142 +529,126 @@ class System(nn.Module):
                 dr_excl = torch.norm(drVecs_excl, dim=1)
                 erfDamps = -computeDampFactorsErf(dr_excl, self.alpha_ewald)
                 realSpaceTensor_excl = computeInteractionTensor(drVecs_excl, erfDamps)
+                realSpaceTensor_excl_pol = realSpaceTensor_excl[:, :4, :4]
                 edata_pairwise_excl = torch.bmm(realSpaceTensor_excl, multipoles[self.pairs_excl_i].unsqueeze(2))
                 ene_perm_elec_recip_excl = 0.5 * torch.sum(torch.bmm(multipoles[self.pairs_excl_j].unsqueeze(1), edata_pairwise_excl).flatten())
                 ene_perm_elec_recip = ene_perm_elec_recip_raw + ene_perm_elec_recip_excl
-
-                # Real-space electrostatics
-                erfcDamps = computeDampFactorsErfc(dists, self.alpha_ewald)
-                realSpaceTensor = computeInteractionTensor(distVecs, erfcDamps, dists_inv, 2)
-                edata_pairwise_real = torch.bmm(realSpaceTensor, multipoles[pairs_i].unsqueeze(2)) * mask_ewald[:, None, None]
-                ene_perm_elec_real = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_real).flatten())
-
-                # accumulate electric potential and field
-                edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype)
-                index = pairs_j.unsqueeze(1).expand(-1, 10)
-                edata = edata.scatter_add(0, index, edata_pairwise_real.squeeze(2))
-                edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
-                edata = edata.scatter_add(0, self.pairs_excl_j.unsqueeze(1).expand(-1, 10), edata_pairwise_excl.squeeze(2))
-                epot = edata[:, 0] + ewald_potential
-                efield = -edata[:, 1:4] + ewald_field
-
-                ene_elec = ene_elec_cp + ene_perm_elec_real + ene_perm_elec_recip
-
-                if self.use_polarization:
-                    polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                    polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                    inverse_polarizabilities = torch.linalg.inv(polarizabilities)
-                    # def long_range_induced_potential_function(charges, dipoles):
-                    #     return long_range_potential_rank_1(coords, charges, dipoles, box, self.alpha_ewald, self.k_max)
-
-                    pol_tensor = computeInteractionTensor(
-                        distVecs,
-                        -computeShortRangePolarizationDampFactors(dists, b_elec_ij),
-                        dists_inv,
-                        1
-                    )
-
-                    # def A_mm(x: torch.Tensor):
-                    #     return compute_product_with_polarization_matrix(
-                    #         x,
-                    #         self.natoms,
-                    #         pairs_i[mask_ewald], pairs_j[mask_ewald], pairs_i[mask_sr], pairs_j[mask_sr],
-                    #         self.pairs_excl_i, self.pairs_excl_j, realSpaceTensor[mask_ewald, :4, :4],
-                    #         pol_tensor[mask_sr], realSpaceTensor_excl[:, :4, :4],
-                    #         eta_times_2, inverse_polarizabilities, self.top.pol_group_indices_a,
-                    #         self.top.pol_group_segment_indices, self.top.pol_group_lengths_g,
-                    #         long_range_potential_function=long_range_induced_potential_function
-                    #     )
-
-                    # def M_mm_direct(x: torch.Tensor):
-                    #     return direct_polarization_guess(
-                    #         x, self.natoms, self.top.n_pol_groups, polarizabilities
-                    #     )
-                    
-                    b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
-                    # self.b_vector = b_vector.clone().detach()
-                    with torch.no_grad():
-                        # Evaluate the initial guess #
-                        if self.last_induced_multipoles.numel() == 0:
-                            self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
-                        
-                        self.last_induced_multipoles = self.polarization_solver(
-                            coords,
-                            box,
-                            b_vector,
-                            self.last_induced_multipoles,
-                            pairs_i[mask_ewald], pairs_j[mask_ewald],
-                            pairs_i[mask_sr], pairs_j[mask_sr],
-                            self.pairs_excl_i, self.pairs_excl_j,
-                            realSpaceTensor[mask_ewald, :4, :4],
-                            pol_tensor[mask_sr],
-                            realSpaceTensor_excl[:, :4, :4],
-                            eta_times_2,
-                            polarizabilities,
-                            inverse_polarizabilities
-                        )
-                        
-                        # self.polarization_solver.A_mm = A_mm
-                        # self.polarization_solver.M_mm = M_mm_direct
-                        # self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
-                        #print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
-                        # print(self.last_induced_multipoles)
-                    
-                    tmp = self.polarization_solver.compute_product_with_polarization_matrix(
-                            coords, box,
-                            self.last_induced_multipoles,
-                            pairs_i[mask_ewald], pairs_j[mask_ewald],
-                            pairs_i[mask_sr], pairs_j[mask_sr],
-                            self.pairs_excl_i, self.pairs_excl_j,
-                            realSpaceTensor[mask_ewald, :4, :4],
-                            pol_tensor[mask_sr],
-                            realSpaceTensor_excl[:, :4, :4],
-                            eta_times_2,
-                            inverse_polarizabilities
-                    )
-                    ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * tmp - b_vector))
-                    self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
-                else:
-                    ene_pol = torch.tensor(0.0, device=coords.device)
             else:
-                raise NotImplementedError('No ewald is not supported')
-                eTensor = computeInteractionTensor(distVecs, None, dists_inv, 2)
-                edata_pairwise_mpoles = torch.bmm(eTensor, multipoles[pairs_i].unsqueeze(2))
-                ene_perm_elec_mpoles = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_mpoles).flatten())
-                ene_elec = ene_elec_cp + ene_perm_elec_mpoles
-                if self.use_polarization:
-                     # accumulate electric potential and field
-                    edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
-                    index = pairs_j.unsqueeze(1).expand(-1, 10)
-                    edata = edata.scatter_add(0, index, edata_pairwise_mpoles.squeeze(2))
-                    edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
-                    epot = edata[:, 0]
-                    efield = -edata[:, 1:4]
-                    b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
+                realSpaceTensor_excl_pol = None
 
-                    polDamps_i = 1 - computeShortRangePolarizationDampFactors(dists, b_elec_ij)
-                    polTensor = computeInteractionTensor(distVecs, polDamps_i, rank=1)
+            # Real-space electrostatics
+            erfcDamps = computeDampFactorsErfc(dists, self.alpha_ewald)
+            realSpaceTensor = computeInteractionTensor(distVecs, erfcDamps, dists_inv, 2)
+            edata_pairwise_real = torch.bmm(realSpaceTensor, multipoles[pairs_i].unsqueeze(2)) * mask_ewald[:, None, None]
+            ene_perm_elec_real = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_real).flatten())
 
-                    dimA = self.top.natoms * 4 + self.top.n_pol_groups
-                    A_matrix = torch.zeros((dimA, dimA), dtype=dists.dtype, device=dists.device)
-                    arange = torch.arange(self.top.natoms, device=A_matrix.device)
-                    A_matrix[arange, arange] += eta_times_2
+            # accumulate electric potential and field
+            edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype)
+            index = pairs_j.unsqueeze(1).expand(-1, 10)
+            edata = edata.scatter_add(0, index, edata_pairwise_real.squeeze(2))
+            edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
+            
+            if self.use_ewald:
+                edata = edata.scatter_add(0, self.pairs_excl_j.unsqueeze(1).expand(-1, 10), edata_pairwise_excl.squeeze(2))
+            epot = edata[:, 0]
+            efield = -edata[:, 1:4]
+            if self.use_ewald:
+                epot = epot + ewald_potential
+                efield = efield + ewald_field
 
-                    polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                    polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                    inverse_polarizabilities = torch.linalg.inv(polarizabilities)
-                    A_matrix[self.top.natoms:self.top.natoms*4, self.top.natoms:self.top.natoms*4] = torch.block_diag(*inverse_polarizabilities.unbind(0))
+            ene_elec = ene_elec_cp + ene_perm_elec_real
+            if self.use_ewald:
+                ene_elec = ene_elec + ene_perm_elec_recip
 
-                    # for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
-                    #     # dipo-dipo 
-                    #     matA[aj*3+offset: (aj+1)*3+offset, ai*3+offset: (ai+1)*3+offset] += polTensor[i, -3:, -3:]
-                    #     # charge-charge
-                    #     matA[aj, ai] += polTensor[i, 0, 0]
-                    #     # charge-dipo
-                    #     matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
-                    #     matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
-                else:
-                    ene_pol = torch.tensor(0.0, device=coords.device)
+            if self.use_polarization:
+                polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
+                polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+                inverse_polarizabilities = torch.linalg.inv(polarizabilities)
+
+                pol_tensor = computeInteractionTensor(
+                    distVecs,
+                    -computeShortRangePolarizationDampFactors(dists, b_elec_ij),
+                    dists_inv,
+                    1
+                )
+                
+                b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
+                with torch.no_grad():
+                    # Evaluate the initial guess #
+                    if self.last_induced_multipoles.numel() == 0:
+                        self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
+                    
+                    self.last_induced_multipoles = self.polarization_solver(
+                        coords,
+                        box,
+                        b_vector,
+                        self.last_induced_multipoles,
+                        pairs_i[mask_ewald], pairs_j[mask_ewald],
+                        pairs_i[mask_sr], pairs_j[mask_sr],
+                        self.pairs_excl_i, self.pairs_excl_j,
+                        realSpaceTensor[mask_ewald, :4, :4],
+                        pol_tensor[mask_sr],
+                        realSpaceTensor_excl_pol,
+                        eta_times_2,
+                        polarizabilities,
+                        inverse_polarizabilities
+                    )
+                
+                tmp = self.polarization_solver.compute_product_with_polarization_matrix(
+                        coords, box,
+                        self.last_induced_multipoles,
+                        pairs_i[mask_ewald], pairs_j[mask_ewald],
+                        pairs_i[mask_sr], pairs_j[mask_sr],
+                        self.pairs_excl_i, self.pairs_excl_j,
+                        realSpaceTensor[mask_ewald, :4, :4],
+                        pol_tensor[mask_sr],
+                        realSpaceTensor_excl_pol,
+                        eta_times_2,
+                        inverse_polarizabilities
+                )
+                ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * tmp - b_vector))
+                self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
+            else:
+                ene_pol = torch.tensor(0.0, device=coords.device)
+            #else:
+            #    raise NotImplementedError('No ewald is not supported')
+            #    eTensor = computeInteractionTensor(distVecs, None, dists_inv, 2)
+            #    edata_pairwise_mpoles = torch.bmm(eTensor, multipoles[pairs_i].unsqueeze(2))
+            #    ene_perm_elec_mpoles = 0.5 * torch.sum(torch.bmm(multipoles[pairs_j].unsqueeze(1), edata_pairwise_mpoles).flatten())
+            #    ene_elec = ene_elec_cp + ene_perm_elec_mpoles
+            #    if self.use_polarization:
+            #            # accumulate electric potential and field
+            #        edata = torch.zeros(self.natoms, 10, device=dists.device, dtype=dists.dtype, requires_grad=True)
+            #        index = pairs_j.unsqueeze(1).expand(-1, 10)
+            #        edata = edata.scatter_add(0, index, edata_pairwise_mpoles.squeeze(2))
+            #        edata = edata.scatter_add(0, index, edata_cs_pairwise_ij.squeeze(2))
+            #        epot = edata[:, 0]
+            #        efield = -edata[:, 1:4]
+            #        b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
+    #
+            #        polDamps_i = 1 - computeShortRangePolarizationDampFactors(dists, b_elec_ij)
+            #        polTensor = computeInteractionTensor(distVecs, polDamps_i, rank=1)
+    #
+            #        dimA = self.top.natoms * 4 + self.top.n_pol_groups
+            #        A_matrix = torch.zeros((dimA, dimA), dtype=dists.dtype, device=dists.device)
+            #        arange = torch.arange(self.top.natoms, device=A_matrix.device)
+            #        A_matrix[arange, arange] += eta_times_2
+    #
+            #        polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
+            #        polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+            #        inverse_polarizabilities = torch.linalg.inv(polarizabilities)
+            #        A_matrix[self.top.natoms:self.top.natoms*4, self.top.natoms:self.top.natoms*4] = torch.block_diag(*inverse_polarizabilities.unbind(0))
+    #
+            #        # for i, (ai, aj) in enumerate(zip(pairs[0], pairs[1])):
+            #        #     # dipo-dipo 
+            #        #     matA[aj*3+offset: (aj+1)*3+offset, ai*3+offset: (ai+1)*3+offset] += polTensor[i, -3:, -3:]
+            #        #     # charge-charge
+            #        #     matA[aj, ai] += polTensor[i, 0, 0]
+            #        #     # charge-dipo
+            #        #     matA[aj, ai*3+offset:(ai+1)*3+offset] += polTensor[i, 0, -3:]
+            #        #     matA[aj*3+offset:(aj+1)*3+offset, ai] += polTensor[i, -3:, 0]
+            #else:
+            #    ene_pol = torch.tensor(0.0, device=coords.device)
         
 
         # Field-dependent morse
