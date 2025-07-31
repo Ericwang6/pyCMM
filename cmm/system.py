@@ -115,9 +115,10 @@ class System(nn.Module):
             self.cutoff_ewald = 1000.0
             self.cutoff_sr = 1000.0
             self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
-        self.cutoff_vdw = cutoff_vdw / BOHR2ANG
-        self.cutoff_ewald = cutoff_ewald / BOHR2ANG
-        self.cutoff_sr = cutoff_sr / BOHR2ANG
+        else:
+            self.cutoff_vdw = cutoff_vdw / BOHR2ANG
+            self.cutoff_ewald = cutoff_ewald / BOHR2ANG
+            self.cutoff_sr = cutoff_sr / BOHR2ANG
         self.cutoff_max = max(self.cutoff_vdw, self.cutoff_sr, self.cutoff_ewald)
 
         # switch functions for interactions with cutoff
@@ -450,7 +451,7 @@ class System(nn.Module):
             cp_mpoles = convertMultipolesToPolytensor(mono - Z, dipo, quad)
 
             # Polarization parameters
-            eta = self.parametrizers['Polarization'].getExpandParameters("eta") * hardness_change + hardness_flux
+            eta = self.parametrizers['Polarization'].getExpandParameters("eta") #* hardness_change + hardness_flux
             eta_times_2 = eta * 2
 
             alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
@@ -536,8 +537,6 @@ class System(nn.Module):
             else:
                 realSpaceTensor_excl_pol = None
 
-            print(multipoles)
-
             # Real-space electrostatics
             if self.use_ewald:
                 erfcDamps = computeDampFactorsErfc(dists, self.alpha_ewald)
@@ -561,8 +560,6 @@ class System(nn.Module):
                 epot = epot + ewald_potential
                 efield = efield + ewald_field
 
-            print(ene_elec_cp)
-            print(ene_perm_elec_real)
             ene_elec = ene_elec_cp + ene_perm_elec_real
             if self.use_ewald:
                 ene_elec = ene_elec + ene_perm_elec_recip
@@ -678,7 +675,8 @@ class System(nn.Module):
                     k_b, D, r_eq, dip_deriv_1, dip_deriv_2,
                     ct_slope_1, ct_slope_2,
                     efield[bondIndices[:, 1]],
-                    dq_a[bondIndices[:, 1]]
+                    #dq_a[bondIndices[:, 1]]
+                    torch.zeros_like(dq_a[bondIndices[:, 1]])
                 )
                 ene_bond_list = computeMorseBondPotential(bonds, r_eq_fd, D, beta_fd)
             else:
