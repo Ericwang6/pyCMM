@@ -1,5 +1,5 @@
 import torch
-from typing import List
+from typing import List, Tuple
 import numpy as np
 from .units import BOHR2ANG
 from .atom_types import get_expected_connectivities
@@ -26,6 +26,79 @@ def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
             vec = coords[i, :]
             line = labels[i] + " " + str(vec[0].item()) + " " + str(vec[1].item()) + " " + str(vec[2].item()) + "\n"
             f.write(line)
+
+def read_xyz(filepath: str) -> Tuple[List[np.ndarray], List[List[str]]]:
+    """
+    Read XYZ formatted file containing molecular structures.
+    
+    Parameters:
+    -----------
+    filepath : str
+        Path to the XYZ file
+        
+    Returns:
+    --------
+    coordinates : List[np.ndarray]
+        List of numpy arrays, each with shape (n_atoms, 3) containing atomic coordinates
+    labels : List[List[str]]
+        List of lists, each containing atom labels for a frame
+    """
+    coordinates = []
+    labels = []
+    
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+    
+    i = 0
+    while i < len(lines):
+        # Skip empty lines
+        if not lines[i].strip():
+            i += 1
+            continue
+            
+        # Read number of atoms
+        try:
+            n_atoms = int(lines[i].strip())
+        except ValueError:
+            raise ValueError(f"Expected number of atoms at line {i+1}, got: {lines[i].strip()}")
+        
+        # Skip comment line
+        i += 1
+        if i >= len(lines):
+            raise ValueError("Unexpected end of file after atom count")
+        
+        # Read atoms for this frame
+        frame_coords = []
+        frame_labels = []
+        
+        for j in range(n_atoms):
+            i += 1
+            if i >= len(lines):
+                raise ValueError(f"Unexpected end of file while reading frame")
+            
+            # Parse atom line
+            parts = lines[i].strip().split()
+            if len(parts) < 4:
+                raise ValueError(f"Invalid atom line at {i+1}: {lines[i].strip()}")
+            
+            # Extract label and coordinates
+            label = parts[0]
+            try:
+                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+            except ValueError:
+                raise ValueError(f"Invalid coordinates at line {i+1}: {lines[i].strip()}")
+            
+            frame_labels.append(label)
+            frame_coords.append([x, y, z])
+        
+        # Store frame data
+        coordinates.append(np.array(frame_coords))
+        labels.append(frame_labels)
+        
+        i += 1
+    
+    return coordinates, labels
+
 
 def read_xyz_tinker(infile: str):
     """

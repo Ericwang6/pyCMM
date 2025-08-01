@@ -460,12 +460,8 @@ class CMMPolarization(nn.Module):
         alpha_inv
     ):
         
-        self.store_input(b_vector)
-        # TODO: Can also try an extrapolation based on input-output pairs
-        #guess_solution = self.get_extrapolated_guess_from_inputs()
-        # NOTE(JOE): Second-order extrapolation isn't helping at all. Not sure if I implemented it wrong or what.
-        self.get_extrapolated_guess_from_outputs()
-        # guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
+        #self.store_input(b_vector)
+        #self.get_extrapolated_guess_from_outputs()
         guess_solution = guess
 
         induced_multipoles, info = self.solve(
@@ -481,12 +477,12 @@ class CMMPolarization(nn.Module):
             alpha_inv
         )
 
-        self.store_output(induced_multipoles)
-        if self.n_solves >= self.n_extrapolate_from:
-            if self.guess_error.numel() == 0:
-                self.store_extrapolated_output(guess_solution - induced_multipoles)
-            else:
-                self.store_extrapolated_output(guess_solution - self.guess_error - induced_multipoles)
+        #self.store_output(induced_multipoles)
+        #if self.n_solves >= self.n_extrapolate_from:
+        #    if self.guess_error.numel() == 0:
+        #        self.store_extrapolated_output(guess_solution - induced_multipoles)
+        #    else:
+        #        self.store_extrapolated_output(guess_solution - self.guess_error - induced_multipoles)
 
         return induced_multipoles
     

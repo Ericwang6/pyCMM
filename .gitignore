@@ -1,7 +1,6 @@
 # Misc
 */temp.xyz
 *.traj
-*.xyz
 checkpoint*.json
 tests/scratch/*
 water216_cell_*.json

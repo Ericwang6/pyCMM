@@ -98,14 +98,17 @@ class System(nn.Module):
         self.pol_group_segment_indices = self.top.pol_group_segment_indices
         self.pol_group_lengths_g = self.top.pol_group_lengths_g
 
-        self.polarization_solver = CMMPolarization(
-            self.natoms, 
-            self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
-            rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
-            verbose=False, use_lr=self.use_ewald
-        )
-        self.polarization_max_iteration = polarization_max_iteration
-        self.polarization_tolerance = polarization_tolerance
+        if polarization_solver == 'cg':
+            self.polarization_solver = CMMPolarization(
+                self.natoms, 
+                self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
+                rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
+                verbose=False, use_lr=self.use_ewald
+            )
+            self.polarization_max_iteration = polarization_max_iteration
+            self.polarization_tolerance = polarization_tolerance
+        else:
+            raise ValueError("Only the conjugate gradient solver is currently supported.")
         
         # cutoff settings
         self.use_cutoff = use_cutoff
@@ -429,7 +432,7 @@ class System(nn.Module):
             b_xpol_ij = self.parametrizers['ExchangePolarization'].getExpandParameters("b_xpol", pairs)
             xpol_pairwise = computeShortRangeEnergyFromPairs(
                 dists, distVecs, 
-                xpol_mpoles[pairs_i], xpol_mpoles[pairs_j], b_xpol_ij, 
+                xpol_mpoles[pairs_i], xpol_mpoles[pairs_j], b_xpol_ij,
                 switch_sr, False, dists_inv
             )
             ene_xpol = 0.5 * torch.sum(xpol_pairwise)
@@ -579,8 +582,14 @@ class System(nn.Module):
                 b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
                 with torch.no_grad():
                     # Evaluate the initial guess #
-                    if self.last_induced_multipoles.numel() == 0:
-                        self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
+                    # NOTE(JOE): I have set up the solver to always use the induced dipole guess
+                    # as using the previous version breaks the solver when doing geometry optimizations.
+                    # We should provide an option to modify how the initial guess is chosen in the solver
+                    # options. Basically the options can be "use_solver_history" or not. Sometimes using
+                    # the history can make the solve poorly defined but usually it will speed things up
+                    # during MD, so users can try both and see what happens.
+                    #if self.last_induced_multipoles.numel() == 0:
+                    self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
                     
                     self.last_induced_multipoles = self.polarization_solver(
                         coords,
