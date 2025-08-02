@@ -17,7 +17,7 @@ def computeBond(coords: torch.Tensor, bondIndices: torch.Tensor, box: torch.Tens
         applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], box, boxInv)
     )
 
-@torch.compile
+#@torch.compile
 def computeAngleFromVecs(drVecs1, drVecs2):
     cosVal = torch.sum(drVecs1 * drVecs2, dim=1) / torch.norm(drVecs1, dim=1) / torch.norm(drVecs2, dim=1)
     return torch.arccos(cosVal)
@@ -28,12 +28,12 @@ def computeAngle(coords: torch.Tensor, angleIndices: torch.Tensor, box: torch.Te
         applyPBC(coords[angleIndices[:, 2]] - coords[angleIndices[:, 1]], box, boxInv)
     )
 
-@torch.compile
+#@torch.compile
 def computeChargeFluxBond(r: torch.Tensor, req: torch.Tensor, j_cf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     flux = j_cf * (r - req)
     return (-flux, flux)
 
-@torch.compile
+#@torch.compile
 def computeChargeFluxBondBond(
     r1: torch.Tensor, r2: torch.Tensor,
     req1: torch.Tensor, req2: torch.Tensor,
@@ -43,7 +43,7 @@ def computeChargeFluxBondBond(
     flux_2 = j_bb_cf_2 * (r1 - req1)
     return (flux_1, -flux_1, flux_2, -flux_2)
 
-@torch.compile
+#@torch.compile
 def computeChargeFluxAngle(
     theta: torch.Tensor,
     thetaeq: torch.Tensor,
@@ -52,11 +52,11 @@ def computeChargeFluxAngle(
     flux = theta_cf * (theta - thetaeq)
     return (flux, -2*flux, flux)
 
-@torch.compile
+#@torch.compile
 def computeHardnessChangeBond(r: torch.Tensor, req: torch.Tensor, k_hardness: torch.Tensor) -> torch.Tensor:
     return torch.pow(req / r, k_hardness)
 
-@torch.compile
+#@torch.compile
 def computeHardnessChangeBondBond(
         r1: torch.Tensor, r2: torch.Tensor,
         req1: torch.Tensor, req2: torch.Tensor,
@@ -67,7 +67,7 @@ def computeHardnessChangeBondBond(
          torch.pow(req1 / r1, k_bb_hardness_2)
     )
 
-@torch.compile
+#@torch.compile
 def computeHardnessChangeAngle(
         theta: torch.Tensor,
         thetaeq: torch.Tensor,
@@ -77,11 +77,11 @@ def computeHardnessChangeAngle(
 def computeHarmonicBondPotential(r: torch.Tensor, req: torch.Tensor, k_b: torch.Tensor):
     return 0.5 * k_b * (r - req)**2
 
-@torch.compile
+#@torch.compile
 def computeMorseBondPotential(r: torch.Tensor, req: torch.Tensor, d: torch.Tensor, a: torch.Tensor):
     return d * (1 - torch.exp(-a * (r - req))) ** 2
 
-@torch.compile
+#@torch.compile
 def computeBondBondCoupling(r1: torch.Tensor, r2: torch.Tensor, req1: torch.Tensor, req2: torch.Tensor, k: torch.Tensor, minv: float = -0.002):
     energy = k * (r1 - req1) * (r2 - req2)
     return torch.where(energy > minv, energy, minv)
@@ -89,16 +89,16 @@ def computeBondBondCoupling(r1: torch.Tensor, r2: torch.Tensor, req1: torch.Tens
 def computeHarmonicAnglePotential(theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor):
     return 0.5 * k * (theta - thetaeq)**2
 
-@torch.compile
+#@torch.compile
 def computeCosAnglePotential(theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor):
     return k / 2 * (torch.cos(theta) - torch.cos(thetaeq)) ** 2
 
-@torch.compile
+#@torch.compile
 def computeBondAngleCoupling(r: torch.Tensor, req: torch.Tensor, theta: torch.Tensor, thetaeq: torch.Tensor, k: torch.Tensor, minv: float = -0.002):
     energy = k * (r - req) * (torch.cos(theta) - torch.cos(thetaeq))
     return torch.where(energy > minv, energy, minv)
 
-@torch.compile
+#@torch.compile
 def computeFieldDependentMorseParams(
         bond_dists_p: torch.Tensor, bond_vecs_p: torch.Tensor,
         k_e_p: torch.Tensor, D_e_p: torch.Tensor, r_e_p: torch.Tensor,

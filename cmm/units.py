@@ -15,6 +15,7 @@ DEBYE2EBOHR = DEBYE2EA / BOHR2ANG
 HARTREE2KJ = constants.value("atomic unit of energy") * AVOGADRO / 1000
 HARTREE2KCAL = HARTREE2KJ / 4.184
 HARTREE2EV = constants.value("Hartree energy in eV")
+HARTREE2WAVENUMBER = 219474.63
 
 EPSILON0 = constants.epsilon_0
 

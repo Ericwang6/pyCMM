@@ -4,7 +4,7 @@ import torch
 from torch_scatter import scatter
 from .multipole import computeInteractionTensor
 
-@torch.compile
+#@torch.compile
 def computeDampFactorsErf(dr: torch.Tensor, b: float):
     u = b * dr
     erf_u = torch.erf(u)
@@ -29,7 +29,7 @@ def computeDampFactorsErf(dr: torch.Tensor, b: float):
 
     return torch.stack([erf_u - prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-@torch.compile
+#@torch.compile
 def computeDampFactorsErfc(dr: torch.Tensor, b: float):
     u = b * dr
     erfc_u = torch.erfc(u)
@@ -54,7 +54,7 @@ def computeDampFactorsErfc(dr: torch.Tensor, b: float):
 
     return torch.stack([erfc_u + prefactor * p * exp2_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-@torch.compile
+#@torch.compile
 def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
     u = b * dr
     u2 = u * u
@@ -70,7 +70,7 @@ def computeOneCenterDampFactorsSlater(dr: torch.Tensor, b: torch.Tensor):
 
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-@torch.compile
+#@torch.compile
 def computeTwoCenterDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u
@@ -90,7 +90,7 @@ def computeTwoCenterDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
 
     return torch.stack([1 - p * exp_u for p in [p1, p3, p5, p7, p9]], dim=0)
 
-@torch.compile
+#@torch.compile
 def computePolarizationDampFactorsSlater(dr: torch.Tensor, bij: torch.Tensor):
     u = bij * dr
     u2 = u * u

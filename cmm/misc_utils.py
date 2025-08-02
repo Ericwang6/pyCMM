@@ -7,25 +7,53 @@ import tempfile
 import os
 from contextlib import contextmanager
 
-def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
-    """
-    Writes a plain xyz file.
-    
-    Args:
-        outfile (str): Name of output file.
-        labels (List[str]): Element labels of all atoms (N,).
-        coords (torch.Tensor): Positions of all atoms (N, 3).
-    """
+#def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
+#    """
+#    Writes a plain xyz file.
+#    
+#    Args:
+#        outfile (str): Name of output file.
+#        labels (List[str]): Element labels of all atoms (N,).
+#        coords (torch.Tensor): Positions of all atoms (N, 3).
+#    """
+#
+#    natoms = coords.size()[0]
+#    assert natoms == len(labels), "Number of atom labels and coordinates do not match."
+#    with open(outfile, "w") as f:
+#        header = str(natoms) + "\n\n"
+#        f.write(header)
+#        for i in range(natoms):
+#            vec = coords[i, :]
+#            line = labels[i] + " " + str(vec[0].item()) + " " + str(vec[1].item()) + " " + str(vec[2].item()) + "\n"
+#            f.write(line)
 
-    natoms = coords.size()[0]
-    assert natoms == len(labels), "Number of atom labels and coordinates do not match."
-    with open(outfile, "w") as f:
-        header = str(natoms) + "\n\n"
-        f.write(header)
-        for i in range(natoms):
-            vec = coords[i, :]
-            line = labels[i] + " " + str(vec[0].item()) + " " + str(vec[1].item()) + " " + str(vec[2].item()) + "\n"
-            f.write(line)
+def write_xyz(filename, labels_list, coords_list, comments=None):
+    if len(labels_list) != len(coords_list):
+        raise ValueError("Number of label lists must match number of coordinate arrays")
+    
+    with open(filename, 'w') as f:
+        for i, (labels, coords) in enumerate(zip(labels_list, coords_list)):
+            if len(labels) != coords.shape[0]:
+                raise ValueError(f"Frame {i}: Number of labels ({len(labels)}) must match "
+                               f"number of coordinates ({coords.shape[0]})")
+            
+            if coords.shape[1] != 3:
+                raise ValueError(f"Frame {i}: Coordinates must have shape (N, 3), "
+                               f"got {coords.shape}")
+            
+            # Write number of atoms
+            n_atoms = len(labels)
+            f.write(f"{n_atoms}\n")
+            
+            # Write comment line
+            if comments is not None and i < len(comments):
+                f.write(f"{comments[i]}\n")
+            else:
+                f.write(f"Frame {i + 1}\n")
+            
+            # Write atomic coordinates
+            for label, coord in zip(labels, coords):
+                f.write(f"{label:2s} {coord[0]:12.6f} {coord[1]:12.6f} {coord[2]:12.6f}\n")
 
 def read_xyz(filepath: str) -> Tuple[List[np.ndarray], List[List[str]]]:
     """
@@ -274,3 +302,28 @@ def temporary_pdb_file(pdb_content):
                 os.unlink(temp_path)
             except:
                 pass
+
+def get_masses(labels: List[str]):
+    mass_table = {
+        'H': 1.00782503223,
+        'D': 2.0141017778,
+        'C': 11.9999999958,
+        'N': 14.003074,
+        'O': 15.99491561957,
+        'Li': 6.96,
+        'Na': 22.98976928,
+        'K': 39.0983,
+        'Rb': 85.4678,
+        'Cs': 132.90545196,
+        'Be': 9.0121831,
+        'Mg': 24.3055,
+        'Ca': 40.078,
+        'F': 18.998403163,
+        'Cl': 35.450,
+        'Br': 79.904,
+        'I': 126.90447
+    }
+    masses = torch.zeros((len(labels),), dtype=torch.float64)
+    for i in range(len(labels)):
+        masses[i] = mass_table[labels[i]]
+    return masses

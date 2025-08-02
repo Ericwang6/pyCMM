@@ -44,7 +44,7 @@ def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos
     rotMatrix = torch.hstack((xvec, yvec, zvec)).reshape(-1, 3, 3)
     return rotMatrix
 
-@torch.compile
+#@torch.compile
 def computeLocal2GlobalRotationMatrixBatch(
     positions: torch.Tensor, 
     zAtoms: torch.Tensor, 
@@ -123,7 +123,7 @@ def computeLocal2GlobalRotationMatrixBatch(
     return rotMatrix
 
 
-@torch.compile
+#@torch.compile
 def scaleMultipoles(
     mPoles: torch.Tensor, 
     monoScales: torch.Tensor, dipoScales: torch.Tensor, quadScales: torch.Tensor,
@@ -136,11 +136,11 @@ def scaleMultipoles(
     mPolesScaled[:, 4:]  += mPoles[:, 4:] * quadScales.unsqueeze(1)
     return mPolesScaled
 
-@torch.compile
+#@torch.compile
 def rotateDipoles(dipo: torch.Tensor, rotMatrix: torch.Tensor):
     return torch.bmm(dipo.unsqueeze(1), rotMatrix)
 
-@torch.compile
+#@torch.compile
 def rotateQuadrupoles(quad: torch.Tensor, rotMatrix: torch.Tensor):
     return torch.bmm(torch.bmm(rotMatrix.permute(0, 2, 1), quad), rotMatrix)
 
@@ -168,7 +168,7 @@ def rotateMultipoles(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor,
     quad = rotateQuadrupoles(quad, rotMatrix)[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]]
     return torch.hstack((mono, dipo, quad))
 
-@torch.compile
+#@torch.compile
 def convertMultipolesToPolytensor(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor):
     """
     Takes already-rotated multipoles and flattens to (N, 10) polytensor with quadrupole
@@ -225,7 +225,7 @@ def computeSphericalQuadrupoles(quad_c: torch.Tensor):
     Q_22s = quad_c[:, 0, 1] / HALF_SQRT3
     return torch.vstack((Q_20, Q_21c, Q_21s, Q_22c, Q_22s)).T.reshape(-1, 5)
 
-@torch.compile
+#@torch.compile
 def computeInteractionTensor(drVec: torch.Tensor, dampFactors: torch.Tensor, drInv: Optional[torch.Tensor] = None, rank: int = 2):
     """
     drVec: N x 3

@@ -567,7 +567,7 @@ class CMM(ForceField):
         
         return dipole_moment
 
-    #@torch.compile
+    ##@torch.compile
     def evaluate(self, cm: CoordinateManager, topology: Topology, params: Parameterizer, reset_grads: bool=False):
         # Get all intermolecular and intramolecular pairs, dists, and vectors inside long-range cutoff #
         pairs, dists, dist_vecs = cm.get_distances_vectors_and_pairs(topology, reset_grads=reset_grads)

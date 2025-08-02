@@ -20,7 +20,7 @@ def computeDispersion(
     damp = 1 - exp_u * (1 + u + u2 / 2 + u3 / 6 + u4 / 24 + u5 / 120 + u6 / 720)
     return -damp * c6_ij / torch.pow(dr, 6)
 
-@torch.compile
+#@torch.compile
 def computeDispersionFromPairs(
     dists_p: torch.Tensor, 
     c6_ij_p: torch.Tensor,b_ij_p: torch.Tensor

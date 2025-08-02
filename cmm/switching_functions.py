@@ -16,7 +16,7 @@ def smooth_function(x):
     return 1 - 10 * x**3 + 15 * x**4 - 6 * x**5
 
 
-@torch.compile
+#@torch.compile
 class SwitchFunction(nn.Module):
     def __init__(self, on: bool, cutoff: float, buffer: float):
         super().__init__()
