@@ -499,8 +499,8 @@ class SystemNoCutoff:
         b_xpol = atomic_params['b_xpol']
         xpol_pairwise = computeShortRangeEnergyFromPairs(
             dr, drVec,
-            multipoles_xpol[pairs[1]], multipoles_xpol[pairs[0]],
-            torch.sqrt(b_xpol[pairs[1]] * b_xpol[pairs[0]]),
+            multipoles_xpol[pairs[0]], multipoles_xpol[pairs[1]],
+            torch.sqrt(b_xpol[pairs[0]] * b_xpol[pairs[1]]),
             False
         )
         ene_xpol = torch.sum(xpol_pairwise) / 2 * HARTREE2KCAL
