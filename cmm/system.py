@@ -195,8 +195,8 @@ class System(nn.Module):
         # Charge flux
         charge_flux = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
         charge_flux_pauli = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
-        hardness_change = torch.ones(self.natoms, device=coords.device, dtype=coords.dtype)
-        hardness_flux = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
+        #hardness_change = torch.ones(self.natoms, device=coords.device, dtype=coords.dtype)
+        #hardness_flux = torch.zeros(self.natoms, device=coords.device, dtype=coords.dtype)
         
         if not self.parametrizers['Bond'].is_empty:
             bondIndices = self.parametrizers['Bond'].getExpandParameters("atomIndices")
@@ -212,10 +212,10 @@ class System(nn.Module):
             charge_flux_pauli.scatter_add_(0, bondIndices[:, 0], flux_pauli_bond[0])
             charge_flux_pauli.scatter_add_(0, bondIndices[:, 1], flux_pauli_bond[1])
             
-            k_hardness_b = self.parametrizers['Bond'].getExpandParameters("k_hardness_b")
-            hardness_change_bond = computeHardnessChangeBond(bonds, r_eq, k_hardness_b)
+            #k_hardness_b = self.parametrizers['Bond'].getExpandParameters("k_hardness_b")
+            #hardness_change_bond = computeHardnessChangeBond(bonds, r_eq, k_hardness_b)
             # NOTE(Eric): here can we use in-place operations?
-            hardness_change = hardness_change.scatter_reduce(0, bondIndices[:, 1], hardness_change_bond, 'prod')
+            #hardness_change = hardness_change.scatter_reduce(0, bondIndices[:, 1], hardness_change_bond, 'prod')
         
         if not self.parametrizers['Angle'].is_empty:
             angleIndices = self.parametrizers['Angle'].getExpandParameters("atomIndices")
@@ -226,8 +226,8 @@ class System(nn.Module):
             j_cf_angle = self.parametrizers['Angle'].getExpandParameters("j_cf_angle")
             k_th = self.parametrizers['Angle'].getExpandParameters("k_theta")
             k_bb = self.parametrizers['Angle'].getExpandParameters("k_bb")
-            k_hardness_bb = self.parametrizers['Angle'].getExpandParameters("k_hardness_bb")
-            k_hardness_angle = self.parametrizers['Angle'].getExpandParameters("k_hardness_angle")
+            #k_hardness_bb = self.parametrizers['Angle'].getExpandParameters("k_hardness_bb")
+            #k_hardness_angle = self.parametrizers['Angle'].getExpandParameters("k_hardness_angle")
             k_ba_1 = self.parametrizers['Angle'].getExpandParameters("k_ba_1")
             k_ba_2 = self.parametrizers['Angle'].getExpandParameters("k_ba_2")
             
@@ -248,15 +248,15 @@ class System(nn.Module):
             charge_flux.scatter_add_(0, angleIndices[:, 2], flux_bb[2])
             charge_flux.scatter_add_(0, angleIndices[:, 1], flux_bb[3])
 
-            hardness_change_bb_1, hardness_change_bb_2 = computeHardnessChangeBondBond(r1, r2, r_eq_1, r_eq_2, k_hardness_bb, k_hardness_bb)
-            hardness_flux_angle = computeHardnessChangeAngle(theta, theta_eq, k_hardness_angle)
+            #hardness_change_bb_1, hardness_change_bb_2 = computeHardnessChangeBondBond(r1, r2, r_eq_1, r_eq_2, k_hardness_bb, k_hardness_bb)
+            #hardness_flux_angle = computeHardnessChangeAngle(theta, theta_eq, k_hardness_angle)
 
             # NOTE(Eric): again, can we do in-place operations
-            hardness_change.scatter_reduce(0, angleIndices[:, 0], hardness_change_bb_1, 'prod')
-            hardness_change.scatter_reduce(0, angleIndices[:, 2], hardness_change_bb_2, 'prod')
+            #hardness_change.scatter_reduce(0, angleIndices[:, 0], hardness_change_bb_1, 'prod')
+            #hardness_change.scatter_reduce(0, angleIndices[:, 2], hardness_change_bb_2, 'prod')
 
-            hardness_flux.scatter_add_(0, angleIndices[:, 0], hardness_flux_angle)
-            hardness_flux.scatter_add_(0, angleIndices[:, 2], hardness_flux_angle)
+            #hardness_flux.scatter_add_(0, angleIndices[:, 0], hardness_flux_angle)
+            #hardness_flux.scatter_add_(0, angleIndices[:, 2], hardness_flux_angle)
 
             ene_angle = torch.sum(computeCosAnglePotential(theta, theta_eq, k_th))
             ene_bb = torch.sum(computeBondBondCoupling(r1, r2, r_eq_1, r_eq_2, k_bb))
