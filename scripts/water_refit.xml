@@ -29,8 +29,8 @@
         <Xpol type="hw" q_xpol="0.7142" Kdipo_xpol="0.2058" Kquad_xpol="-0.2712" b_xpol="3.5033" />
     </ExchangePolarization>
     <Dispersion>
-        <Disp type="ow" C6_disp="31.5175" b_disp="1.7072" />
-        <Disp type="hw" C6_disp="3.3887" b_disp="1.2700" />
+        <Disp type="ow" C6_disp="35.8289" b_disp="1.84302" />
+        <Disp type="hw" C6_disp="1.98954" b_disp="1.30993" />
     </Dispersion>
     <ChargeTransfer>
         <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485" />

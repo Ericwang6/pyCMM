@@ -121,8 +121,8 @@ def computeFieldDependentMorseParams(
     # topology builder will have to look at the specific bond and force field terms
     # requested so that it can set up the bond indices appropriately. -Joe
     E_proj_p = torch.sum(bond_vecs_p * E_field_p, dim=1) / bond_dists_p
-    dr_e_p = E_proj_p * dipole_1_p / (k_e_p - E_proj_p * dipole_2_p) + ct_slope_1_p * dQ_ct_p * dQ_ct_p
-    k_e_fd = k_e_p - (3 * k_e_p * torch.sqrt(0.5 * k_e_p / D_e_p) * dr_e_p + E_proj_p * dipole_2_p) + ct_slope_2_p * dQ_ct_p * dQ_ct_p
+    dr_e_p = E_proj_p * dipole_1_p / (k_e_p - E_proj_p * dipole_2_p) #+ ct_slope_1_p * dQ_ct_p * dQ_ct_p
+    k_e_fd = k_e_p - (3 * k_e_p * torch.sqrt(0.5 * k_e_p / D_e_p) * dr_e_p + E_proj_p * dipole_2_p) #+ ct_slope_2_p * dQ_ct_p * dQ_ct_p
     
     # Ideally this will never happen but this is how I implemented it originally
     # to avoid the possiblity of taking a sqrt of a negative force constant
