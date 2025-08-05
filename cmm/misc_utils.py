@@ -1,6 +1,7 @@
 import torch
 from typing import List
 import numpy as np
+import os
 
 def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
     """
@@ -76,7 +77,117 @@ def read_xyz_tinker(infile: str):
     # Subtract 1 from bond arrays because tinker xyz specifies the first atom starting from 1.
     return atom_labels, np.array(atom_types, dtype=np.int64), np.vstack(coords), np.array([np.array(bonds_start_i_less_than_j) - 1, np.array(bonds_end_i_less_than_j) - 1])
 
+def extract_frame_as_pdb_string(pdb_file, frame_index):
+    """
+    Extract a specific frame from a multi-frame PDB file as a string.
+    
+    Args:
+        pdb_file (str): Path to the PDB file
+        frame_index (int): Zero-based index of the frame to extract
+    
+    Returns:
+        str: PDB content for the specified frame
+    """
+    with open(pdb_file, 'r') as f:
+        lines = f.readlines()
+    
+    frame_lines = []
+    current_frame = 0
+    in_target_frame = False
+    has_model_records = any(line.startswith('MODEL') for line in lines)
+    
+    # Handle files with MODEL/ENDMDL records (multi-frame)
+    if has_model_records:
+        for line in lines:
+            if line.startswith('MODEL'):
+                model_num = int(line.split()[1]) if len(line.split()) > 1 else current_frame + 1
+                in_target_frame = (current_frame == frame_index)
+                if in_target_frame:
+                    frame_lines.append(line)
+            elif line.startswith('ENDMDL'):
+                if in_target_frame:
+                    frame_lines.append(line)
+                    break
+                current_frame += 1
+            elif in_target_frame:
+                frame_lines.append(line)
+            elif not line.startswith(('ATOM', 'HETATM', 'CONECT', 'TER')):
+                # Include header lines (HEADER, TITLE, etc.) for all frames
+                if current_frame == 0:
+                    frame_lines.append(line)
+    
+    # Handle files without MODEL records (single frame or concatenated frames)
+    else:
+        # This is trickier - we need to identify frame boundaries
+        # Assume frames are separated by END records or coordinate blocks
+        atom_blocks = []
+        current_block = []
+        header_lines = []
+        
+        for line in lines:
+            if line.startswith(('HEADER', 'TITLE', 'COMPND', 'SOURCE', 'REMARK')):
+                if not current_block:  # Only collect headers before first atom block
+                    header_lines.append(line)
+            elif line.startswith(('ATOM', 'HETATM')):
+                current_block.append(line)
+            elif line.startswith('END') and current_block:
+                atom_blocks.append(current_block)
+                current_block = []
+            elif line.startswith(('CONECT', 'TER')) and current_block:
+                current_block.append(line)
+        
+        # Handle case where file doesn't end with END
+        if current_block:
+            atom_blocks.append(current_block)
+        
+        if frame_index < len(atom_blocks):
+            frame_lines = header_lines + atom_blocks[frame_index] + ['END\n']
+        else:
+            raise IndexError(f"Frame {frame_index} not found. File has {len(atom_blocks)} frames.")
+    
+    if not frame_lines:
+        raise IndexError(f"Frame {frame_index} not found in PDB file")
+    
+    return ''.join(frame_lines)
 
+@contextmanager
+def temporary_pdb_file(pdb_content):
+    """
+    Context manager for creating and cleaning up temporary PDB files.
+    
+    Args:
+        pdb_content (str): PDB file content as string
+    
+    Yields:
+        str: Path to the temporary PDB file
+    """
+    temp_fd = None
+    temp_path = None
+    
+    try:
+        # Create temporary file
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.pdb', text=True)
+        
+        # Write content to temporary file
+        with os.fdopen(temp_fd, 'w') as temp_file:
+            temp_file.write(pdb_content)
+            temp_fd = None  # Prevent double-close
+        
+        yield temp_path
+        
+    finally:
+        # Clean up
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except:
+                pass
+        
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
 
 if __name__ == "__main__":
     grid = torch.linspace(-10.0, 10.0, 10)
