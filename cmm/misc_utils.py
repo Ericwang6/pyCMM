@@ -2,6 +2,8 @@ import torch
 from typing import List
 import numpy as np
 import os
+from contextlib import contextmanager
+import tempfile
 
 def write_xyz(outfile: str, labels: List[str], coords: torch.Tensor) -> None:
     """
