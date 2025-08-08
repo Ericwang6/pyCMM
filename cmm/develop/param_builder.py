@@ -267,9 +267,9 @@ if __name__ == "__main__":
         "H1": "hw",
         "H2": "hw"
     })
-    builder.add_molecule("LI", {
-        "LI": "Li+",
-    })
+    #builder.add_molecule("Na", {
+    #    "Na": "Na+",
+    #})
     
     # Add oxygen atom type parameters
     builder.add_atom_type(
@@ -337,41 +337,41 @@ if __name__ == "__main__":
         Kquad_ct_don=0.0568152
     )
 
-    builder.add_atom_type(
-        type_name="Na+",
-        Z=3.5489,
-        mono=1.0,
-        dipo=[0.0, 0.0, 0.0],
-        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
-        b_elec=2.59626,
-        axis_type="Global",
-        z_atom="",
-        x_atom="",
-        y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
-        Kdipo_pauli=0.0,
-        Kquad_pauli=0.0,
-        C6_disp=1.98954,
-        b_disp=1.30993,
-        alpha=[0.9542199, 0.0, 0.0, 0.9542199, 0.0, 0.9542199],
-        eta=0.0,
-        b_xpol=2.04028,
-        q_xpol=0.200089,
-        Kdipo_xpol=0.0,
-        Kquad_xpol=0.0,
-        b_ct=1.876471,
-        q_ct_acc=1.07641,
-        Kdipo_ct_acc=0.0,
-        Kquad_ct_acc=0.0,
-        q_ct_don=0.167905,
-        Kdipo_ct_don=0.0,
-        Kquad_ct_don=0.0
-    )
+    #builder.add_atom_type(
+    #    type_name="Na+",
+    #    Z=3.5489,
+    #    mono=1.0,
+    #    dipo=[0.0, 0.0, 0.0],
+    #    quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+    #    b_elec=2.59626,
+    #    axis_type="Global",
+    #    z_atom="",
+    #    x_atom="",
+    #    y_atom="",
+    #    b_pauli=2.5732,
+    #    q_pauli=0.9290,
+    #    Kdipo_pauli=0.0,
+    #    Kquad_pauli=0.0,
+    #    C6_disp=1.98954,
+    #    b_disp=1.30993,
+    #    alpha=[0.9542199, 0.0, 0.0, 0.9542199, 0.0, 0.9542199],
+    #    eta=0.0,
+    #    b_xpol=2.04028,
+    #    q_xpol=0.200089,
+    #    Kdipo_xpol=0.0,
+    #    Kquad_xpol=0.0,
+    #    b_ct=1.876471,
+    #    q_ct_acc=1.07641,
+    #    Kdipo_ct_acc=0.0,
+    #    Kquad_ct_acc=0.0,
+    #    q_ct_don=0.167905,
+    #    Kdipo_ct_don=0.0,
+    #    Kquad_ct_don=0.0
+    #)
     
     # Add pair parameters
     builder.add_pair_params(["ow", "hw"], eps_ct=2.624816590940708)
-    builder.add_pair_params(["ow", "Li+"], eps_ct=1.036375753)
+    #builder.add_pair_params(["ow", "Na+"], eps_ct=1.036375753)
     
     # Add bond parameters
     builder.add_bond_params(
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     # Add angle parameters
     builder.add_angle_params(
         ["hw", "ow", "hw"],
-        theta_eq=1.5505545239235896,
+        theta_eq=1.822532146,
         j_cf_angle=0.0220891,
         j_cf_bb=-0.0332338
     )
