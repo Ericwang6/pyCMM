@@ -13,7 +13,7 @@ from scipy.sparse import coo_matrix
 import openmm.app as app
 
 from .multipole import (
-    AxisTypes, 
+    AxisTypes,
     computeCartesianQuadrupoles, 
     computeLocal2GlobalRotationMatrixBatch,
     rotateMultipoles,
