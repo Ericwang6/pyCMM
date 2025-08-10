@@ -25,12 +25,12 @@
         <Pauli type="hw" q_pauli="0.9290" Kdipo_pauli="-0.6437" Kquad_pauli="-0.6274" b_pauli="2.5732" />
     </PauliRepulsion>
     <ExchangePolarization>
-        <Xpol type="ow" q_xpol="0.9814263774220028" Kdipo_xpol="-1.473730112407935" Kquad_xpol="-0.4704731958830066" b_xpol="3.0129766057335683" />
-        <Xpol type="hw" q_xpol="0.45317527158520965" Kdipo_xpol="-0.42040484016620344" Kquad_xpol="0.0013024065686213938" b_xpol="2.85894628572034" />
+        <Xpol type="ow" q_xpol="0.8491" Kdipo_xpol="1.0026" Kquad_xpol="-0.3606" b_xpol="2.5447" />
+        <Xpol type="hw" q_xpol="0.7142" Kdipo_xpol="0.2058" Kquad_xpol="-0.2712" b_xpol="3.5033" />
     </ExchangePolarization>
     <Dispersion>
-        <Disp type="ow" C6_disp="31.5175" b_disp="1.7072" />
-        <Disp type="hw" C6_disp="3.3887" b_disp="1.2700" />
+        <Disp type="ow" C6_disp="35.8289" b_disp="1.84302" />
+        <Disp type="hw" C6_disp="1.98954" b_disp="1.30993" />
     </Dispersion>
     <ChargeTransfer>
         <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485" />
@@ -38,7 +38,7 @@
         <Indirect type1="ow" type2="hw" eps_ct="2.624816590940708" />
     </ChargeTransfer>
     <Polarization>
-        <Pol type="ow" eta="6.18699e-6" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="ow" eta="6.18699e-06" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
         <Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
     </Polarization>
 </ForceField>
