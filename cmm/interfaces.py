@@ -10,6 +10,7 @@ from ase.stress import (
 # from cmm.topology import Topology
 # from cmm.system import System
 # from cmm.units import BOHR2ANG
+import time
 import numpy as np
 import torch
 import os
@@ -28,7 +29,8 @@ class CMMCalculator(Calculator):
         coords: torch.Tensor,
         box: torch.Tensor,
         output_folder: os.PathLike = ".",
-        use_cache=True
+        use_cache=True,
+        profile=False
     ):
         super().__init__()
         self._system = system
@@ -59,6 +61,9 @@ class CMMCalculator(Calculator):
             'forces': np.zeros((len(self.atoms), 3)),
             'stress': np.zeros((3, 3))
         }
+        self._run_profile = profile
+        self._profiler = {'forward': 0.0, 'backward': 0.0}
+        self._profiler_count = 0
     
     # def save_state(self, filename: str):
     #     """
@@ -241,11 +246,36 @@ class CMMCalculator(Calculator):
     #     json_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.json")
     #     self.save_state(json_filename)
     #     return json_filename
+
+    def reset_profiler(self):
+        for key in self._profiler:
+            self._profiler[key] = 0.0
+        self._profiler_count = 0
+    
+    def print_profiler(self):
+        for key in self._profiler:
+            print(f"{key}: {self._profiler[key] / self._profiler_count * 1000:.4f} ms")
     
     def _evaluate_ff(self):
+        if self._run_profile:
+            torch.cuda.synchronize()
+            start = time.time()
         self._energies = self._system.getEnergy(self.coords, self.box)
+        if self._run_profile:
+            torch.cuda.synchronize()
+            end = time.time()
+            self._profiler['forward'] += end - start
+            self._profiler_count += 1
+
         if self.coords.requires_grad:
+            if self._run_profile:
+                torch.cuda.synchronize()
+                start = time.time()
             self._energies['total'].backward()
+            if self._run_profile:
+                torch.cuda.synchronize()
+                end = time.time()
+                self._profiler['backward'] += end - start
 
         # Store results so that ASE can access them #
         self.results['energy'] = self._energies['total'].item() * Hartree

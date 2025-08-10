@@ -23,9 +23,9 @@ def direct_field_induced_dipole_guess(
     dipole_part = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
 
     return torch.cat([
-        torch.zeros(n_charges, device=elec_field.device),
+        torch.zeros(n_charges, dtype=elec_field.dtype, device=elec_field.device),
         dipole_part,
-        torch.zeros(n_groups, device=elec_field.device)
+        torch.zeros(n_groups, dtype=elec_field.dtype, device=elec_field.device)
     ])
 
 def direct_polarization_guess(

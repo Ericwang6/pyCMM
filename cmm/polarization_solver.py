@@ -303,7 +303,7 @@ class CMMPolarization(nn.Module):
         pol_group_indices_a,
         pol_group_segment_indices,
         pol_group_lengths_g,
-        rtol=1e-7, atol=0, maxiter=400, n_extrapolate_from=10, verbose=False,
+        rtol=1e-5, atol=0, maxiter=400, n_extrapolate_from=10, verbose=False,
         use_lr=True, alpha_ewald=0.0, k_max=0
     ):
         super().__init__()
@@ -312,6 +312,11 @@ class CMMPolarization(nn.Module):
         self.pol_group_segment_indices = pol_group_segment_indices
         self.pol_group_lengths_g = pol_group_lengths_g
         self.n_pol_groups = self.pol_group_lengths_g.size(0)
+
+        # print(self.pol_group_indices_a)
+        # print(self.pol_group_segment_indices)
+        # print(self.pol_group_lengths_g)
+        # print(self.n_pol_groups)
 
         self.rtol = rtol
         self.atol = atol
@@ -465,8 +470,8 @@ class CMMPolarization(nn.Module):
         #guess_solution = self.get_extrapolated_guess_from_inputs()
         # NOTE(JOE): Second-order extrapolation isn't helping at all. Not sure if I implemented it wrong or what.
         self.get_extrapolated_guess_from_outputs()
-        # guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
-        guess_solution = guess
+        guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
+        # guess_solution = guess
 
         induced_multipoles, info = self.solve(
             coords, box, b_vector, guess_solution, 
@@ -480,6 +485,7 @@ class CMMPolarization(nn.Module):
             alpha,
             alpha_inv
         )
+        # print(info)
 
         self.store_output(induced_multipoles)
         if self.n_solves >= self.n_extrapolate_from:
@@ -545,7 +551,8 @@ class CMMPolarization(nn.Module):
         niter = 1
         for k in range(1, self.maxiter + 1):
             # start_iter = time.perf_counter()
-            Z_k = direct_polarization_guess(R_k, self.natoms, self.n_pol_groups, polarizabilities)
+            # Z_k = direct_polarization_guess(R_k, self.natoms, self.n_pol_groups, polarizabilities)
+            Z_k = self.direct_polarization_guess_with_charge(R_k, polarizabilities, eta)
 
             if k == 1:
                 P_k = Z_k
@@ -605,8 +612,7 @@ class CMMPolarization(nn.Module):
         }
 
         return X_k, info
-
-
+    
     def compute_product_with_polarization_matrix(
         self, 
         coords, box,
@@ -670,3 +676,14 @@ class CMMPolarization(nn.Module):
             constraints
         ))
         return residual
+    
+    def direct_polarization_guess_with_charge(self, vec_in: torch.Tensor, polarizabilities: torch.Tensor, eta: torch.Tensor):
+        mean_eta = segment_csr(eta[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='mean') # size n_groups
+        sum_pot = segment_csr(vec_in[:self.natoms][self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
+        multiplier = (sum_pot - mean_eta * vec_in[-self.n_pol_groups:]) / self.pol_group_lengths_g
+        charges = (vec_in[:self.natoms] - multiplier.repeat_interleave(self.pol_group_lengths_g)) / mean_eta.repeat_interleave(self.pol_group_lengths_g)
+        elec_field = torch.narrow(vec_in, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3)
+        dipos = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
+        return torch.cat([charges, dipos, multiplier])
+
+

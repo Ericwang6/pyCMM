@@ -16,12 +16,14 @@ from .units import *
 from .switching_functions import switch_543
 from .polarization_solver import cg_solve, CG
 
+
 class ForceField(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self._atomic_params = {}
         self._pair_params = {}
         self.alpha_ewald = None
+
 
 class CMM(ForceField):
     def __init__(self,
