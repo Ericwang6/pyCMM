@@ -7,7 +7,6 @@ from ..forcefield import CMMForceField
 
 
 class Optimizer:
-
     def __init__(
         self, 
         ff: CMMForceField, 
@@ -140,7 +139,6 @@ class Optimizer:
                     param.clamp_(min=1e-6)
                     param *= mask
                 self.logger.warning(f'Some values in {name} are forcibly set to positive')
-
 
 def weight_mse(y_true: torch.Tensor, y_pred: torch.Tensor, weights=None):
     if weights is None:
@@ -283,4 +281,101 @@ class Trainer:
                     for name in print_params:
                         print(self.optimizer.named_params[name])
 
+class Trainer2:
+    def __init__(self, ff: CMMForceField, optimizer: Optimizer, target_weights = dict(), eda_weights = dict(), qsum_constr: float = 1e5, weight_func: str = 'interaction'):
+        self.ff = ff
+        self.optimizer = optimizer
+
+        # weights
+        self.target_weights = {
+            EdaData: 1.0,
+            EspData: 1000.0,
+            DipoleData: 1000.0,
+            PolarizabilityData: 1000.0
+        }
+        self.target_weights.update(target_weights)
+        
+        self.eda_weights = {
+            "perm_elec": 1.0,
+            "pauli": 1.0,
+            "disp": 1.0,
+            "ct": 1.0,
+            "pol": 1.0,
+            "total": 1.0
+        }
+        self.eda_weights.update(eda_weights)
+        self.qsum_constr = qsum_constr
+        
+        if weight_func is None:
+            self.weight_func = torch.ones_like
+        elif isinstance(weight_func, Callable):
+            self.weight_func = weight_func
+        elif weight_func == 'interaction':
+            self.weight_func = interaction_weight
+        else:
+            raise NotImplementedError(f"Unsupported weighting: {weight_func}")
+
+    def evaluate(self, datas, systems=None):
+        if systems is None:
+            systems = [self.ff.parametrize(datas.topologies[i]) for i in range(len(datas.topologies))]
+        
+        results = [systems[i].evaluate(datas.coords[i]) for i in range(len(datas.coords))]
+        res = {}
+
+        for key in results[0].keys():
+            # Extract all tensors for this key and concatenate them
+            energy_tensors = [d[key].unsqueeze(0) for d in results]
+            res[key] = torch.cat(energy_tensors, dim=0)
+            if key in datas.energies:
+                assert res[key].size() == datas.energies[key].size()
+
+        return res, datas.energies
     
+    def train(self, datas, num_epoch: int = 10, data_weights=None):
+        systems = [self.ff.parametrize(datas.topologies[i]) for i in range(len(datas.topologies))]
+        losses = [[] for _ in range(len(datas))]
+        
+        if data_weights is None:
+            data_weights = [float(getattr(data, 'num', 1.0)) for data in datas]
+        data_weights = torch.tensor(data_weights)
+        data_weights /= torch.sum(data_weights)
+
+        for n in range(num_epoch):
+            results, refs, ref_charges, charges = self.evaluate(datas, systems)
+            total_loss = 0.0
+            for i, (res, ref, data) in enumerate(zip(results, refs, datas)):
+                loss_weight = self.target_weights.get(data.__class__, 1000.0) * data_weights[i]
+                # eda data
+                if isinstance(res, dict):
+                    loss = {}
+                    for key in ref:
+                        l = weight_mse(ref[key], res[key], interaction_weight(ref['total']))
+                        total_loss += l * loss_weight * self.eda_weights.get(key, 1.0)
+                        loss[key] = l.detach().item()
+                else:
+                    l = weight_mse(ref, res)
+                    total_loss += l * loss_weight
+                    loss = l.detach().item()
+                print(n, data.__class__.__name__, loss)
+                losses[i].append(loss)
+            
+            if 'atomic_params/mono' in self.optimizer.named_params:
+                qloss = torch.sum((ref_charges - charges) ** 2)
+                total_loss += qloss * self.qsum_constr
+
+            self.optimizer.zero_grad()
+            total_loss.backward()
+            self.optimizer.step()
+
+        return losses
+    
+    def train_with_batch(self, datas, num_epoch: int = 10, batch_size=1, print_params=None, data_weights=None):
+        print("Train with batching...")
+        for n in range(num_epoch):
+            print(f"# Epoch {n}")
+            for i in range(0, len(datas), batch_size):
+                batch_data = datas[i: i + batch_size]
+                self.train(batch_data, 1, None)
+                if print_params is not None:
+                    for name in print_params:
+                        print(self.optimizer.named_params[name])

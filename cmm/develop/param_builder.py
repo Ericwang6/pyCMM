@@ -24,7 +24,7 @@ class ParameterBuilder:
             atom_mapping: Dictionary mapping atom labels to atom types
                          (e.g., {"O": "ow", "H1": "hw", "H2": "hw"})
         """
-        self.data["atomtypes"][molecule_name] = atom_mapping
+        self.data["atomtypes"][molecule_name.upper()] = atom_mapping
         return self
     
     def add_atom_type(self, 
@@ -76,7 +76,7 @@ class ParameterBuilder:
             **kwargs: Any additional custom parameters
         """
         params = {
-            "type": type_name,
+            "type": type_name.lower(),
             "Z": Z,
             "mono": mono,
             "dipo": dipo,
@@ -123,7 +123,7 @@ class ParameterBuilder:
             **kwargs: Any additional custom parameters
         """
         params = {
-            "type": type_pair,
+            "type": [type_pair[0].lower(), type_pair[1].lower()],
             "eps_ct": eps_ct
         }
         params.update(kwargs)
@@ -145,7 +145,7 @@ class ParameterBuilder:
             **kwargs: Any additional custom parameters
         """
         params = {
-            "type": type_pair,
+            "type": [type_pair[0].lower(), type_pair[1].lower()],
             "r_eq": r_eq
         }
         
@@ -173,7 +173,7 @@ class ParameterBuilder:
             **kwargs: Any additional custom parameters
         """
         params = {
-            "type": type_triplet,
+            "type": [type_triplet[0].lower(), type_triplet[1].lower(), type_triplet[2].lower()],
             "theta_eq": theta_eq
         }
         
@@ -267,7 +267,7 @@ if __name__ == "__main__":
         "H1": "hw",
         "H2": "hw"
     })
-    builder.add_molecule("Na", {
+    builder.add_molecule("NA", {
         "Na": "na+",
     })
     
@@ -338,7 +338,7 @@ if __name__ == "__main__":
     )
 
     builder.add_atom_type(
-        type_name="Na+",
+        type_name="na+",
         Z=3.5489,
         mono=1.0,
         dipo=[0.0, 0.0, 0.0],
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     
     # Add pair parameters
     builder.add_pair_params(["ow", "hw"], eps_ct=2.624816590940708)
-    builder.add_pair_params(["ow", "Na+"], eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "na+"], eps_ct=1.036375753)
     
     # Add bond parameters
     builder.add_bond_params(

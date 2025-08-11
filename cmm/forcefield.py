@@ -667,7 +667,7 @@ class CMMForceField:
         atypes = []
         for residue in topology.residues():
             for atom in residue.atoms():
-                atype = self.atypes_def.get(residue.name, {}).get(atom.name, None)
+                atype = self.atypes_def.get(residue.name, {}).get(atom.name.title(), None)
                 assert atype is not None, f'No atom type defined for {atom.name} in {residue.name}'
                 atypes.append(atype)
         return atypes
