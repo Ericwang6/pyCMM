@@ -332,8 +332,8 @@ class Trainer2:
         return res, datas.energies
     
     def train(self, datas, num_epoch: int = 10, data_weights=None):
-        systems = [self.ff.parametrize(datas.topologies[i]) for i in range(len(datas.topologies))]
-        losses = [[] for _ in range(len(datas))]
+        systems = [self.ff.parametrize(datas.topologies[i]) for i in range(datas.num)]
+        losses = [[] for _ in range(len(datas.topologies))]
         
         if data_weights is None:
             data_weights = [float(getattr(data, 'num', 1.0)) for data in datas]
@@ -341,28 +341,25 @@ class Trainer2:
         data_weights /= torch.sum(data_weights)
 
         for n in range(num_epoch):
-            results, refs, ref_charges, charges = self.evaluate(datas, systems)
+            results, refs = self.evaluate(datas, systems)
             total_loss = 0.0
-            for i, (res, ref, data) in enumerate(zip(results, refs, datas)):
-                loss_weight = self.target_weights.get(data.__class__, 1000.0) * data_weights[i]
+            for i in range(datas.num):
+                loss_weight = self.target_weights.get(datas.__class__, 1000.0) * data_weights[i]
                 # eda data
-                if isinstance(res, dict):
+                if isinstance(results, dict):
                     loss = {}
-                    for key in ref:
-                        l = weight_mse(ref[key], res[key], interaction_weight(ref['total']))
-                        total_loss += l * loss_weight * self.eda_weights.get(key, 1.0)
-                        loss[key] = l.detach().item()
+                    for key in refs.keys():
+                        if key is not 'int':
+                            l = weight_mse(refs[key], results[key], interaction_weight(refs['int']))
+                            total_loss += l * loss_weight * self.eda_weights.get(key, 1.0)
+                            loss[key] = l.detach().item()
                 else:
-                    l = weight_mse(ref, res)
+                    l = weight_mse(refs, results)
                     total_loss += l * loss_weight
                     loss = l.detach().item()
-                print(n, data.__class__.__name__, loss)
                 losses[i].append(loss)
-            
-            if 'atomic_params/mono' in self.optimizer.named_params:
-                qloss = torch.sum((ref_charges - charges) ** 2)
-                total_loss += qloss * self.qsum_constr
 
+            print(f"Step {n}\n{loss}")
             self.optimizer.zero_grad()
             total_loss.backward()
             self.optimizer.step()
