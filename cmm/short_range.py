@@ -97,3 +97,13 @@ def computePairwiseChargeTransfer(
     dq_forward = mPoles_don_i[:, 0] * mPoles_acc_j[:, 0] * drInvDamp * eps_ij
     dq_backward = mPoles_acc_i[:, 0] * mPoles_don_j[:, 0] * drInvDamp * eps_ij
     return enes, dq_forward - dq_backward
+
+def get_field_dependent_polarizabilities(
+        polarizabilities_a: torch.Tensor,
+        elec_field_a: torch.Tensor,
+        alpha_damp_exponent_a: torch.Tensor,
+        alpha_damp_max_a: torch.Tensor
+    ):
+    elec_field_mag_sq_a = torch.sum(elec_field_a * elec_field_a, dim=1)
+    damp_factor_a = alpha_damp_max_a * (1 - torch.exp(-alpha_damp_exponent_a * elec_field_mag_sq_a))
+    return polarizabilities_a - damp_factor_a.view(-1, 1, 1) * polarizabilities_a

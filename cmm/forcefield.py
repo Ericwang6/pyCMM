@@ -23,7 +23,9 @@ from .bonded import (
     computeChargeFluxBond, computeChargeFluxAngle, computeChargeFluxBondBond,
     computeBondFromVecs, computeAngleFromVecs
 )
-from .short_range import computeShortRangeEnergyFromPairs, scaleMultipoles, computePairwiseChargeTransfer
+from .short_range import (
+    computeShortRangeEnergyFromPairs, scaleMultipoles, computePairwiseChargeTransfer
+)
 from .dispersion import computeDispersionFromPairs
 from .electrostatics import computePermElecAndPolarizationEnergy, computePermanentElectricPotentialExpansion
 from .units import HARTREE2KCAL
@@ -435,6 +437,10 @@ class SystemNoCutoff:
             polarizabilities,
             atomic_params['eta'] * 2, # can we move this '2' in to param definition?
             self.group_charges,
+            None,
+            True,
+            atomic_params['alpha_damp_exponent'],
+            atomic_params['alpha_damp_max']
         )
 
         _, ene_pol_ct = computePermElecAndPolarizationEnergy(
@@ -447,6 +453,10 @@ class SystemNoCutoff:
             polarizabilities,
             atomic_params['eta'] * 2,
             self.group_charges + dq_groups,
+            None,
+            True,
+            atomic_params['alpha_damp_exponent'],
+            atomic_params['alpha_damp_max']
         )
         ene_perm_elec *= HARTREE2KCAL
         ene_pol *= HARTREE2KCAL

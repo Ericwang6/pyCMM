@@ -3,6 +3,7 @@ import torch
 from torch_scatter import scatter
 
 from .multipole import computeInteractionTensor
+from .short_range import get_field_dependent_polarizabilities
 
 
 def computePermElecOneCenterDampFactors(dr, b):
@@ -440,7 +441,10 @@ def computePermElecAndPolarizationEnergy(
     alpha: Optional[torch.Tensor] = None,
     eta: Optional[torch.Tensor] = None,
     groupCharges: Optional[torch.Tensor] = None,
-    pairs: Optional[torch.Tensor] = None
+    pairs: Optional[torch.Tensor] = None,
+    useVariablePolarizabilities: bool = False,
+    alpha_damp_exponent: Optional[torch.Tensor] = None,
+    alpha_damp_max: Optional[torch.Tensor] = None
 ):
     numSites = coords.shape[0]
     numGroups = len(groups)
@@ -504,6 +508,8 @@ def computePermElecAndPolarizationEnergy(
         # diag qq - hardness
         matA[numRange, numRange] += eta
         # diag dd - inv polarizabilities
+        if useVariablePolarizabilities:
+            alpha = get_field_dependent_polarizabilities(alpha, eField, alpha_damp_exponent, alpha_damp_max)
         alpha_inv = torch.linalg.inv(alpha) # shape numSites x 3 x 3
         offset = numSites + numGroups
         for i in range(numSites):
