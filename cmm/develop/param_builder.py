@@ -377,7 +377,7 @@ if __name__ == "__main__":
 
     builder.add_atom_type(
         type_name="li+",
-        Z=3.5489,
+        Z=1.0,
         mono=1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -386,8 +386,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=2.82412,
+        q_pauli=1.91402,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=0.609382,
@@ -420,8 +420,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=2.9209,
+        q_pauli=7.34252,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=5.4421,
@@ -445,7 +445,7 @@ if __name__ == "__main__":
 
     builder.add_atom_type(
         type_name="k+",
-        Z=3.5489,
+        Z=7.73324,
         mono=1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -454,8 +454,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=2.38994,
+        q_pauli=13.6855,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=45.6395,
@@ -479,7 +479,7 @@ if __name__ == "__main__":
 
     builder.add_atom_type(
         type_name="rb+",
-        Z=3.5489,
+        Z=12.2026,
         mono=1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -488,8 +488,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=2.34565,
+        q_pauli=22.0153,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=63.085,
@@ -513,7 +513,7 @@ if __name__ == "__main__":
 
     builder.add_atom_type(
         type_name="cs+",
-        Z=3.5489,
+        Z=11.5038,
         mono=1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -522,8 +522,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=2.06684,
+        q_pauli=24.1029,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=170.628,
@@ -547,7 +547,7 @@ if __name__ == "__main__":
 
     builder.add_atom_type(
         type_name="f-",
-        Z=3.5489,
+        Z=4.693,
         mono=-1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -556,8 +556,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=1.6851,
+        q_pauli=3.61413,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=146.12,
@@ -576,12 +576,12 @@ if __name__ == "__main__":
         Kdipo_ct_don=0.0,
         Kquad_ct_don=0.0,
         alpha_damp_max=0.75,
-        alpha_damp_exponent=200.0,
+        alpha_damp_exponent=241.724,
     )
 
     builder.add_atom_type(
         type_name="cl-",
-        Z=3.5489,
+        Z=12.1239,
         mono=-1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -590,8 +590,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=1.39256,
+        q_pauli=5.22659,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=661.859,
@@ -610,12 +610,12 @@ if __name__ == "__main__":
         Kdipo_ct_don=0.0,
         Kquad_ct_don=0.0,
         alpha_damp_max=0.75,
-        alpha_damp_exponent=200.0,
+        alpha_damp_exponent=428.717,
     )
 
     builder.add_atom_type(
         type_name="br-",
-        Z=3.5489,
+        Z=18.9726,
         mono=-1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -624,8 +624,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=1.33717,
+        q_pauli=6.36105,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=1115.92,
@@ -644,12 +644,12 @@ if __name__ == "__main__":
         Kdipo_ct_don=0.0,
         Kquad_ct_don=0.0,
         alpha_damp_max=0.75,
-        alpha_damp_exponent=250.0,
+        alpha_damp_exponent=484.249,
     )
 
     builder.add_atom_type(
         type_name="i-",
-        Z=3.5489,
+        Z=35.5833,
         mono=-1.0,
         dipo=[0.0, 0.0, 0.0],
         quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
@@ -658,8 +658,8 @@ if __name__ == "__main__":
         z_atom="",
         x_atom="",
         y_atom="",
-        b_pauli=2.5732,
-        q_pauli=0.9290,
+        b_pauli=1.30314,
+        q_pauli=9.36718,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
         C6_disp=1358.97,
@@ -678,7 +678,7 @@ if __name__ == "__main__":
         Kdipo_ct_don=0.0,
         Kquad_ct_don=0.0,
         alpha_damp_max=0.75,
-        alpha_damp_exponent=300.0,
+        alpha_damp_exponent=599.029,
     )
 
     builder.add_atom_type(
