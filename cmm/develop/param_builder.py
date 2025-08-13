@@ -57,6 +57,8 @@ class ParameterBuilder:
                       q_ct_don: Optional[float] = None,
                       Kdipo_ct_don: Optional[float] = None,
                       Kquad_ct_don: Optional[float] = None,
+                      alpha_damp_max: Optional[float] = None,
+                      alpha_damp_exponent: Optional[float] = None,
                       **kwargs):
         """
         Add atomic parameters for an atom type.
@@ -104,7 +106,9 @@ class ParameterBuilder:
             "Kquad_ct_acc": Kquad_ct_acc,
             "q_ct_don": q_ct_don,
             "Kdipo_ct_don": Kdipo_ct_don,
-            "Kquad_ct_don": Kquad_ct_don
+            "Kquad_ct_don": Kquad_ct_don,
+            "alpha_damp_max": alpha_damp_max,
+            "alpha_damp_exponent": alpha_damp_exponent,
         }
         
         # Add any additional custom parameters
@@ -267,8 +271,38 @@ if __name__ == "__main__":
         "H1": "hw",
         "H2": "hw"
     })
+    builder.add_molecule("LI", {
+        "Li": "li+",
+    })
     builder.add_molecule("NA", {
         "Na": "na+",
+    })
+    builder.add_molecule("K", {
+        "K": "k+",
+    })
+    builder.add_molecule("RB", {
+        "Rb": "rb+",
+    })
+    builder.add_molecule("CS", {
+        "Cs": "cs+",
+    })
+    builder.add_molecule("F", {
+        "F": "f-",
+    })
+    builder.add_molecule("CL", {
+        "Cl": "cl-",
+    })
+    builder.add_molecule("BR", {
+        "Br": "br-",
+    })
+    builder.add_molecule("I", {
+        "I": "i-",
+    })
+    builder.add_molecule("MG", {
+        "Mg": "mg2+",
+    })
+    builder.add_molecule("CA", {
+        "Ca": "ca2+",
     })
     
     # Add oxygen atom type parameters
@@ -301,7 +335,9 @@ if __name__ == "__main__":
         Kquad_ct_acc=0.0,
         q_ct_don=0.757752,
         Kdipo_ct_don=-0.512036,
-        Kquad_ct_don=-0.208186
+        Kquad_ct_don=-0.208186,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
     )
     
     # Add hydrogen atom type parameters
@@ -334,7 +370,43 @@ if __name__ == "__main__":
         Kquad_ct_acc=0.0,
         q_ct_don=0.00888982,
         Kdipo_ct_don=-0.0511668,
-        Kquad_ct_don=0.0568152
+        Kquad_ct_don=0.0568152,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="li+",
+        Z=3.5489,
+        mono=1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=0.609382,
+        b_disp=2.23422,
+        alpha=[0.1586152, 0.0, 0.0, 0.1586152, 0.0, 0.1586152],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
     )
 
     builder.add_atom_type(
@@ -352,8 +424,8 @@ if __name__ == "__main__":
         q_pauli=0.9290,
         Kdipo_pauli=0.0,
         Kquad_pauli=0.0,
-        C6_disp=1.98954,
-        b_disp=1.30993,
+        C6_disp=5.4421,
+        b_disp=1.99839,
         alpha=[0.9542199, 0.0, 0.0, 0.9542199, 0.0, 0.9542199],
         eta=0.0,
         b_xpol=2.04028,
@@ -366,12 +438,330 @@ if __name__ == "__main__":
         Kquad_ct_acc=0.0,
         q_ct_don=0.167905,
         Kdipo_ct_don=0.0,
-        Kquad_ct_don=0.0
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="k+",
+        Z=3.5489,
+        mono=1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=45.6395,
+        b_disp=1.95926,
+        alpha=[5.5376271, 0.0, 0.0, 5.5376271, 0.0, 5.5376271],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="rb+",
+        Z=3.5489,
+        mono=1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=63.085,
+        b_disp=4.01118,
+        alpha=[8.6857518, 0.0, 0.0, 8.6857518, 0.0, 8.6857518],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="cs+",
+        Z=3.5489,
+        mono=1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=170.628,
+        b_disp=4.01118,
+        alpha=[15.7177865, 0.0, 0.0, 15.7177865, 0.0, 15.7177865],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="f-",
+        Z=3.5489,
+        mono=-1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=146.12,
+        b_disp=1.21488,
+        alpha=[11.7270176, 0.0, 0.0, 11.7270176, 0.0, 11.7270176],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.75,
+        alpha_damp_exponent=200.0,
+    )
+
+    builder.add_atom_type(
+        type_name="cl-",
+        Z=3.5489,
+        mono=-1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=661.859,
+        b_disp=1.07019,
+        alpha=[32.2880907, 0.0, 0.0, 32.2880907, 0.0, 32.2880907],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.75,
+        alpha_damp_exponent=200.0,
+    )
+
+    builder.add_atom_type(
+        type_name="br-",
+        Z=3.5489,
+        mono=-1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=1115.92,
+        b_disp=0.978881,
+        alpha=[42.7172275, 0.0, 0.0, 42.7172275, 0.0, 42.7172275],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.75,
+        alpha_damp_exponent=250.0,
+    )
+
+    builder.add_atom_type(
+        type_name="i-",
+        Z=3.5489,
+        mono=-1.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=1358.97,
+        b_disp=1.30013,
+        alpha=[64.1111144, 0.0, 0.0, 64.1111144, 0.0, 64.1111144],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.75,
+        alpha_damp_exponent=300.0,
+    )
+
+    builder.add_atom_type(
+        type_name="mg2+",
+        Z=3.5489,
+        mono=2.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=1.98954,
+        b_disp=1.30993,
+        alpha=[0.4822524, 0.0, 0.0, 0.4822524, 0.0, 0.4822524],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
+    )
+
+    builder.add_atom_type(
+        type_name="ca2+",
+        Z=3.5489,
+        mono=2.0,
+        dipo=[0.0, 0.0, 0.0],
+        quad_s=[0.0, 0.0, 0.0, 0.0, 0.0],
+        b_elec=2.59626,
+        axis_type="NoAxisType",
+        z_atom="",
+        x_atom="",
+        y_atom="",
+        b_pauli=2.5732,
+        q_pauli=0.9290,
+        Kdipo_pauli=0.0,
+        Kquad_pauli=0.0,
+        C6_disp=1.98954,
+        b_disp=1.30993,
+        alpha=[3.2809409, 0.0, 0.0, 3.2809409, 0.0, 3.2809409],
+        eta=0.0,
+        b_xpol=2.04028,
+        q_xpol=0.200089,
+        Kdipo_xpol=0.0,
+        Kquad_xpol=0.0,
+        b_ct=1.876471,
+        q_ct_acc=1.07641,
+        Kdipo_ct_acc=0.0,
+        Kquad_ct_acc=0.0,
+        q_ct_don=0.167905,
+        Kdipo_ct_don=0.0,
+        Kquad_ct_don=0.0,
+        alpha_damp_max=0.0,
+        alpha_damp_exponent=0.0,
     )
     
     # Add pair parameters
-    builder.add_pair_params(["ow", "hw"], eps_ct=2.624816590940708)
-    builder.add_pair_params(["ow", "na+"], eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "hw"],   eps_ct=2.624816590940708)
+    builder.add_pair_params(["ow", "li+"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "na+"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "k+"],   eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "rb+"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "cs+"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "f-"],   eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "cl-"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "br-"],  eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "i-"],   eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "mg2+"], eps_ct=1.036375753)
+    builder.add_pair_params(["ow", "ca2+"], eps_ct=1.036375753)
     
     # Add bond parameters
     builder.add_bond_params(

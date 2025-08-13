@@ -5,8 +5,38 @@
             "H1": "hw",
             "H2": "hw"
         },
+        "LI": {
+            "Li": "li+"
+        },
         "NA": {
             "Na": "na+"
+        },
+        "K": {
+            "K": "k+"
+        },
+        "RB": {
+            "Rb": "rb+"
+        },
+        "CS": {
+            "Cs": "cs+"
+        },
+        "F": {
+            "F": "f-"
+        },
+        "CL": {
+            "Cl": "cl-"
+        },
+        "BR": {
+            "Br": "br-"
+        },
+        "I": {
+            "I": "i-"
+        },
+        "MG": {
+            "Mg": "mg2+"
+        },
+        "CA": {
+            "Ca": "ca2+"
         }
     },
     "atomic_params": [
@@ -56,7 +86,9 @@
             "Kquad_ct_acc": 0.0,
             "q_ct_don": 0.757752,
             "Kdipo_ct_don": -0.512036,
-            "Kquad_ct_don": -0.208186
+            "Kquad_ct_don": -0.208186,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
         },
         {
             "type": "hw",
@@ -104,7 +136,59 @@
             "Kquad_ct_acc": 0.0,
             "q_ct_don": 0.00888982,
             "Kdipo_ct_don": -0.0511668,
-            "Kquad_ct_don": 0.0568152
+            "Kquad_ct_don": 0.0568152,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "li+",
+            "Z": 3.5489,
+            "mono": 1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 0.609382,
+            "b_disp": 2.23422,
+            "alpha": [
+                0.1586152,
+                0.0,
+                0.0,
+                0.1586152,
+                0.0,
+                0.1586152
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
         },
         {
             "type": "na+",
@@ -131,8 +215,8 @@
             "q_pauli": 0.929,
             "Kdipo_pauli": 0.0,
             "Kquad_pauli": 0.0,
-            "C6_disp": 1.98954,
-            "b_disp": 1.30993,
+            "C6_disp": 5.4421,
+            "b_disp": 1.99839,
             "alpha": [
                 0.9542199,
                 0.0,
@@ -152,7 +236,459 @@
             "Kquad_ct_acc": 0.0,
             "q_ct_don": 0.167905,
             "Kdipo_ct_don": 0.0,
-            "Kquad_ct_don": 0.0
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "k+",
+            "Z": 3.5489,
+            "mono": 1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 45.6395,
+            "b_disp": 1.95926,
+            "alpha": [
+                5.5376271,
+                0.0,
+                0.0,
+                5.5376271,
+                0.0,
+                5.5376271
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "rb+",
+            "Z": 3.5489,
+            "mono": 1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 63.085,
+            "b_disp": 4.01118,
+            "alpha": [
+                8.6857518,
+                0.0,
+                0.0,
+                8.6857518,
+                0.0,
+                8.6857518
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "cs+",
+            "Z": 3.5489,
+            "mono": 1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 170.628,
+            "b_disp": 4.01118,
+            "alpha": [
+                15.7177865,
+                0.0,
+                0.0,
+                15.7177865,
+                0.0,
+                15.7177865
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "f-",
+            "Z": 3.5489,
+            "mono": -1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 146.12,
+            "b_disp": 1.21488,
+            "alpha": [
+                11.7270176,
+                0.0,
+                0.0,
+                11.7270176,
+                0.0,
+                11.7270176
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.75,
+            "alpha_damp_exponent": 200.0
+        },
+        {
+            "type": "cl-",
+            "Z": 3.5489,
+            "mono": -1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 661.859,
+            "b_disp": 1.07019,
+            "alpha": [
+                32.2880907,
+                0.0,
+                0.0,
+                32.2880907,
+                0.0,
+                32.2880907
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.75,
+            "alpha_damp_exponent": 200.0
+        },
+        {
+            "type": "br-",
+            "Z": 3.5489,
+            "mono": -1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 1115.92,
+            "b_disp": 0.978881,
+            "alpha": [
+                42.7172275,
+                0.0,
+                0.0,
+                42.7172275,
+                0.0,
+                42.7172275
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.75,
+            "alpha_damp_exponent": 250.0
+        },
+        {
+            "type": "i-",
+            "Z": 3.5489,
+            "mono": -1.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 1358.97,
+            "b_disp": 1.30013,
+            "alpha": [
+                64.1111144,
+                0.0,
+                0.0,
+                64.1111144,
+                0.0,
+                64.1111144
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.75,
+            "alpha_damp_exponent": 300.0
+        },
+        {
+            "type": "mg2+",
+            "Z": 3.5489,
+            "mono": 2.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 1.98954,
+            "b_disp": 1.30993,
+            "alpha": [
+                0.4822524,
+                0.0,
+                0.0,
+                0.4822524,
+                0.0,
+                0.4822524
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
+        },
+        {
+            "type": "ca2+",
+            "Z": 3.5489,
+            "mono": 2.0,
+            "dipo": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "quad_s": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "b_elec": 2.59626,
+            "axis_type": "NoAxisType",
+            "z_atom": "",
+            "x_atom": "",
+            "y_atom": "",
+            "b_pauli": 2.5732,
+            "q_pauli": 0.929,
+            "Kdipo_pauli": 0.0,
+            "Kquad_pauli": 0.0,
+            "C6_disp": 1.98954,
+            "b_disp": 1.30993,
+            "alpha": [
+                3.2809409,
+                0.0,
+                0.0,
+                3.2809409,
+                0.0,
+                3.2809409
+            ],
+            "eta": 0.0,
+            "b_xpol": 2.04028,
+            "q_xpol": 0.200089,
+            "Kdipo_xpol": 0.0,
+            "Kquad_xpol": 0.0,
+            "b_ct": 1.876471,
+            "q_ct_acc": 1.07641,
+            "Kdipo_ct_acc": 0.0,
+            "Kquad_ct_acc": 0.0,
+            "q_ct_don": 0.167905,
+            "Kdipo_ct_don": 0.0,
+            "Kquad_ct_don": 0.0,
+            "alpha_damp_max": 0.0,
+            "alpha_damp_exponent": 0.0
         }
     ],
     "pair_params": [
@@ -166,7 +702,77 @@
         {
             "type": [
                 "ow",
+                "li+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
                 "na+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "k+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "rb+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "cs+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "f-"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "cl-"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "br-"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "i-"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "mg2+"
+            ],
+            "eps_ct": 1.036375753
+        },
+        {
+            "type": [
+                "ow",
+                "ca2+"
             ],
             "eps_ct": 1.036375753
         }
