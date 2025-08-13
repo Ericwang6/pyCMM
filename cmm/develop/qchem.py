@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional, TextIO, Union
 import os
 import numpy as np
-import parmed
+#import parmed
 import logging
 from pathlib import Path
 import warnings
@@ -9,22 +9,22 @@ import warnings
 from .base import Molecule, Task
 
 
-def to_pdb(coords, symbols, fname, resname="UNK"):
-    struct = parmed.Structure()
-    res = parmed.Residue(name=resname)
-    struct.residues.append(res)
-    count = {}
-    for coord, symb in zip(coords, symbols):
-        cnt = count.get(symb, 0) + 1
-        count[symb] = cnt
-        atname = f"{symb}{cnt}"
-        atom = parmed.Atom(
-            atomic_number=parmed.periodic_table.AtomicNum[symb],
-            name=atname
-        )
-        atom.xx, atom.xy, atom.xz = tuple(map(float, coord))
-        struct.add_atom(atom, resname, -1)
-    struct.save(fname, overwrite=True, use_hetatoms=False)
+#def to_pdb(coords, symbols, fname, resname="UNK"):
+#    struct = parmed.Structure()
+#    res = parmed.Residue(name=resname)
+#    struct.residues.append(res)
+#    count = {}
+#    for coord, symb in zip(coords, symbols):
+#        cnt = count.get(symb, 0) + 1
+#        count[symb] = cnt
+#        atname = f"{symb}{cnt}"
+#        atom = parmed.Atom(
+#            atomic_number=parmed.periodic_table.AtomicNum[symb],
+#            name=atname
+#        )
+#        atom.xx, atom.xy, atom.xz = tuple(map(float, coord))
+#        struct.add_atom(atom, resname, -1)
+#    struct.save(fname, overwrite=True, use_hetatoms=False)
 
 
 class QChemWriter:
