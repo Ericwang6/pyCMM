@@ -162,18 +162,22 @@ class SystemNoCutoff:
     Only used for parametrization, don't use it for simulation
     '''
     def __init__(self, topdata: TopologyData, ff_param, param_expand_indices, **kwargs):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.topdata = topdata
         self.ff_param = ff_param
         self.param_expand_indices = param_expand_indices
-        self.z_atoms = torch.tensor(kwargs['z_atoms'], dtype=torch.long)
-        self.y_atoms = torch.tensor(kwargs['y_atoms'], dtype=torch.long)
-        self.x_atoms = torch.tensor(kwargs['x_atoms'], dtype=torch.long)
-        self.bond_pairs = kwargs['bond_pairs']
-        self.angle_pairs = kwargs['angle_pairs']
-        self.angle_as_bond_indices = self.topdata.get_angles_as_bond_indices()
+        self.z_atoms = torch.tensor(kwargs['z_atoms'], dtype=torch.long, device=self.device)
+        self.y_atoms = torch.tensor(kwargs['y_atoms'], dtype=torch.long, device=self.device)
+        self.x_atoms = torch.tensor(kwargs['x_atoms'], dtype=torch.long, device=self.device)
+        self.bond_pairs = kwargs['bond_pairs'].to(self.device)
+        self.angle_pairs = kwargs['angle_pairs'].to(self.device)
+        self.angle_as_bond_indices = self.topdata.get_angles_as_bond_indices().to(self.device)
         self.has_angles = self.angle_as_bond_indices.shape[0] > 0
         # NOTE: in condensed phase, this should be replaced by a NeighborList
         self.nbpairs, self.groups, self.group_indices = self.topdata.construct_nb_pairs()
+        self.nbpairs = self.nbpairs.to(self.device)
+        self.group_indices = self.group_indices.to(self.device)
+
     
     def update_ff_param(self, new_ff_param):
         self.ff_param = new_ff_param
@@ -205,8 +209,14 @@ class SystemNoCutoff:
                 alpha_dense = self.ff_param[param_name]['alpha']
                 self.param[param_name]['alpha'] = alpha_dense[:, [0, 1, 2, 1, 3, 4, 2, 4, 5]].reshape(-1, 3, 3)[expand_indices]
         
-        self.group_charges = scatter(self.param['atomic_params']['mono'], self.group_indices)
+        for key_1 in self.param.keys():
+            for key_2 in self.param[key_1].keys():
+                if torch.is_tensor(self.param[key_1][key_2]):
+                    self.param[key_1][key_2] = self.param[key_1][key_2].to(self.device)
+        
+        self.group_charges = scatter(self.param['atomic_params']['mono'], self.group_indices).to(self.device)
         self.group_charges = torch.zeros_like(self.group_charges)
+
     
     def evaluate_bonded_terms(self, coords):
         bond_vecs = coords[self.bond_pairs[1]] - coords[self.bond_pairs[0]]
@@ -320,6 +330,8 @@ class SystemNoCutoff:
         return res
     
     def evaluate(self, coords: torch.Tensor):
+        if coords.device != self.device:
+            self.device = coords.device
         self.expand_params()
         atomic_params = self.param['atomic_params']
         pair_params = self.param['pair_params']
@@ -382,7 +394,7 @@ class SystemNoCutoff:
             atomic_params['dipo'],
             atomic_params['quad'],
             rot_mats
-        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3])
+        ) * torch.tensor([1, 1, 1, 1, 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=self.device)
 
         # nonbonded dist vectors
         pairs = self.nbpairs
@@ -395,7 +407,7 @@ class SystemNoCutoff:
         # Charge-Transfer
         b_ct = atomic_params['b_ct']
 
-        atomic_param_indices = self.param_expand_indices['atomic_params']
+        atomic_param_indices = self.param_expand_indices['atomic_params'].to(self.device)
         atom_type_indices_pairs = torch.vstack((atomic_param_indices[pairs[0]], atomic_param_indices[pairs[1]])).T
         pair_indices = symmetric_pairing_function(atom_type_indices_pairs)
         eps_ct = pair_params['eps_ct'][pair_indices]

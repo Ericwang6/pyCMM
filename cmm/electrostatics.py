@@ -450,7 +450,7 @@ def computePermElecAndPolarizationEnergy(
     numGroups = len(groups)
 
     if pairs is None:
-        pairs = getPairsFromGroups(groups)
+        pairs = getPairsFromGroups(groups).to(coords.device)
 
     # expand mpoles
     mPoles_i, mPoles_j = mPoles[pairs[0]], mPoles[pairs[1]]
@@ -502,7 +502,7 @@ def computePermElecAndPolarizationEnergy(
 
         # fill A matrix
         dimA = numSites + numGroups + numSites * 3
-        matA = torch.zeros((dimA, dimA))
+        matA = torch.zeros((dimA, dimA), device=coords.device)
 
         numRange = torch.arange(numSites)
         # diag qq - hardness

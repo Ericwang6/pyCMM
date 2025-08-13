@@ -112,9 +112,9 @@ def computeLocal2GlobalRotationMatrixBatch(positions, zAtoms, xAtoms, yAtoms, ax
     # No axis
     filterNoAxis = (axisTypes == AxisTypes.NoAxisType.value)
     if torch.any(filterNoAxis):
-        zVec[filterNoAxis] = torch.tensor([0.0, 0.0, 1.0])
-        xVec[filterNoAxis] = torch.tensor([1.0, 0.0, 0.0])
-        yVec[filterNoAxis] = torch.tensor([0.0, 1.0, 0.0])
+        zVec[filterNoAxis] = torch.tensor([0.0, 0.0, 1.0], device=positions.device)
+        xVec[filterNoAxis] = torch.tensor([1.0, 0.0, 0.0], device=positions.device)
+        yVec[filterNoAxis] = torch.tensor([0.0, 1.0, 0.0], device=positions.device)
 
     rotMatrix = torch.hstack((xVec, yVec, zVec)).reshape(-1, 3, 3)
     return rotMatrix
