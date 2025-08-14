@@ -1,7 +1,7 @@
 import os, glob
 from dataclasses import dataclass, field
 from collections import defaultdict
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List
 
 import openmm.app as app
 import numpy as np
@@ -11,6 +11,7 @@ import torch
 from ..units import BOHR2ANG, BOHR2NM, DEBYE2AU
 from .multiwfn import MultiwfnReader
 from .qchem import QChemReader
+from ..misc_utils import extract_frame_as_pdb_string, temporary_pdb_file
 
 
 @dataclass
@@ -205,3 +206,61 @@ class EdaData:
 
         # Create a new instance of EdaData with the sliced data
         return EdaData(self.top, sliced_coords, sliced_energies, sliced_eda_df)
+
+@dataclass
+class EdaData2:
+    topologies: List[app.Topology]
+    coords: List[torch.Tensor]
+    energies: Dict[str, torch.Tensor]
+    eda_df: pd.DataFrame = None
+    num: int = field(init=False)
+
+    def __post_init__(self):
+        self.num = int(len(self.coords))
+
+    @classmethod
+    def from_csv_file(cls, pdb_file, csv_file, device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")):
+        topologies, coords = cls.get_openmm_topologies_and_coordinates(pdb_file)
+        coords = [torch.from_numpy(xyz).to(device) for xyz in coords]
+
+        eda_df = pd.read_csv(csv_file)
+        enes_ref = {
+            'perm_elec': eda_df['cls_elec'].values / 4.184,
+            'pauli': eda_df['mod_pauli'].values / 4.184,
+            'ct': eda_df['ct'].values / 4.184,
+            'pol': eda_df['pol'].values / 4.184,
+            'disp': eda_df['disp'].values / 4.184,
+            'int': eda_df['int'].values / 4.184
+        }
+        enes_ref = {key: torch.tensor(enes_ref[key]).to(device) for key in enes_ref}
+
+        data = cls(topologies, coords, enes_ref, eda_df)
+        return data
+    
+    @staticmethod
+    def get_openmm_topologies_and_coordinates(pdb_file: str):
+        pdb = app.PDBFile(pdb_file)
+        n_frames = pdb.getNumFrames()
+        
+        topologies = []
+        coords = []
+
+        for frame_index in range(n_frames):
+            frame_content = extract_frame_as_pdb_string(pdb_file, frame_index)
+            with temporary_pdb_file(frame_content) as temp_pdb_path:
+                topology = app.PDBFile(temp_pdb_path).topology
+                topologies.append(topology)
+                coords.append(pdb.getPositions(True, frame_index)._value / BOHR2NM)
+        return topologies, coords
+
+    def __getitem__(self, idx):
+        sliced_coords = self.coords[idx]
+        sliced_energies = {key: value[idx] for key, value in self.energies.items()}
+        if self.eda_df is not None:
+            if isinstance(idx, int):
+                sliced_eda_df = self.eda_df.iloc[[idx]]
+            else:
+                sliced_eda_df = self.eda_df.iloc[idx]
+        else:
+            sliced_eda_df = None
+        return EdaData2(self.topologies[idx], sliced_coords, sliced_energies, sliced_eda_df)
