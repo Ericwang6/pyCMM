@@ -29,8 +29,8 @@ def report_metrics(y_pred, y_true):
 
 
 def plot_correlation(xdata, ydata, xlabel, ylabel, ax=None, calc_mae=True, calc_mse=True):
-    xdata = as_numpy(xdata)
-    ydata = as_numpy(ydata)
+    xdata = as_numpy(xdata.cpu())
+    ydata = as_numpy(ydata.cpu())
 
     if calc_mae:
         mae = np.mean(np.abs(xdata - ydata))

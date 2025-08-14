@@ -12,6 +12,8 @@ import networkx as nx
 from scipy.sparse import coo_matrix
 import openmm.app as app
 
+from .timer import Timer
+
 from .multipole import (
     AxisTypes,
     computeCartesianQuadrupoles, 
@@ -332,7 +334,9 @@ class SystemNoCutoff:
     def evaluate(self, coords: torch.Tensor):
         if coords.device != self.device:
             self.device = coords.device
+        
         self.expand_params()
+        
         atomic_params = self.param['atomic_params']
         pair_params = self.param['pair_params']
         bond_params = self.param['bond_params']
@@ -449,12 +453,12 @@ class SystemNoCutoff:
             polarizabilities,
             atomic_params['eta'] * 2, # can we move this '2' in to param definition?
             self.group_charges,
-            None,
+            pairs,
             True,
             atomic_params['alpha_damp_exponent'],
             atomic_params['alpha_damp_max']
         )
-
+        
         _, ene_pol_ct = computePermElecAndPolarizationEnergy(
             coords,
             self.groups,
@@ -465,11 +469,12 @@ class SystemNoCutoff:
             polarizabilities,
             atomic_params['eta'] * 2,
             self.group_charges + dq_groups,
-            None,
+            pairs,
             True,
             atomic_params['alpha_damp_exponent'],
             atomic_params['alpha_damp_max']
         )
+
         ene_perm_elec *= HARTREE2KCAL
         ene_pol *= HARTREE2KCAL
         ene_pol_ct *= HARTREE2KCAL

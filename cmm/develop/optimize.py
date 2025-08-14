@@ -3,7 +3,7 @@ from typing import Dict, Callable
 from .base import Logger
 from .data import DipoleData, EdaData, EspData, PolarizabilityData
 from ..forcefield import CMMForceField
-
+from ..timer import Timer
 
 
 class Optimizer:
@@ -320,6 +320,7 @@ class Trainer2:
             systems = [self.ff.parametrize(datas.topologies[i]) for i in range(len(datas.topologies))]
         
         results = [systems[i].evaluate(datas.coords[i]) for i in range(len(datas.coords))]
+        
         res = {}
 
         for key in results[0].keys():
