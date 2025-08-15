@@ -355,15 +355,16 @@ class SystemNoCutoff:
         q_shell: torch.Tensor = atomic_params['q_shell']
         
         # Electric Charge Flux
-        bond_vecs = coords[self.bond_pairs[1]] - coords[self.bond_pairs[0]]
-        bond_dists = computeBondFromVecs(bond_vecs)
-        bond_cf_i, bond_cf_j = computeChargeFluxBond(
-            bond_dists,
-            bond_params['r_eq'],
-            bond_params['j_cf']
-        )
-        q_shell.scatter_add_(0, self.bond_pairs[0], bond_cf_i)
-        q_shell.scatter_add_(0, self.bond_pairs[1], bond_cf_j)
+        if self.bond_pairs.numel() > 0:
+            bond_vecs = coords[self.bond_pairs[1]] - coords[self.bond_pairs[0]]
+            bond_dists = computeBondFromVecs(bond_vecs)
+            bond_cf_i, bond_cf_j = computeChargeFluxBond(
+                bond_dists,
+                bond_params['r_eq'],
+                bond_params['j_cf']
+            )
+            q_shell.scatter_add_(0, self.bond_pairs[0], bond_cf_i)
+            q_shell.scatter_add_(0, self.bond_pairs[1], bond_cf_j)
 
         if self.has_angles:
             bb_cf_1_i, bb_cf_1_j, bb_cf_2_i, bb_cf_2_j = computeChargeFluxBondBond(
@@ -482,13 +483,14 @@ class SystemNoCutoff:
 
         # Pauli repulsion
         q_pauli: torch.Tensor = atomic_params['q_pauli']
-        bond_cf_pauli_i, bond_cf_pauli_j = computeChargeFluxBond(
-            bond_dists,
-            bond_params['r_eq'],
-            bond_params['j_cf_pauli']
-        )
-        q_pauli.scatter_add_(0, self.bond_pairs[0], bond_cf_pauli_i)
-        q_pauli.scatter_add_(0, self.bond_pairs[1], bond_cf_pauli_j)
+        if self.bond_pairs.numel() > 0:
+            bond_cf_pauli_i, bond_cf_pauli_j = computeChargeFluxBond(
+                bond_dists,
+                bond_params['r_eq'],
+                bond_params['j_cf_pauli']
+            )
+            q_pauli.scatter_add_(0, self.bond_pairs[0], bond_cf_pauli_i)
+            q_pauli.scatter_add_(0, self.bond_pairs[1], bond_cf_pauli_j)
 
         multipoles_pauli = scaleMultipoles(
             multipoles, 
