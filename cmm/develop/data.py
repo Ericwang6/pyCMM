@@ -1,7 +1,7 @@
-import os, glob
+import os, glob, random
 from dataclasses import dataclass, field
 from collections import defaultdict
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 import openmm.app as app
 import numpy as np
@@ -219,11 +219,14 @@ class EdaData2:
         self.num = int(len(self.coords))
 
     @classmethod
-    def from_csv_file(cls, pdb_file, csv_file, device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")):
-        topologies, coords = cls.get_openmm_topologies_and_coordinates(pdb_file)
+    def from_csv_file(cls, pdb_file, csv_file, num_samples: Optional[int] = None, device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")):
+        topologies, coords, frame_indices = cls.get_openmm_topologies_and_coordinates(pdb_file, num_samples=num_samples)
         coords = [torch.from_numpy(xyz).to(device) for xyz in coords]
 
         eda_df = pd.read_csv(csv_file)
+        if frame_indices is not None:
+            eda_df = eda_df.iloc[frame_indices]
+            
         enes_ref = {
             'perm_elec': eda_df['cls_elec'].values / 4.184,
             'pauli': eda_df['mod_pauli'].values / 4.184,
@@ -238,20 +241,27 @@ class EdaData2:
         return data
     
     @staticmethod
-    def get_openmm_topologies_and_coordinates(pdb_file: str):
+    def get_openmm_topologies_and_coordinates(pdb_file: str, num_samples: Optional[int] = None):
         pdb = app.PDBFile(pdb_file)
         n_frames = pdb.getNumFrames()
+
+        if num_samples is not None and num_samples < n_frames:
+            frame_indices = random.sample(range(n_frames + 1), num_samples)
+        else:
+            frame_indices = range(n_frames)
         
         topologies = []
         coords = []
 
-        for frame_index in range(n_frames):
+        for frame_index in frame_indices:
             frame_content = extract_frame_as_pdb_string(pdb_file, frame_index)
             with temporary_pdb_file(frame_content) as temp_pdb_path:
                 topology = app.PDBFile(temp_pdb_path).topology
                 topologies.append(topology)
                 coords.append(pdb.getPositions(True, frame_index)._value / BOHR2NM)
-        return topologies, coords
+        if num_samples is None:
+            frame_indices = None
+        return topologies, coords, frame_indices
 
     def __getitem__(self, idx):
         sliced_coords = self.coords[idx]
