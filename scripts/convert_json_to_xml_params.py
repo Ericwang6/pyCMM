@@ -30,6 +30,13 @@ def json_to_forcefield_xml(json_data):
                 ET.SubElement(residue, "Atom", name=atom_name, type=atom_type)
     
     # Process Bonds
+    # NOTE(JOE): Some of these defaults should really be zero but I have
+    # hard-coded them to the values for water since those params do not
+    # appear in the water file. This script is likely to become obsolete
+    # once we migrate to always using the XML format for the fitting.
+    # In case it doesn't, we should update the handling of defaults and 
+    # look up the equilibrium distances for the bond-bond charge flux from
+    # the bond params we have already loaded.
     if "bond_params" in data:
         bonds = ET.SubElement(root, "Bonds")
         for bond in data["bond_params"]:
