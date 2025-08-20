@@ -1,4 +1,4 @@
-import json
+import json, sys, os
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
@@ -225,7 +225,15 @@ def json_to_forcefield_xml(json_data):
 
 # Example usage
 if __name__ == "__main__":
-    with open('../tests/data/water_refit.json', 'r') as f:
+    if len(sys.argv) > 1:
+        filepath = sys.argv[1]
+        basename = os.path.basename(filepath)
+        outname, _ = os.path.splitext(basename)
+        outname = outname + ".xml"
+    else:
+        print("Please provide a JSON parameter file. Exiting.")
+        sys,exit(0)
+    with open(filepath, 'r') as f:
         json_data = json.load(f)
     
     # Convert to XML
@@ -233,5 +241,5 @@ if __name__ == "__main__":
     print(xml_output)
     
     # Save to file
-    with open("forcefield.xml", "w") as f:
+    with open(outname, "w") as f:
         f.write(xml_output)
