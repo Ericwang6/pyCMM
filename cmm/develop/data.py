@@ -246,7 +246,7 @@ class EdaData2:
         n_frames = pdb.getNumFrames()
 
         if num_samples is not None and num_samples < n_frames:
-            frame_indices = random.sample(range(n_frames + 1), num_samples)
+            frame_indices = random.sample(range(n_frames), num_samples)
         else:
             frame_indices = range(n_frames)
         
