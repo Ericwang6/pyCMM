@@ -416,7 +416,7 @@ class System(nn.Module):
 
             # ene_elec = torch.tensor(0.0, device=coords.device)
             # ene_xpol = torch.tensor(0.0, device=coords.device)
-            ene_pol = torch.tensor(0.0, device=coords.device)
+            #ene_pol = torch.tensor(0.0, device=coords.device)
             # ene_ct_direct = torch.tensor(0.0, device=coords.device)
             # ene_disp = torch.tensor(0.0, device=coords.device)
             # efield = torch.zeros((self.natoms, 3), device=coords.device, dtype=coords.dtype)

@@ -15,8 +15,8 @@ class AxisTypes(IntEnum):
     LastAxisTypeIndex = 6
 
 
-def normVec(vec):
-    return vec / torch.norm(vec, dim=1, keepdim=True)
+def normVec(vec, eps=1e-12):
+    return vec / (torch.norm(vec, dim=1, keepdim=True) + eps)
 
 
 def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos2: torch.Tensor, pos3: torch.Tensor, axisTypes: torch.Tensor, box: torch.Tensor=None, boxInv: torch.Tensor=None):
@@ -72,7 +72,6 @@ def computeLocal2GlobalRotationMatrixBatch(
     box: torch.Tensor
         Peroidic box, shape (3, 3), optional
     """
-
     zVec = applyPBC(positions[zAtoms] - positions, box, boxInv)
     zVec = normVec(zVec)
     xVec = torch.zeros_like(zVec)
