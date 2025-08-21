@@ -133,6 +133,26 @@ def computeFieldDependentMorseParams(
     beta_fd = torch.sqrt(k_e_fd / 2 / D_e_p)
     return (r_e_p + dr_e_p, beta_fd)
 
+def computeFieldDependentMorseCorrection(
+        bond_dists_p: torch.Tensor, bond_vecs_p: torch.Tensor,
+        r_e_p: torch.Tensor, dipole_1_p: torch.Tensor, dipole_2_p: torch.Tensor,
+        E_field_p: torch.Tensor
+    ) -> torch.Tensor:
+    """
+    Evaluates a second-order field-dependent correction using the gas-phase dipole
+    derivatives and the electric field projected along each bond.
+    """
+    
+    # We are making an assumption here which will have to be enforced by the topology
+    # builder. The field is considered only for the second atom of the bond vector.
+    # For water, for instance, this means we consider the field at the H atom.
+    # In general, the specific atom will depend on the bond in question, so the
+    # topology builder will have to look at the specific bond and force field terms
+    # requested so that it can set up the bond indices appropriately. -Joe
+    E_proj_p = torch.sum(bond_vecs_p * E_field_p, dim=1) / bond_dists_p
+    displacements_p = bond_dists_p - r_e_p
+    return -E_proj_p * (dipole_1_p * displacements_p + 0.5 * dipole_2_p * torch.square(displacements_p))
+
 
 def computeTorsionFromVecs(drVecs1: torch.Tensor, drVecs2: torch.Tensor, drVecs3: torch.Tensor):
     n1 = torch.cross(drVecs1, drVecs2, dim=1)

@@ -18,7 +18,8 @@ from .bonded import (
     computeTorsionBondCoupling, computeTorsionAngleAngleCoupling, 
     computeChargeFluxBond, computeChargeFluxAngle, computeChargeFluxBondBond,
     computeHardnessChangeBond, computeHardnessChangeAngle, computeHardnessChangeBondBond,
-    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential
+    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential,
+    computeFieldDependentMorseCorrection
 )
 from .multipole import (
     computeLocal2GlobalRotationMatrixBatch,
@@ -675,23 +676,34 @@ class System(nn.Module):
             k_b = self.parametrizers['Bond'].getExpandParameters('k_b')
             D = self.parametrizers['Bond'].getExpandParameters('D')
 
+            #if self.use_fd_morse:
+            #    dip_deriv_1 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_1')
+            #    dip_deriv_2 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_2')
+            #    ct_slope_1 = self.parametrizers['Bond'].getExpandParameters('ct_slope_1')
+            #    ct_slope_2 = self.parametrizers['Bond'].getExpandParameters('ct_slope_2')
+            #    r_eq_fd, beta_fd = computeFieldDependentMorseParams(
+            #        bonds, bondVecs,
+            #        k_b, D, r_eq, dip_deriv_1, dip_deriv_2,
+            #        ct_slope_1, ct_slope_2,
+            #        efield[bondIndices[:, 1]],
+            #        #dq_a[bondIndices[:, 1]]
+            #        torch.zeros_like(dq_a[bondIndices[:, 1]])
+            #    )
+            #    ene_bond_list = computeMorseBondPotential(bonds, r_eq_fd, D, beta_fd)
+            #else:
+            #    beta = torch.sqrt(k_b / 2 / D)
+            #    ene_bond_list = computeMorseBondPotential(bonds, r_eq, D, beta)
+            beta = torch.sqrt(k_b / 2 / D)
+            ene_bond_list = computeMorseBondPotential(bonds, r_eq, D, beta)
             if self.use_fd_morse:
                 dip_deriv_1 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_1')
                 dip_deriv_2 = self.parametrizers['Bond'].getExpandParameters('dip_deriv_2')
-                ct_slope_1 = self.parametrizers['Bond'].getExpandParameters('ct_slope_1')
-                ct_slope_2 = self.parametrizers['Bond'].getExpandParameters('ct_slope_2')
-                r_eq_fd, beta_fd = computeFieldDependentMorseParams(
-                    bonds, bondVecs,
-                    k_b, D, r_eq, dip_deriv_1, dip_deriv_2,
-                    ct_slope_1, ct_slope_2,
-                    efield[bondIndices[:, 1]],
-                    #dq_a[bondIndices[:, 1]]
-                    torch.zeros_like(dq_a[bondIndices[:, 1]])
+                ene_bond_fd_correction = computeFieldDependentMorseCorrection(
+                    bonds, bondVecs, 
+                    r_eq, dip_deriv_1, dip_deriv_2,
+                    efield[bondIndices[:, 1]]
                 )
-                ene_bond_list = computeMorseBondPotential(bonds, r_eq_fd, D, beta_fd)
-            else:
-                beta = torch.sqrt(k_b / 2 / D)
-                ene_bond_list = computeMorseBondPotential(bonds, r_eq, D, beta)
+                ene_bond_list = ene_bond_list + ene_bond_fd_correction
             
             ene_bond = torch.sum(ene_bond_list)
         else:
