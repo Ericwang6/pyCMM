@@ -44,6 +44,101 @@ def computeLocal2GlobalRotationMatrix(pos: torch.Tensor, pos1: torch.Tensor, pos
     rotMatrix = torch.hstack((xvec, yvec, zvec)).reshape(-1, 3, 3)
     return rotMatrix
 
+def compute_rotation_matrices(positions: torch.Tensor,
+        z_atoms: torch.Tensor, x_atoms: torch.Tensor, y_atoms: torch.Tensor,
+        axis_types: torch.Tensor,
+        box: Optional[torch.Tensor] = None, box_inv: Optional[torch.Tensor] = None
+    ):
+        """
+        Compute local to global rotation matrix for a set of atoms
+
+        Parameters
+        ----------
+        z_atoms: torch.Tensor[int]
+            Atomic indices specifying Z-axis, shape (N,)
+        x_atoms: torch.Tensor[int]
+            Atomic indices specifying X-axis, shape (N,)
+        y_atoms: torch.Tensor[int]
+            Atomic indices specifying Y-axis, shape (N,)
+        axis_types: torch.Tensor[int]
+            Integers specifying local axis types, shape (N,)
+        """
+
+        zVec = torch.zeros_like(positions)
+        xVec = torch.zeros_like(zVec)
+        yVec = torch.zeros_like(zVec)
+
+        # Z-Only
+        filterZOnly = (axis_types == AxisTypes.ZOnly.value)
+        if torch.any(filterZOnly):
+            zVec = applyPBC(positions[z_atoms][filterZOnly] - positions[filterZOnly], box, box_inv)
+            zVecZOnly = torch.nn.functional.normalize(zVec)
+            xVecNotZOnly = applyPBC(positions[x_atoms][~filterZOnly] - positions[~filterZOnly], box, box_inv)
+            xVecZOnly = xVec[~filterZOnly] + torch.nn.functional.normalize(xVecNotZOnly)
+            xVecZOnly[filterZOnly, 0] = xVecZOnly[filterZOnly, 0] + 1 - zVecZOnly[filterZOnly, 0]
+            xVecZOnly[filterZOnly, 1] = xVecZOnly[filterZOnly, 1] + zVecZOnly[filterZOnly, 0]
+            yVecZOnly = torch.nn.functional.normalize(torch.cross(zVecZOnly, xVecZOnly, dim=1))
+            zVec[filterZOnly] = zVecZOnly
+            xVec[filterZOnly] = xVecZOnly
+            yVec[filterZOnly] = yVecZOnly
+
+        # Z-Then-X
+        filterZThenX = (axis_types == AxisTypes.ZThenX.value)
+        if torch.any(filterZThenX):
+            zVecZThenX = torch.nn.functional.normalize(applyPBC(positions[z_atoms[filterZThenX]] - positions[filterZThenX], box, box_inv))
+            xVecZThenX = applyPBC(positions[x_atoms[filterZThenX]] - positions[filterZThenX], box, box_inv)
+            xVecZThenX = torch.nn.functional.normalize(xVecZThenX - zVecZThenX * torch.sum(zVecZThenX * xVecZThenX, dim=1, keepdim=True))
+            yVecZThenX = torch.nn.functional.normalize(torch.cross(zVecZThenX, xVecZThenX, dim=1))
+            zVec[filterZThenX] = zVecZThenX
+            xVec[filterZThenX] = xVecZThenX
+            yVec[filterZThenX] = yVecZThenX
+
+        # Bisector
+        filterBisector = (axis_types == AxisTypes.Bisector.value)
+        if torch.any(filterBisector):
+            zVecBisector = applyPBC(positions[z_atoms[filterBisector]] - positions[filterBisector], box, box_inv)
+            xVecBisector = applyPBC(positions[x_atoms[filterBisector]] - positions[filterBisector], box, box_inv)
+            zVecBisector = torch.nn.functional.normalize(torch.linalg.norm(xVecBisector, dim=1).unsqueeze(1) * zVecBisector + torch.linalg.norm(zVecBisector, dim=1).unsqueeze(1) * xVecBisector)
+            xVecBisector = torch.nn.functional.normalize(xVecBisector - zVecBisector * torch.sum(zVecBisector * xVecBisector, dim=1, keepdim=True))
+            yVecBisector = torch.nn.functional.normalize(torch.cross(zVecBisector, xVecBisector, dim=1))
+            zVec[filterBisector] = zVecBisector
+            xVec[filterBisector] = xVecBisector
+            yVec[filterBisector] = yVecBisector
+
+        # Z-Bisect
+        filterZBisect = (axis_types == AxisTypes.ZBisect.value)
+        if torch.any(filterZBisect):
+            yVecZBisect = applyPBC(positions[y_atoms[filterZBisect]] - positions[filterZBisect], box, box_inv)
+            yVecZBisect = torch.nn.functional.normalize(yVecZBisect)
+            xVecZBisect = torch.nn.functional.normalize(xVec[filterZBisect] + yVecZBisect)
+            zVecZBisect = torch.nn.functional.normalize(torch.cross(xVecZBisect, yVecZBisect, dim=1))
+            xVec[filterZBisect] = xVecZBisect
+            yVec[filterZBisect] = yVecZBisect
+            zVec[filterZBisect] = zVecZBisect
+
+        # Threefold
+        # TODO: The way I rewrote this broke this case. Need to fix it.
+        #filterThreeFold = (axis_types == AxisTypes.ThreeFold.value)
+        #if torch.any(filterThreeFold):
+        #    yVecThreeFold = applyPBC(positions[y_atoms][filterThreeFold] - positions[filterThreeFold], box, box_inv)
+        #    yVecThreeFold = torch.nn.functional.normalize(yVecThreeFold)
+        #    xVecThreeFold = xVec[filterThreeFold]
+        #    zVecThreeFold = zVec[filterThreeFold]
+        #    zVec[filterThreeFold] = torch.nn.functional.normalize(zVecThreeFold + xVecThreeFold + yVecThreeFold)
+
+        # No axis
+        filterNoAxis = (axis_types == AxisTypes.NoAxisType.value)
+        if torch.any(filterNoAxis):
+            xVecNoAxis = torch.tensor([1.0, 0.0, 0.0], device=zVec.device)
+            yVecNoAxis = torch.tensor([0.0, 1.0, 0.0], device=zVec.device)
+            zVecNoAxis = torch.tensor([0.0, 0.0, 1.0], device=zVec.device)
+            xVec[filterNoAxis] = xVec[filterNoAxis] + xVecNoAxis
+            yVec[filterNoAxis] = yVec[filterNoAxis] + yVecNoAxis
+            zVec[filterNoAxis] = zVec[filterNoAxis] + zVecNoAxis
+
+        rotMatrix = torch.hstack((xVec, yVec, zVec)).reshape(-1, 3, 3)
+        return rotMatrix
+
 #@torch.compile
 def computeLocal2GlobalRotationMatrixBatch(
     positions: torch.Tensor, 

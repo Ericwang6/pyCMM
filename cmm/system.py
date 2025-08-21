@@ -22,6 +22,7 @@ from .bonded import (
 )
 from .multipole import (
     computeLocal2GlobalRotationMatrixBatch,
+    compute_rotation_matrices,
     convertMultipolesToPolytensor,
     scaleMultipoles,
     rotateDipoles, rotateQuadrupoles,
@@ -390,7 +391,7 @@ class System(nn.Module):
             kzIndices = self.parametrizers['Multipoles'].getExpandParameters('kzIndices')
             kxIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
             kyIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
-            rotMatrices = computeLocal2GlobalRotationMatrixBatch(coords, kzIndices, kxIndices, kyIndices, axistypes, box, boxInv)
+            rotMatrices = compute_rotation_matrices(coords, kzIndices, kxIndices, kyIndices, axistypes, box, boxInv)
 
             mono = self.parametrizers['Multipoles'].getExpandParameters('mono') + charge_flux
             dipo = rotateDipoles(self.parametrizers['Multipoles'].getExpandParameters('dipo'), rotMatrices).squeeze(1)
@@ -695,7 +696,6 @@ class System(nn.Module):
             ene_bond = torch.sum(ene_bond_list)
         else:
             ene_bond = torch.tensor(0.0, device=coords.device)
-
 
         energies = {
             "bond": ene_bond,
