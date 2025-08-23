@@ -682,6 +682,9 @@ class CMMPolarization(nn.Module):
         sum_pot = segment_csr(vec_in[:self.natoms][self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
         multiplier = (sum_pot - mean_eta * vec_in[-self.n_pol_groups:]) / self.pol_group_lengths_g
         charges = (vec_in[:self.natoms] - multiplier.repeat_interleave(self.pol_group_lengths_g)) / mean_eta.repeat_interleave(self.pol_group_lengths_g)
+        charges = torch.nan_to_num(charges, nan=0.0)
+        # This is because in single-atom groups eta is zero which results in divide-by-zero.
+        # These always have no charge polarization so just set the nans to zero.
         elec_field = torch.narrow(vec_in, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3)
         dipos = torch.bmm(polarizabilities, elec_field.unsqueeze(-1)).squeeze(-1).flatten()
         return torch.cat([charges, dipos, multiplier])
