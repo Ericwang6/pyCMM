@@ -323,7 +323,7 @@ class ForceFieldXML:
     
     def assignAtomTypes(self, top: Topology):
         for resname, name in top.atomSigs:
-            top.atomTypes.append(self.atomTypeDefs[resname][name])
+            top.atomTypes.append(self.atomTypeDefs[resname.upper()][name.title()])
     
     def save(self, fname: os.PathLike = '') -> str:
         xmlstr = [
