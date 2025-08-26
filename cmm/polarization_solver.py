@@ -526,7 +526,7 @@ class CMMPolarization(nn.Module):
             eta,
             inverse_polarizabilities
         )
-        Z_k = direct_polarization_guess(R_k, self.natoms, self.n_pol_groups, polarizabilities)
+        Z_k = self.direct_polarization_guess_with_charge(R_k, polarizabilities, eta)
 
         P_k = torch.zeros_like(Z_k)
 
