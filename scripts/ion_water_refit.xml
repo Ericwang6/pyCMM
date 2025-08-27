@@ -63,103 +63,103 @@
     <ChargePenetration>
         <CP type="ow" Z="5.5473" b_elec="2.3635"/>
         <CP type="hw" Z="1.0031" b_elec="2.5154"/>
-        <CP type="li+" Z="1.2475727963056222" b_elec="2.276719658947169"/>
-        <CP type="na+" Z="2.2002745652588263" b_elec="2.205056137053803"/>
-        <CP type="k+" Z="4.088829035894985" b_elec="1.9144526424168817"/>
-        <CP type="rb+" Z="6.679590064657281" b_elec="1.978667835243521"/>
-        <CP type="cs+" Z="9.222526968470085" b_elec="1.6734119476294682"/>
-        <CP type="f-" Z="5.660630635773225" b_elec="2.3359826372554284"/>
-        <CP type="cl-" Z="17.0" b_elec="1.9314297701235004"/>
-        <CP type="br-" Z="35.0" b_elec="1.818886108683796"/>
-        <CP type="i-" Z="53.0" b_elec="1.8957534403935947"/>
-        <CP type="mg2+" Z="4.353937108270632" b_elec="2.830422449874134"/>
-        <CP type="ca2+" Z="4.992272735235896" b_elec="2.119840904809034"/>
+        <CP type="li+" Z="1.2445082678003452" b_elec="2.2706207392815885"/>
+        <CP type="na+" Z="2.1413275314483142" b_elec="2.1695464528984005"/>
+        <CP type="k+" Z="4.050059389149038" b_elec="1.9016215720293588"/>
+        <CP type="rb+" Z="6.6744331619659745" b_elec="1.978103595407526"/>
+        <CP type="cs+" Z="9.22637124314413" b_elec="1.6803292163345196"/>
+        <CP type="f-" Z="5.660630635773225" b_elec="2.3328457568978846"/>
+        <CP type="cl-" Z="17.0" b_elec="1.9314365058870042"/>
+        <CP type="br-" Z="35.0" b_elec="1.8187722758837837"/>
+        <CP type="i-" Z="53.0" b_elec="1.8957441755648987"/>
+        <CP type="mg2+" Z="3.053461002574683" b_elec="1.375938288363925"/>
+        <CP type="ca2+" Z="4.997802278436151" b_elec="2.1211829567079863"/>
     </ChargePenetration>
     <PauliRepulsion>
         <Pauli type="ow" q_pauli="4.5998" Kdipo_pauli="-3.4278" Kquad_pauli="-0.9743" b_pauli="1.955"/>
         <Pauli type="hw" q_pauli="0.929" Kdipo_pauli="-0.6437" Kquad_pauli="-0.6274" b_pauli="2.5732"/>
-        <Pauli type="li+" q_pauli="2.2263444906498884" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.974729311489364"/>
-        <Pauli type="na+" q_pauli="5.500017718792831" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.7894684281962965"/>
-        <Pauli type="k+" q_pauli="12.982390860298665" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.436488386571332"/>
-        <Pauli type="rb+" q_pauli="21.748614196273337" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.4219760345466037"/>
-        <Pauli type="cs+" q_pauli="24.052705352497295" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.1362729432031746"/>
-        <Pauli type="f-" q_pauli="3.311190438083023" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.6703093430417424"/>
-        <Pauli type="cl-" q_pauli="6.058040891626623" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.4532456592683474"/>
-        <Pauli type="br-" q_pauli="6.606362910092483" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.344291129548099"/>
-        <Pauli type="i-" q_pauli="8.401752689016192" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.253262741804704"/>
-        <Pauli type="mg2+" q_pauli="2.9296477852820213" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.3781349105253904"/>
-        <Pauli type="ca2+" q_pauli="7.747445621271916" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.2274599514336693"/>
+        <Pauli type="li+" q_pauli="2.2263433428701203" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.9747288218331915"/>
+        <Pauli type="na+" q_pauli="5.506086327985706" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.790545989705332"/>
+        <Pauli type="k+" q_pauli="12.949403242242791" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.435061538664221"/>
+        <Pauli type="rb+" q_pauli="21.69688990997129" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.420744197321364"/>
+        <Pauli type="cs+" q_pauli="24.073721143939757" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.1366764406010494"/>
+        <Pauli type="f-" q_pauli="3.1111904382876037" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.6703093423195516"/>
+        <Pauli type="cl-" q_pauli="6.057997988497982" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.453246106355332"/>
+        <Pauli type="br-" q_pauli="6.610010633439243" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.3444984110935723"/>
+        <Pauli type="i-" q_pauli="8.411876708576406" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.253656638244876"/>
+        <Pauli type="mg2+" q_pauli="5.529983927877168" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.910394743942288"/>
+        <Pauli type="ca2+" q_pauli="11.638118869412937" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.4961278366422297"/>
     </PauliRepulsion>
     <ExchangePolarization>
         <Xpol type="ow" q_xpol="0.8491" Kdipo_xpol="1.0026" Kquad_xpol="-0.3606" b_xpol="2.5447"/>
         <Xpol type="hw" q_xpol="0.7142" Kdipo_xpol="0.2058" Kquad_xpol="-0.2712" b_xpol="3.5033"/>
-        <Xpol type="li+" q_xpol="-16.021003748765605" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.96630224"/>
-        <Xpol type="na+" q_xpol="-32.633670053531056" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.982371716"/>
-        <Xpol type="k+" q_xpol="-21.892154451744748" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.28349755"/>
-        <Xpol type="rb+" q_xpol="-20.41375161995001" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.235477592"/>
-        <Xpol type="cs+" q_xpol="18.32163427018047" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.848350645"/>
-        <Xpol type="f-" q_xpol="1.01057176084978" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.227079124"/>
-        <Xpol type="cl-" q_xpol="-3.613934129796541" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.93226669"/>
-        <Xpol type="br-" q_xpol="-3.0928163040779686" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.791408686"/>
-        <Xpol type="i-" q_xpol="-11.271035761759656" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.676040909"/>
-        <Xpol type="mg2+" q_xpol="-27.699250701377725" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.430933333"/>
-        <Xpol type="ca2+" q_xpol="-9.783597351903651" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.994733596"/>
+        <Xpol type="li+" q_xpol="-16.026159129588937" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.96630224"/>
+        <Xpol type="na+" q_xpol="-33.238161900413374" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.982371716"/>
+        <Xpol type="k+" q_xpol="-22.012053864902324" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.28349755"/>
+        <Xpol type="rb+" q_xpol="-20.45700467081039" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.235477592"/>
+        <Xpol type="cs+" q_xpol="19.761852853199343" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.848350645"/>
+        <Xpol type="f-" q_xpol="1.007048197344031" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.227079124"/>
+        <Xpol type="cl-" q_xpol="-3.614075029047498" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.93226669"/>
+        <Xpol type="br-" q_xpol="-3.0929857915271888" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.791408686"/>
+        <Xpol type="i-" q_xpol="-11.270805580829103" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.676040909"/>
+        <Xpol type="mg2+" q_xpol="-52.91399735079737" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.430933333"/>
+        <Xpol type="ca2+" q_xpol="-9.782589598834655" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.994733596"/>
     </ExchangePolarization>
     <Dispersion>
         <Disp type="ow" C6_disp="35.8289" b_disp="1.84302"/>
         <Disp type="hw" C6_disp="1.98954" b_disp="1.30993"/>
-        <Disp type="li+" C6_disp="0.6156383758118441" b_disp="2.2214824410616987"/>
-        <Disp type="na+" C6_disp="5.497259626235191" b_disp="1.9829240163392308"/>
-        <Disp type="k+" C6_disp="46.023555278393324" b_disp="1.9396278957197874"/>
-        <Disp type="rb+" C6_disp="63.12405618010221" b_disp="3.9952569954704287"/>
-        <Disp type="cs+" C6_disp="170.7402816280635" b_disp="6.606054709327306"/>
-        <Disp type="f-" C6_disp="146.1053036152218" b_disp="1.2149385557578671"/>
-        <Disp type="cl-" C6_disp="661.8143146188984" b_disp="1.0702438580962796"/>
-        <Disp type="br-" C6_disp="1116.6877896413516" b_disp="0.9785596278406836"/>
-        <Disp type="i-" C6_disp="1359.326028807075" b_disp="1.2948969706530438"/>
-        <Disp type="mg2+" C6_disp="3.4091837352968457" b_disp="1.6795417632084277"/>
-        <Disp type="ca2+" C6_disp="14.568451977602303" b_disp="2.782347704709902"/>
+        <Disp type="li+" C6_disp="0.6156383752679799" b_disp="2.2214824426559368"/>
+        <Disp type="na+" C6_disp="5.497259626045525" b_disp="1.9829240162688901"/>
+        <Disp type="k+" C6_disp="46.02355527861255" b_disp="1.9396278900822004"/>
+        <Disp type="rb+" C6_disp="63.12405617766437" b_disp="3.9952569929934083"/>
+        <Disp type="cs+" C6_disp="170.7402980541256" b_disp="6.6060550565777305"/>
+        <Disp type="f-" C6_disp="146.0930462950235" b_disp="1.2149802307900066"/>
+        <Disp type="cl-" C6_disp="661.7784874471554" b_disp="1.0702739052868397"/>
+        <Disp type="br-" C6_disp="1116.9365940723983" b_disp="0.9784413632598339"/>
+        <Disp type="i-" C6_disp="1359.3261338721927" b_disp="1.2997553647104885"/>
+        <Disp type="mg2+" C6_disp="3.910824632404541" b_disp="1.572330887655486"/>
+        <Disp type="ca2+" C6_disp="25.575838933136964" b_disp="1.6815418133987525"/>
     </Dispersion>
     <ChargeTransfer>
         <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485"/>
         <Direct type="hw" q_ct_acc="1.36735" q_ct_don="0.00888982" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.0511668" Kquad_ct_acc="0.0" Kquad_ct_don="0.0568152" b_ct="2.36763"/>
-        <Direct type="li+" q_ct_acc="1.0554684531799652" q_ct_don="-0.14759154089272922" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.6919410216235977"/>
-        <Direct type="na+" q_ct_acc="0.2646649903361294" q_ct_don="0.05797771321875054" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.2021414695247663"/>
-        <Direct type="k+" q_ct_acc="4.245321689751152" q_ct_don="0.7362793793586638" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.87673177611411"/>
-        <Direct type="rb+" q_ct_acc="5.252406202291381" q_ct_don="0.9089127655128554" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.7451907963986912"/>
-        <Direct type="cs+" q_ct_acc="6.6681486775379675" q_ct_don="1.1514131021420178" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.539830812059788"/>
-        <Direct type="f-" q_ct_acc="-4.038305896537009" q_ct_don="1.0828281660551484" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.480319023878884"/>
-        <Direct type="cl-" q_ct_acc="-2.4420781517036665" q_ct_don="2.1532361162419207" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.2061325995073204"/>
-        <Direct type="br-" q_ct_acc="-2.7433639053907606" q_ct_don="2.2224448083474684" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.0431510468757248"/>
-        <Direct type="i-" q_ct_acc="-1.7701527641316557" q_ct_don="2.6715547400773434" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="0.9641828753228382"/>
-        <Direct type="mg2+" q_ct_acc="0.14877960161139195" q_ct_don="-0.024683673603411112" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="0.16034023578177167"/>
-        <Direct type="ca2+" q_ct_acc="5.265789440700352" q_ct_don="0.08063152221871941" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.469897194588435"/>
+        <Direct type="li+" q_ct_acc="1.04729593141538" q_ct_don="-0.14591953360919163" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.713030685095063"/>
+        <Direct type="na+" q_ct_acc="0.12350192063866249" q_ct_don="0.014944970559237127" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="0.8812677430490903"/>
+        <Direct type="k+" q_ct_acc="5.376708426599133" q_ct_don="0.9374995410315695" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.9593967642599208"/>
+        <Direct type="rb+" q_ct_acc="8.683686691190335" q_ct_don="1.4855881751273783" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.8972109335394842"/>
+        <Direct type="cs+" q_ct_acc="10.773091421656643" q_ct_don="1.6977875026993254" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.6715005023080338"/>
+        <Direct type="f-" q_ct_acc="-5.409079125734201" q_ct_don="2.4599038510533577" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.996668293888577"/>
+        <Direct type="cl-" q_ct_acc="-2.6876522641248872" q_ct_don="2.1330541308383277" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.223155905386905"/>
+        <Direct type="br-" q_ct_acc="-2.7794372608165947" q_ct_don="2.1427715033041044" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.0544160010463834"/>
+        <Direct type="i-" q_ct_acc="-2.024295176831873" q_ct_don="2.687445073691223" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="0.9881893782066052"/>
+        <Direct type="mg2+" q_ct_acc="0.1225243713325468" q_ct_don="-0.02004724074049665" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="0.13714629593016828"/>
+        <Direct type="ca2+" q_ct_acc="8.41499631535873" q_ct_don="0.024724931274512144" Kdipo_ct_acc="0.0" Kdipo_ct_don="0.0" Kquad_ct_acc="0.0" Kquad_ct_don="0.0" b_ct="1.6253604705817786"/>
         <Indirect type1="ow" type2="hw" eps_ct="2.624816590940708"/>
-        <Indirect type1="ow" type2="li+" eps_ct="1.2337956776914423"/>
-        <Indirect type1="ow" type2="na+" eps_ct="0.7959117968891839"/>
-        <Indirect type1="ow" type2="k+" eps_ct="0.5122658186604128"/>
-        <Indirect type1="ow" type2="rb+" eps_ct="0.5719426854245986"/>
-        <Indirect type1="ow" type2="cs+" eps_ct="0.38513512372774217"/>
-        <Indirect type1="hw" type2="f-" eps_ct="0.9605155243297857"/>
-        <Indirect type1="hw" type2="cl-" eps_ct="1.9037232827006474"/>
-        <Indirect type1="hw" type2="br-" eps_ct="2.0505736482439096"/>
-        <Indirect type1="hw" type2="i-" eps_ct="2.3498196326582828"/>
-        <Indirect type1="ow" type2="mg2+" eps_ct="0.7218986791011414"/>
-        <Indirect type1="ow" type2="ca2+" eps_ct="0.3522517783062727"/>
+        <Indirect type1="ow" type2="li+" eps_ct="1.1742856788757978"/>
+        <Indirect type1="ow" type2="na+" eps_ct="0.7967975657978114"/>
+        <Indirect type1="ow" type2="k+" eps_ct="0.7002816891745317"/>
+        <Indirect type1="ow" type2="rb+" eps_ct="1.0237520821477384"/>
+        <Indirect type1="ow" type2="cs+" eps_ct="0.917554913262635"/>
+        <Indirect type1="hw" type2="f-" eps_ct="1.7098046601391166"/>
+        <Indirect type1="hw" type2="cl-" eps_ct="1.7112986587833854"/>
+        <Indirect type1="hw" type2="br-" eps_ct="1.7764475234017643"/>
+        <Indirect type1="hw" type2="i-" eps_ct="2.074593878065276"/>
+        <Indirect type1="ow" type2="mg2+" eps_ct="0.614406775553592"/>
+        <Indirect type1="ow" type2="ca2+" eps_ct="0.6226509555165104"/>
     </ChargeTransfer>
     <Polarization>
         <Pol type="ow" eta="0.0" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
         <Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="li+" eta="0.0" alpha_xx="0.1586152" alpha_yy="0.1586152" alpha_zz="0.1586152" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="na+" eta="0.0" alpha_xx="0.9542199" alpha_yy="0.9542199" alpha_zz="0.9542199" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="k+" eta="0.0" alpha_xx="5.5376271" alpha_yy="5.5376271" alpha_zz="5.5376271" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="rb+" eta="0.0" alpha_xx="8.6857518" alpha_yy="8.6857518" alpha_zz="8.6857518" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="cs+" eta="0.0" alpha_xx="15.7177865" alpha_yy="15.7177865" alpha_zz="15.7177865" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="f-" eta="0.0" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" alpha_damp_exponent="241.724" alpha_damp_max="0.75"/>
-        <Pol type="cl-" eta="0.0" alpha_xx="32.2880907" alpha_yy="32.2880907" alpha_zz="32.2880907" alpha_damp_exponent="428.717" alpha_damp_max="0.75"/>
-        <Pol type="br-" eta="0.0" alpha_xx="42.7172275" alpha_yy="42.7172275" alpha_zz="42.7172275" alpha_damp_exponent="484.249" alpha_damp_max="0.75"/>
-        <Pol type="i-" eta="0.0" alpha_xx="64.1111144" alpha_yy="64.1111144" alpha_zz="64.1111144" alpha_damp_exponent="599.029" alpha_damp_max="0.75"/>
-        <Pol type="mg2+" eta="0.0" alpha_xx="0.4822524" alpha_yy="0.4822524" alpha_zz="0.4822524" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="ca2+" eta="0.0" alpha_xx="3.2809409" alpha_yy="3.2809409" alpha_zz="3.2809409" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="li+" eta="1.2899" alpha_xx="0.1586152" alpha_yy="0.1586152" alpha_zz="0.1586152" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="na+" eta="0.77541" alpha_xx="0.9542199" alpha_yy="0.9542199" alpha_zz="0.9542199" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="k+" eta="0.49979" alpha_xx="5.5376271" alpha_yy="5.5376271" alpha_zz="5.5376271" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="rb+" eta="0.42997" alpha_xx="8.6857518" alpha_yy="8.6857518" alpha_zz="8.6857518" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="cs+" eta="0.3528" alpha_xx="15.7177865" alpha_yy="15.7177865" alpha_zz="15.7177865" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="f-" eta="0.19808" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" alpha_damp_exponent="241.724" alpha_damp_max="0.75"/>
+        <Pol type="cl-" eta="0.19955" alpha_xx="32.2880907" alpha_yy="32.2880907" alpha_zz="32.2880907" alpha_damp_exponent="428.717" alpha_damp_max="0.75"/>
+        <Pol type="br-" eta="0.20469" alpha_xx="42.7172275" alpha_yy="42.7172275" alpha_zz="42.7172275" alpha_damp_exponent="484.249" alpha_damp_max="0.75"/>
+        <Pol type="i-" eta="0.25137" alpha_xx="64.1111144" alpha_yy="64.1111144" alpha_zz="64.1111144" alpha_damp_exponent="599.029" alpha_damp_max="0.75"/>
+        <Pol type="mg2+" eta="2.4916" alpha_xx="0.4822524" alpha_yy="0.4822524" alpha_zz="0.4822524" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
+        <Pol type="ca2+" eta="1.1944" alpha_xx="3.2809409" alpha_yy="3.2809409" alpha_zz="3.2809409" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
     </Polarization>
 </ForceField>
