@@ -98,9 +98,9 @@
         <Xpol type="k+" q_xpol="-22.012053864902324" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.28349755"/>
         <Xpol type="rb+" q_xpol="-20.45700467081039" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.235477592"/>
         <Xpol type="cs+" q_xpol="19.761852853199343" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.848350645"/>
-        <Xpol type="f-" q_xpol="1.007048197344031" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.227079124"/>
+        <Xpol type="f-" q_xpol="0.27048197344031" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.3"/>
         <Xpol type="cl-" q_xpol="-3.614075029047498" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.93226669"/>
-        <Xpol type="br-" q_xpol="-3.0929857915271888" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.791408686"/>
+        <Xpol type="br-" q_xpol="-6.5" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="2.0"/>
         <Xpol type="i-" q_xpol="-11.270805580829103" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.676040909"/>
         <Xpol type="mg2+" q_xpol="-52.91399735079737" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.430933333"/>
         <Xpol type="ca2+" q_xpol="-9.782589598834655" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.994733596"/>
@@ -155,7 +155,7 @@
         <Pol type="k+" eta="0.49979" alpha_xx="5.5376271" alpha_yy="5.5376271" alpha_zz="5.5376271" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
         <Pol type="rb+" eta="0.42997" alpha_xx="8.6857518" alpha_yy="8.6857518" alpha_zz="8.6857518" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
         <Pol type="cs+" eta="0.3528" alpha_xx="15.7177865" alpha_yy="15.7177865" alpha_zz="15.7177865" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
-        <Pol type="f-" eta="0.19808" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" alpha_damp_exponent="241.724" alpha_damp_max="0.75"/>
+        <Pol type="f-" eta="0.19808" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" alpha_damp_exponent="320.0" alpha_damp_max="0.75"/>
         <Pol type="cl-" eta="0.19955" alpha_xx="32.2880907" alpha_yy="32.2880907" alpha_zz="32.2880907" alpha_damp_exponent="428.717" alpha_damp_max="0.75"/>
         <Pol type="br-" eta="0.20469" alpha_xx="42.7172275" alpha_yy="42.7172275" alpha_zz="42.7172275" alpha_damp_exponent="484.249" alpha_damp_max="0.75"/>
         <Pol type="i-" eta="0.25137" alpha_xx="64.1111144" alpha_yy="64.1111144" alpha_zz="64.1111144" alpha_damp_exponent="599.029" alpha_damp_max="0.75"/>
