@@ -426,8 +426,8 @@
         11.7270176
       ],
       "eta": 0.19808,
-      "b_xpol": 2.227079124,
-      "q_xpol": 1.007048197344031,
+      "b_xpol": 3.3,
+      "q_xpol": 0.27048197344031,
       "Kdipo_xpol": 0.0,
       "Kquad_xpol": 0.0,
       "b_ct": 1.996668293888577,
@@ -438,7 +438,7 @@
       "Kdipo_ct_don": 0.0,
       "Kquad_ct_don": 0.0,
       "alpha_damp_max": 0.75,
-      "alpha_damp_exponent": 241.724
+      "alpha_damp_exponent": 320.0
     },
     {
       "type": "cl-",
@@ -526,8 +526,8 @@
         42.7172275
       ],
       "eta": 0.20469,
-      "b_xpol": 1.791408686,
-      "q_xpol": -3.0929857915271888,
+      "b_xpol": 2.0,
+      "q_xpol": -6.5,
       "Kdipo_xpol": 0.0,
       "Kquad_xpol": 0.0,
       "b_ct": 1.0544160010463834,
