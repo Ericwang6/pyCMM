@@ -83,6 +83,7 @@ class System(nn.Module):
         polarization_solver: str = 'cg',
         polarization_max_iteration: int = 400,
         polarization_tolerance: float = 1e-7,
+        use_polarization_extrapolation: bool = True,
         use_cutoff: bool = True,
         cutoff_lr: float = 9.0,
         cutoff_sr: float = 5.0,
@@ -121,7 +122,7 @@ class System(nn.Module):
             self.natoms, 
             self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
             rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
-            verbose=False, use_lr=self.use_ewald
+            verbose=False, use_lr=self.use_ewald, use_polarization_extrapolation=use_polarization_extrapolation
         )
         self.polarization_max_iteration = polarization_max_iteration
         self.polarization_tolerance = polarization_tolerance

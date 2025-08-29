@@ -304,7 +304,7 @@ class CMMPolarization(nn.Module):
         pol_group_segment_indices,
         pol_group_lengths_g,
         rtol=1e-5, atol=0, maxiter=400, n_extrapolate_from=10, verbose=False,
-        use_lr=True, alpha_ewald=0.0, k_max=0
+        use_lr=True, alpha_ewald=0.0, k_max=0, use_polarization_extrapolation=True
     ):
         super().__init__()
         self.natoms = natoms
@@ -313,10 +313,7 @@ class CMMPolarization(nn.Module):
         self.pol_group_lengths_g = pol_group_lengths_g
         self.n_pol_groups = self.pol_group_lengths_g.size(0)
 
-        # print(self.pol_group_indices_a)
-        # print(self.pol_group_segment_indices)
-        # print(self.pol_group_lengths_g)
-        # print(self.n_pol_groups)
+        self.use_polarization_extrapolation = use_polarization_extrapolation
 
         self.rtol = rtol
         self.atol = atol
@@ -464,12 +461,9 @@ class CMMPolarization(nn.Module):
         alpha,
         alpha_inv
     ):
-        
-        self.store_input(b_vector)
-        # TODO: Can also try an extrapolation based on input-output pairs
-        #guess_solution = self.get_extrapolated_guess_from_inputs()
-        # NOTE(JOE): Second-order extrapolation isn't helping at all. Not sure if I implemented it wrong or what.
-        self.get_extrapolated_guess_from_outputs()
+        if self.use_polarization_extrapolation:
+            self.store_input(b_vector)
+            self.get_extrapolated_guess_from_outputs()
         guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
         # guess_solution = guess
 
@@ -486,13 +480,13 @@ class CMMPolarization(nn.Module):
             alpha_inv
         )
         # print(info)
-
-        self.store_output(induced_multipoles)
-        if self.n_solves >= self.n_extrapolate_from:
-            if self.guess_error.numel() == 0:
-                self.store_extrapolated_output(guess_solution - induced_multipoles)
-            else:
-                self.store_extrapolated_output(guess_solution - self.guess_error - induced_multipoles)
+        if self.use_polarization_extrapolation:
+            self.store_output(induced_multipoles)
+            if self.n_solves >= self.n_extrapolate_from:
+                if self.guess_error.numel() == 0:
+                    self.store_extrapolated_output(guess_solution - induced_multipoles)
+                else:
+                    self.store_extrapolated_output(guess_solution - self.guess_error - induced_multipoles)
 
         return induced_multipoles
     
