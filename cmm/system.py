@@ -201,7 +201,7 @@ class System(nn.Module):
     def getEnergy(self, coords: torch.Tensor, box: torch.Tensor | None = None):
 
         # if not self._expand_parametrizers_during_init:
-        #     self.expandParametrizers()
+        self.expandParametrizers()
 
         
         boxInv = None if box is None else torch.linalg.inv(box)
