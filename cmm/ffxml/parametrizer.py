@@ -12,13 +12,13 @@ from ..multipole import AxisTypes, computeCartesianQuadrupoles
 def format_types(types: Iterable, check=False):
     if isinstance(types, str):
         if check:
-            assert '/' not in types, f'A valide string "/" in {types}'
+            assert '/' not in types, f'A valid string "/" in {types}'
         return types
     else:
         if check:
             for t in types:
-                assert '/' not in t, f'A valide string "/" in {t}'
-        return '/'.join(str(t) for t in types)
+                assert '/' not in t, f'A valid string "/" in {t}'
+        return '/'.join(str(t) for t in types).rstrip('/')
 
 
 class Parametrizer(ABC, nn.Module):
