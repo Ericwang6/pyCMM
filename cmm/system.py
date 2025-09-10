@@ -25,7 +25,8 @@ from .multipole import (
     convertMultipolesToPolytensor,
     scaleMultipoles,
     rotateDipoles, rotateQuadrupoles,
-    computeInteractionTensor
+    computeInteractionTensor,
+    computeUndampedInteractionTensorBlocks, formDampingFactorBlocksRank1, formDampingFactorBlocksRank2
 )
 from .short_range import (
     computeShortRangeEnergyFromPairs, 
@@ -46,21 +47,28 @@ from .switching_functions import SwitchFunction
 from .polarization_solver import cg_solve, CG, CMMPolarization
 
 
-import time
+import time, os
 from contextlib import contextmanager
 
-@contextmanager
-def timer(name: str = ''):
-    yield
-    # torch.cuda.synchronize()
-    # start = time.perf_counter()
-    # yield
-    # torch.cuda.synchronize()
-    # elapsed = 1000 * (time.perf_counter() - start)
-    # if name:
-    #     print(f"[{name}] elapsed: {elapsed:.6f} ms")
-    # else:
-    #     print(f"Elapsed: {elapsed:.6f} ms")
+PROFILE = int(os.environ.get('CMM_PROFILE', 0))
+
+if PROFILE:
+    @contextmanager
+    def timer(name: str = ''):
+        torch.cuda.synchronize()
+        start = time.perf_counter()
+        yield
+        torch.cuda.synchronize()
+        elapsed = 1000 * (time.perf_counter() - start)
+        if name:
+            print(f"[{name}] elapsed: {elapsed:.6f} ms")
+        else:
+            print(f"Elapsed: {elapsed:.6f} ms")
+else:
+    @contextmanager
+    def timer(name: str = ''):
+        yield
+
 
 
 class System(nn.Module):
@@ -392,19 +400,24 @@ class System(nn.Module):
                 pairs_i_sr, pairs_j_sr = pairs_sr[:, 0], pairs_sr[:, 1]
                 distVecs_sr = distVecs_lr[mask_sr]
                 dists_sr = dists_lr[mask_sr]
-                dists_inv_sr = 1 / dists_sr
+                dists_inv_sr = dists_inv_lr[mask_sr]
                 switch_sr = self.switch_func(dists_sr)
+
+                # undamped_tensors_lr = computeUndampedInteractionTensorBlocks(distVecs_lr, dists_lr, dists_inv_lr)
+                # undamped_tensors_sr = tuple(t[mask_sr] for t in undamped_tensors_lr)
             
             with timer("Prep multipoles"):
                 axistypes = self.parametrizers['Multipoles'].getExpandParameters('axistype')
                 kzIndices = self.parametrizers['Multipoles'].getExpandParameters('kzIndices')
                 kxIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
-                kyIndices = self.parametrizers['Multipoles'].getExpandParameters('kxIndices')
-                rotMatrices = computeLocal2GlobalRotationMatrixBatch(coords, kzIndices, kxIndices, kyIndices, axistypes, box, boxInv)
+                kyIndices = self.parametrizers['Multipoles'].getExpandParameters('kyIndices')
+                with timer("Prep-mpol-matrix"):
+                    rotMatrices = computeLocal2GlobalRotationMatrixBatch(coords, kzIndices, kxIndices, kyIndices, axistypes, box, boxInv)
 
-                mono = self.parametrizers['Multipoles'].getExpandParameters('mono') + charge_flux
-                dipo = rotateDipoles(self.parametrizers['Multipoles'].getExpandParameters('dipo'), rotMatrices).squeeze(1)
-                quad = rotateQuadrupoles(self.parametrizers['Multipoles'].getExpandParameters('quad'), rotMatrices)
+                with timer("Prep-mpol-rotate"):
+                    mono = self.parametrizers['Multipoles'].getExpandParameters('mono') + charge_flux
+                    dipo = rotateDipoles(self.parametrizers['Multipoles'].getExpandParameters('dipo'), rotMatrices).squeeze(1)
+                    quad = rotateQuadrupoles(self.parametrizers['Multipoles'].getExpandParameters('quad'), rotMatrices)
 
                 multipoles = convertMultipolesToPolytensor(mono, dipo, quad)
                 self.last_perm_multipoles = multipoles
@@ -423,6 +436,10 @@ class System(nn.Module):
                     pauli_mpoles[pairs_i_sr], pauli_mpoles[pairs_j_sr], b_pauli_ij, 
                     switch_sr, True, dists_inv_sr
                 )
+
+                # pauli_damps = formDampingFactorBlocksRank2(computeShortRangeTwoCenterDampFactors(dists_sr, b_pauli_ij))
+                # pauli_tensor = torch.matmul(undamped_tensors_sr[0], pauli_damps[0]) + torch.matmul(undamped_tensors_sr[1], pauli_damps[1]) + torch.matmul(undamped_tensors_sr[2], pauli_damps[2])
+                # pauli_pairwise = torch.bmm(pauli_mpoles[pairs_j_sr].unsqueeze(1), torch.bmm(pauli_tensor, pauli_mpoles[pairs_i_sr].unsqueeze(2))).flatten()
                 ene_pauli = torch.sum(pauli_pairwise)
 
             # ene_elec = torch.tensor(0.0, device=coords.device)
@@ -455,7 +472,8 @@ class System(nn.Module):
                 b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
                 disp_pairwise = computeDispersionFromPairs(dists_lr, c6_disp_ij, b_disp_ij)
                 ene_disp = torch.sum(disp_pairwise)
-
+            
+            with timer("Dispersion-LR"):
                 if self.use_lr_dispersion and box is not None:
                     boxV = torch.linalg.det(box)
                     ene_disp = ene_disp + computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_lr, self.natoms, boxV)
@@ -629,32 +647,28 @@ class System(nn.Module):
                         
                         b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
                         # self.b_vector = b_vector.clone().detach()
-                        with torch.no_grad():
-                            # Evaluate the initial guess #
-                            if self.last_induced_multipoles.numel() == 0:
-                                self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
-                            
-                            self.last_induced_multipoles = self.polarization_solver(
-                                coords,
-                                box,
-                                b_vector,
-                                self.last_induced_multipoles,
-                                pairs_lr_bidir[:, 0], pairs_lr_bidir[:, 1],
-                                pairs_sr_bidir[:, 0], pairs_sr_bidir[:, 1],
-                                self.pairs_i_excl_bidir, self.pairs_j_excl_bidir,
-                                realSpaceTensor,
-                                pol_tensor,
-                                realSpaceTensor_excl,
-                                eta_times_2,
-                                polarizabilities,
-                                inverse_polarizabilities
-                            )
-                            
-                            # self.polarization_solver.A_mm = A_mm
-                            # self.polarization_solver.M_mm = M_mm_direct
-                            # self.last_induced_multipoles = self.polarization_solver.solve(B=b_vector, X0=self.last_induced_multipoles)
-                            #print(f"Solved polarization in {self.polarization_solver.info_forward['niter']} iterations")
-                            # print(self.last_induced_multipoles)
+
+                        with timer("Polarization-SCF"):
+                            with torch.no_grad():
+                                # Evaluate the initial guess #
+                                if self.last_induced_multipoles.numel() == 0:
+                                    self.last_induced_multipoles = direct_field_induced_dipole_guess(self.natoms, self.n_pol_groups, polarizabilities, efield)
+                                
+                                self.last_induced_multipoles = self.polarization_solver(
+                                    coords,
+                                    box,
+                                    b_vector,
+                                    self.last_induced_multipoles,
+                                    pairs_lr_bidir[:, 0], pairs_lr_bidir[:, 1],
+                                    pairs_sr_bidir[:, 0], pairs_sr_bidir[:, 1],
+                                    self.pairs_i_excl_bidir, self.pairs_j_excl_bidir,
+                                    realSpaceTensor,
+                                    pol_tensor,
+                                    realSpaceTensor_excl,
+                                    eta_times_2,
+                                    polarizabilities,
+                                    inverse_polarizabilities
+                                )
                         
                         tmp = self.polarization_solver.compute_product_with_polarization_matrix(
                                 coords, box,
@@ -716,10 +730,11 @@ class System(nn.Module):
         # Field-dependent morse
         with timer("FDMorse"):
             if not self.parametrizers['Bond'].is_empty:
-                bondIndices = self.parametrizers['Bond'].getExpandParameters("atomIndices")
-                bondVecs = applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], box, boxInv)
-                bonds = computeBondFromVecs(bondVecs)
-                
+                with timer("FDMorse-bond"):
+                    bondIndices = self.parametrizers['Bond'].getExpandParameters("atomIndices")
+                    bondVecs = applyPBC(coords[bondIndices[:, 1]] - coords[bondIndices[:, 0]], None, None)
+                    bonds = computeBondFromVecs(bondVecs)
+                                    
                 r_eq = self.parametrizers['Bond'].getExpandParameters('r_eq')
                 k_b = self.parametrizers['Bond'].getExpandParameters('k_b')
                 D = self.parametrizers['Bond'].getExpandParameters('D')
