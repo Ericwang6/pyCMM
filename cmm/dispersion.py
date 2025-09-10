@@ -51,6 +51,7 @@ def computeDispersionFromPairsWithSwitching(
     damp = 1 - exp_u * (1 + u + u2 / 2 + u3 / 6 + u4 / 24 + u5 / 120 + u6 / 720)
     return -damp * c6_ij_p * switching_values / torch.pow(dists_p, 6)
 
+@torch.compile
 def compute_long_range_dispersion_correction(
     C6_ij_p: torch.Tensor, 
     cutoff_vdw: float,

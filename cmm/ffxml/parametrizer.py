@@ -440,7 +440,7 @@ class PolarizationParametrizer(AtomicParametrizer):
             elif self.params['paramIndices'].numel() > 0:
                 self.params_expand[name] = self.params[name][self.params['paramIndices']]
 
-
+@torch.compile
 def symmetric_pairing_function(pairs: torch.Tensor) -> torch.Tensor:
     """
     Given two positive indices, (i,j), this function generates a unique index k.

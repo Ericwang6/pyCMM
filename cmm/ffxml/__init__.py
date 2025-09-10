@@ -12,6 +12,7 @@ import torch
 
 from ..topology import Topology
 from ..system import System
+from ..batched_system import BatchedSystem
 from ..multipole import AxisTypes
 from .parametrizer import (
     BondParametrizer, 
@@ -65,15 +66,6 @@ class ItemTable(pd.DataFrame):
         return '\n'.join(xmlstr.split('\n')[1:-1])
     
     def to_tensors(self, float_dtype=torch.float64, integer_dtype=torch.long, device=None, requires_grad=False):
-        if device is not None:
-            device = device
-        elif torch.cuda.is_available():
-            device = 'cuda:0'
-        elif torch.mps.is_available():
-            device = 'mps'
-        else:
-            device = 'cpu'
-
         data = {}
         for col in self.columns:
             if is_float_dtype(self[col]):
@@ -110,15 +102,6 @@ class ParameterSet:
         """
         data: {"HarmonicBond": {"Bond": {"k": [1.0, 1.0], "b0": [1.0, 1.0]}}}
         """
-        
-        if device is not None:
-            device = device
-        elif torch.cuda.is_available():
-            device = 'cuda:0'
-        elif torch.mps.is_available():
-            device = 'mps'
-        else:
-            device = 'cpu'
         
         self.data: Dict[str, Dict[str, Dict[str, Union[torch.Tensor, List]]]] = {}
 
@@ -322,6 +305,7 @@ class ForceFieldXML:
         return self.pset.to_xml_str()
     
     def assignAtomTypes(self, top: Topology):
+        top.atomTypes.clear()
         for resname, name in top.atomSigs:
             top.atomTypes.append(self.atomTypeDefs[resname][name])
     
@@ -575,7 +559,10 @@ class ForceFieldXML:
         return parametrizers
     
 
-    def parametrize(self, top: Topology, **kwargs):
+    def parametrize(self, top: Topology, batch: bool = False, **kwargs):
         parametrizers = self.createParametrizers(top)
-        system = System(top, parametrizers, **kwargs)
+        if batch:
+            system = BatchedSystem(top, parametrizers, **kwargs)
+        else:
+            system = System(top, parametrizers, **kwargs)
         return system

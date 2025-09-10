@@ -215,15 +215,30 @@ def computeCartesianQuadrupoles(quad_s: torch.Tensor):
     quad = torch.vstack((qxx, qxy, qxz, qxy, qyy, qyz, qxz, qyz, qzz)).T.reshape(-1, 3, 3)
     return quad
 
+
 def computeSphericalQuadrupoles(quad_c: torch.Tensor):
-    # Conversion factors come from Table E.1 of Anthony Stone book
+    """
+    Compute cartesian quadrupoles from spheric-harmonics quadrupoles
+
+    Parameters
+    ----------
+    quad_c: torch.Tensor
+        Quadrupoles in cartesian form (Qxx, Qxy, Qxz, Qyy, Qyz, Qzz), shape (N, 6).
+
+    Returns
+    -------
+    quad_s: torch.Tensor
+        Quadrupoles in spherical harmonics form, shape (N, 5)
+    """
     HALF_SQRT3 = math.sqrt(3) / 2
-    Q_20  = quad_c[:, 2, 2]
-    Q_21c = quad_c[:, 0, 2] / HALF_SQRT3
-    Q_21s = quad_c[:, 1, 2] / HALF_SQRT3
-    Q_22c = (quad_c[:, 0, 0] - quad_c[:, 1, 1]) / HALF_SQRT3 / 2
-    Q_22s = quad_c[:, 0, 1] / HALF_SQRT3
-    return torch.vstack((Q_20, Q_21c, Q_21s, Q_22c, Q_22s)).T.reshape(-1, 5)
+    q20  = quad_c[:, 5] 
+    q21c = quad_c[:, 2] / HALF_SQRT3
+    q21s = quad_c[:, 4] / HALF_SQRT3
+    q22c = (quad_c[:, 0] - quad_c[:, 3]) / HALF_SQRT3 / 2
+    q22s = quad_c[:, 1] / HALF_SQRT3
+    quad_s = torch.vstack((q20, q21c, q21s, q22c, q22s)).T
+    return quad_s
+
 
 @torch.compile
 def computeInteractionTensor(drVec: torch.Tensor, dampFactors: torch.Tensor, drInv: Optional[torch.Tensor] = None, rank: int = 2):
@@ -325,9 +340,13 @@ def computeInteractionTensor(drVec: torch.Tensor, dampFactors: torch.Tensor, drI
     
     return iTensor
 
-def computeUndampedInteractionTensorBlocks(dist_vecs: torch.Tensor, dists: torch.Tensor):
+@torch.compile
+def computeUndampedInteractionTensorBlocks(dist_vecs: torch.Tensor, dists: torch.Tensor, dists_inv: Optional[torch.Tensor] = None):
     XX = torch.zeros_like(dists)
-    t_r1 = 1 / dists
+    if dists_inv is not None:
+        t_r1 = dists_inv
+    else:
+        t_r1 = 1 / dists
     drInv2 = torch.pow(t_r1, 2)
     drInv3 = drInv2 * t_r1
     drInv5 = drInv3 * drInv2
@@ -453,6 +472,7 @@ def computeUndampedInteractionTensorBlocks(dist_vecs: torch.Tensor, dists: torch
     
     return interaction_tensor_13579, interaction_tensor_00357, interaction_tensor_00005
 
+@torch.compile
 def formDampingFactorBlocksRank1(damp_factors: torch.Tensor):
     f1 = damp_factors[0]
     f3 = damp_factors[1]
@@ -475,6 +495,7 @@ def formDampingFactorBlocksRank1(damp_factors: torch.Tensor):
     
     return damp_135, damp_003
 
+@torch.compile
 def formDampingFactorBlocksRank2(damp_factors: torch.Tensor):
     f1 = damp_factors[0]
     f3 = damp_factors[1]

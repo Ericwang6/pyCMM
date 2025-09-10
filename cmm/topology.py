@@ -13,15 +13,6 @@ class Topology:
         device: str | None = None,
         cutoff: int = 3
     ):
-        
-        if device is not None:
-            device = device
-        elif torch.cuda.is_available():
-            device = 'cuda:0'
-        elif torch.mps.is_available():
-            device = 'mps'
-        else:
-            device = 'cpu'
         self.device = device
         self.cutoff = cutoff
         self.natoms = 0
@@ -187,9 +178,12 @@ class Topology:
         subgraphs = list(nx.connected_components(self._graph))
         
         groups = []
+        atom_indices_to_group_indices = [None for _ in range(self.natoms)]
         for gidx, subgraph in enumerate(subgraphs):
             group = torch.tensor(list(sorted(list(subgraph))), device=self.device, requires_grad=False, dtype=torch.long)
             groups.append(group)
+            for atom_idx in subgraph:
+                atom_indices_to_group_indices[atom_idx] = gidx
         
         self.polarization_groups = torch.nested.nested_tensor(
             groups,
@@ -207,6 +201,7 @@ class Topology:
             dtype=torch.long, device=self.device, requires_grad=False
         )
         self.pol_group_segment_indices[1:] = torch.cumsum(self.pol_group_lengths_g, dim=0)
+        self.atom_indices_to_group_indices = torch.tensor(atom_indices_to_group_indices, dtype=torch.long, device=self.device)
     
     def _build_excl_data(self):
         excl_data = {}
