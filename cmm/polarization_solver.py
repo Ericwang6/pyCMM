@@ -613,6 +613,7 @@ class CMMPolarization(nn.Module):
 
         return X_k, info
     
+    # @torch.compile
     def compute_product_with_polarization_matrix(
         self, 
         coords, box,
@@ -648,9 +649,16 @@ class CMMPolarization(nn.Module):
             edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, induced_multipoles_i_excl_p.unsqueeze(2))
             induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
         
-        induced_field_data.mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
+        # pairs_i = torch.cat((pairs_lr_i_a, pairs_sr_i_a, pairs_excl_i_a))
+        # pairs_j = torch.cat((pairs_lr_j_a, pairs_sr_j_a, pairs_excl_j_a))
+        # tensors = torch.vstack((direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl))
+        # edata_pairwise = torch.bmm(tensors, induced_multipoles_a[pairs_i].unsqueeze(2))
+        # induced_field_data = torch.zeros((self.natoms, 4), device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype)
+        # induced_field_data.scatter_add_(0, pairs_j.unsqueeze(1).expand(-1, 4), edata_pairwise.squeeze(2))
+        
+        # induced_field_data .mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
         induced_electric_potential = induced_field_data[:, 0]
-        induced_electric_field = induced_field_data[:, 1:4]
+        induced_electric_field = -induced_field_data[:, 1:4]
 
         # Get reciprocal space field data (ewald + self contribution)
         if self.use_lr:
@@ -662,6 +670,7 @@ class CMMPolarization(nn.Module):
 
         # Get sum of induced charges in every polarization group
         constraints = segment_csr(induced_charges[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
+        # constraints = torch._segment_reduce(induced_charges[self.pol_group_indices_a], 'sum', offsets=self.pol_group_segment_indices)
 
         # Expand lagrange multipliers from group index space to atomic index space
         expanded_lagrange_muls = lagrange_muls.repeat_interleave(self.pol_group_lengths_g)

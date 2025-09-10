@@ -4,6 +4,7 @@ from typing import Optional
 
 from .electrostatics import computeInducedElectricPotentialAndFieldsFromPairs
 
+@torch.compile
 def get_field_dependent_polarizabilities(
         polarizabilities_a: torch.Tensor,
         elec_field_a: torch.Tensor,
