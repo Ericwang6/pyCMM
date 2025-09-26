@@ -307,7 +307,7 @@ class ForceFieldXML:
     def assignAtomTypes(self, top: Topology):
         top.atomTypes.clear()
         for resname, name in top.atomSigs:
-            top.atomTypes.append(self.atomTypeDefs[resname][name])
+            top.atomTypes.append(self.atomTypeDefs[resname][name.title()])
     
     def save(self, fname: os.PathLike = '') -> str:
         xmlstr = [
@@ -501,7 +501,9 @@ class ForceFieldXML:
             top,
             name='Dispersion'
         )
+
         for p in ['C6_disp', 'b_disp']:
+            pair_params = self.pset.find(f'Dispersion/Pair/{p}', list())
             dispParametrizer.registerPairwiseParameters(
                 p,
                 self.pset.find(f'Dispersion/Disp/{p}'),
@@ -509,7 +511,7 @@ class ForceFieldXML:
                     self.pset.find('Dispersion/Pair/type1', list()),
                     self.pset.find('Dispersion/Pair/type2', list())
                 )),
-                specific_pair_params=self.pset.find(f'Dispersion/Pair/{p}', list())
+                specific_pair_params=pair_params
             )
         parametrizers['Dispersion'] = dispParametrizer
         

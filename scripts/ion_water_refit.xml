@@ -74,6 +74,35 @@
         <CP type="i-" Z="53.0" b_elec="1.8957441755648987"/>
         <CP type="mg2+" Z="3.053461002574683" b_elec="1.375938288363925"/>
         <CP type="ca2+" Z="4.997802278436151" b_elec="2.1211829567079863"/>
+
+        <Pair type1="li+" type2="f-" b_elec="3.29393"/>
+        <Pair type1="li+" type2="cl-" b_elec="2.53683"/>
+        <Pair type1="li+" type2="br-" b_elec="2.4508"/>
+        <Pair type1="li+" type2="i-" b_elec="2.34386"/>
+        <Pair type1="na+" type2="f-" b_elec="2.47042"/>
+        <Pair type1="na+" type2="cl-" b_elec="2.09285"/>
+        <Pair type1="na+" type2="br-" b_elec="2.06585"/>
+        <Pair type1="na+" type2="i-" b_elec="2.0484"/>
+        <Pair type1="k+" type2="f-" b_elec="2.27313"/>
+        <Pair type1="k+" type2="cl-" b_elec="2.01972"/>
+        <Pair type1="k+" type2="br-" b_elec="1.99904"/>
+        <Pair type1="k+" type2="i-" b_elec="1.9751"/>
+        <Pair type1="rb+" type2="f-" b_elec="2.289"/>
+        <Pair type1="rb+" type2="cl-" b_elec="2.0295"/>
+        <Pair type1="rb+" type2="br-" b_elec="1.9988"/>
+        <Pair type1="rb+" type2="i-" b_elec="1.99082"/>
+        <Pair type1="cs+" type2="f-" b_elec="2.05036"/>
+        <Pair type1="cs+" type2="cl-" b_elec="1.90651"/>
+        <Pair type1="cs+" type2="br-" b_elec="1.89059"/>
+        <Pair type1="cs+" type2="i-" b_elec="1.90755"/>
+        <Pair type1="mg2+" type2="f-" b_elec="2.1"/>
+        <Pair type1="mg2+" type2="cl-" b_elec="2.1"/>
+        <Pair type1="mg2+" type2="br-" b_elec="2.1"/>
+        <Pair type1="mg2+" type2="i-" b_elec="2.1"/>
+        <Pair type1="ca2+" type2="f-" b_elec="2.1"/>
+        <Pair type1="ca2+" type2="cl-" b_elec="2.1"/>
+        <Pair type1="ca2+" type2="br-" b_elec="2.1"/>
+        <Pair type1="ca2+" type2="i-" b_elec="2.1"/>
     </ChargePenetration>
     <PauliRepulsion>
         <Pauli type="ow" q_pauli="4.5998" Kdipo_pauli="-3.4278" Kquad_pauli="-0.9743" b_pauli="1.955"/>
@@ -89,6 +118,35 @@
         <Pauli type="i-" q_pauli="8.411876708576406" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="1.253656638244876"/>
         <Pauli type="mg2+" q_pauli="5.529983927877168" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.910394743942288"/>
         <Pauli type="ca2+" q_pauli="11.638118869412937" Kdipo_pauli="0.0" Kquad_pauli="0.0" b_pauli="2.4961278366422297"/>
+
+        <Pair type1="li+" type2="f-" b_pauli="2.0662"/>
+        <Pair type1="li+" type2="cl-" b_pauli="1.81696"/>
+        <Pair type1="li+" type2="br-" b_pauli="1.78426"/>
+        <Pair type1="li+" type2="i-" b_pauli="1.76695"/>
+        <Pair type1="na+" type2="f-" b_pauli="2.23085"/>
+        <Pair type1="na+" type2="cl-" b_pauli="1.96851"/>
+        <Pair type1="na+" type2="br-" b_pauli="1.90723"/>
+        <Pair type1="na+" type2="i-" b_pauli="1.87522"/>
+        <Pair type1="k+" type2="f-" b_pauli="2.0344"/>
+        <Pair type1="k+" type2="cl-" b_pauli="1.79779"/>
+        <Pair type1="k+" type2="br-" b_pauli="1.74843"/>
+        <Pair type1="k+" type2="i-" b_pauli="1.70111"/>
+        <Pair type1="rb+" type2="f-" b_pauli="2.07856"/>
+        <Pair type1="rb+" type2="cl-" b_pauli="1.79968"/>
+        <Pair type1="rb+" type2="br-" b_pauli="1.74034"/>
+        <Pair type1="rb+" type2="i-" b_pauli="1.71241"/>
+        <Pair type1="cs+" type2="f-" b_pauli="1.94985"/>
+        <Pair type1="cs+" type2="cl-" b_pauli="1.70545"/>
+        <Pair type1="cs+" type2="br-" b_pauli="1.64889"/>
+        <Pair type1="cs+" type2="i-" b_pauli="1.64008"/>
+        <Pair type1="mg2+" type2="f-" b_pauli="2.501529"/>
+        <Pair type1="mg2+" type2="cl-" b_pauli="2.17377"/>
+        <Pair type1="mg2+" type2="br-" b_pauli="2.12382"/>
+        <Pair type1="mg2+" type2="i-" b_pauli="2.048061"/>
+        <Pair type1="ca2+" type2="f-" b_pauli="2.285391"/>
+        <Pair type1="ca2+" type2="cl-" b_pauli="1.98595"/>
+        <Pair type1="ca2+" type2="br-" b_pauli="1.94031"/>
+        <Pair type1="ca2+" type2="i-" b_pauli="1.871104"/>
     </PauliRepulsion>
     <ExchangePolarization>
         <Xpol type="ow" q_xpol="0.8491" Kdipo_xpol="1.0026" Kquad_xpol="-0.3606" b_xpol="2.5447"/>
@@ -104,6 +162,35 @@
         <Xpol type="i-" q_xpol="-11.270805580829103" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.676040909"/>
         <Xpol type="mg2+" q_xpol="-52.91399735079737" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="3.430933333"/>
         <Xpol type="ca2+" q_xpol="-9.782589598834655" Kdipo_xpol="0.0" Kquad_xpol="0.0" b_xpol="1.994733596"/>
+
+        <Pair type1="li+" type2="f-" b_xpol="2.42899"/>
+        <Pair type1="li+" type2="cl-" b_xpol="21.7689"/>
+        <Pair type1="li+" type2="br-" b_xpol="3.43206"/>
+        <Pair type1="li+" type2="i-" b_xpol="2.6963"/>
+        <Pair type1="na+" type2="f-" b_xpol="24.3618"/>
+        <Pair type1="na+" type2="cl-" b_xpol="13.9896"/>
+        <Pair type1="na+" type2="br-" b_xpol="13.7141"/>
+        <Pair type1="na+" type2="i-" b_xpol="13.5543"/>
+        <Pair type1="k+" type2="f-" b_xpol="2.77048"/>
+        <Pair type1="k+" type2="cl-" b_xpol="13.5339"/>
+        <Pair type1="k+" type2="br-" b_xpol="13.2437"/>
+        <Pair type1="k+" type2="i-" b_xpol="12.9938"/>
+        <Pair type1="rb+" type2="f-" b_xpol="15.3797"/>
+        <Pair type1="rb+" type2="cl-" b_xpol="13.8017"/>
+        <Pair type1="rb+" type2="br-" b_xpol="13.8468"/>
+        <Pair type1="rb+" type2="i-" b_xpol="12.3616"/>
+        <Pair type1="cs+" type2="f-" b_xpol="14.339"/>
+        <Pair type1="cs+" type2="cl-" b_xpol="12.9929"/>
+        <Pair type1="cs+" type2="br-" b_xpol="12.7337"/>
+        <Pair type1="cs+" type2="i-" b_xpol="12.6147"/>
+        <Pair type1="mg2+" type2="f-" b_xpol="2.1"/>
+        <Pair type1="mg2+" type2="cl-" b_xpol="2.1"/>
+        <Pair type1="mg2+" type2="br-" b_xpol="2.1"/>
+        <Pair type1="mg2+" type2="i-" b_xpol="2.1"/>
+        <Pair type1="ca2+" type2="f-" b_xpol="2.1"/>
+        <Pair type1="ca2+" type2="cl-" b_xpol="2.1"/>
+        <Pair type1="ca2+" type2="br-" b_xpol="2.1"/>
+        <Pair type1="ca2+" type2="i-" b_xpol="2.1"/>
     </ExchangePolarization>
     <Dispersion>
         <Disp type="ow" C6_disp="35.8289" b_disp="1.84302"/>
@@ -119,6 +206,35 @@
         <Disp type="i-" C6_disp="1359.3261338721927" b_disp="1.2997553647104885"/>
         <Disp type="mg2+" C6_disp="3.910824632404541" b_disp="1.572330887655486"/>
         <Disp type="ca2+" C6_disp="25.575838933136964" b_disp="1.6815418133987525"/>
+
+        <Pair type1="li+" type2="f-" b_disp="1.49986"/>
+        <Pair type1="li+" type2="cl-" b_disp="1.28869"/>
+        <Pair type1="li+" type2="br-" b_disp="2.0152"/>
+        <Pair type1="li+" type2="i-" b_disp="0.989019"/>
+        <Pair type1="na+" type2="f-" b_disp="1.63812"/>
+        <Pair type1="na+" type2="cl-" b_disp="1.62445"/>
+        <Pair type1="na+" type2="br-" b_disp="1.39697"/>
+        <Pair type1="na+" type2="i-" b_disp="1.52165"/>
+        <Pair type1="k+" type2="f-" b_disp="1.32684"/>
+        <Pair type1="k+" type2="cl-" b_disp="1.58976"/>
+        <Pair type1="k+" type2="br-" b_disp="1.47483"/>
+        <Pair type1="k+" type2="i-" b_disp="1.37519"/>
+        <Pair type1="rb+" type2="f-" b_disp="1.66612"/>
+        <Pair type1="rb+" type2="cl-" b_disp="3.90536"/>
+        <Pair type1="rb+" type2="br-" b_disp="1.17374"/>
+        <Pair type1="rb+" type2="i-" b_disp="1.24628"/>
+        <Pair type1="cs+" type2="f-" b_disp="1.50876"/>
+        <Pair type1="cs+" type2="cl-" b_disp="1.66054"/>
+        <Pair type1="cs+" type2="br-" b_disp="2.21299"/>
+        <Pair type1="cs+" type2="i-" b_disp="1.42241"/>
+        <Pair type1="mg2+" type2="f-" b_disp="2.1"/>
+        <Pair type1="mg2+" type2="cl-" b_disp="2.1"/>
+        <Pair type1="mg2+" type2="br-" b_disp="2.1"/>
+        <Pair type1="mg2+" type2="i-" b_disp="2.1"/>
+        <Pair type1="ca2+" type2="f-" b_disp="2.1"/>
+        <Pair type1="ca2+" type2="cl-" b_disp="2.1"/>
+        <Pair type1="ca2+" type2="br-" b_disp="2.1"/>
+        <Pair type1="ca2+" type2="i-" b_disp="2.1"/>
     </Dispersion>
     <ChargeTransfer>
         <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485"/>
@@ -146,6 +262,35 @@
         <Indirect type1="hw" type2="i-" eps_ct="2.074593878065276"/>
         <Indirect type1="ow" type2="mg2+" eps_ct="0.614406775553592"/>
         <Indirect type1="ow" type2="ca2+" eps_ct="0.6226509555165104"/>
+
+        <Pair type1="li+" type2="f-" b_ct="1.68936"/>
+        <Pair type1="li+" type2="cl-" b_ct="1.14099"/>
+        <Pair type1="li+" type2="br-" b_ct="1.09604"/>
+        <Pair type1="li+" type2="i-" b_ct="0.911407"/>
+        <Pair type1="na+" type2="f-" b_ct="2.12257"/>
+        <Pair type1="na+" type2="cl-" b_ct="0.981402"/>
+        <Pair type1="na+" type2="br-" b_ct="0.948933"/>
+        <Pair type1="na+" type2="i-" b_ct="0.911423"/>
+        <Pair type1="k+" type2="f-" b_ct="1.92339"/>
+        <Pair type1="k+" type2="cl-" b_ct="1.56964"/>
+        <Pair type1="k+" type2="br-" b_ct="1.47289"/>
+        <Pair type1="k+" type2="i-" b_ct="1.34706"/>
+        <Pair type1="rb+" type2="f-" b_ct="1.97104"/>
+        <Pair type1="rb+" type2="cl-" b_ct="1.43009"/>
+        <Pair type1="rb+" type2="br-" b_ct="1.34474"/>
+        <Pair type1="rb+" type2="i-" b_ct="1.29478"/>
+        <Pair type1="cs+" type2="f-" b_ct="1.80732"/>
+        <Pair type1="cs+" type2="cl-" b_ct="1.39542"/>
+        <Pair type1="cs+" type2="br-" b_ct="1.33849"/>
+        <Pair type1="cs+" type2="i-" b_ct="1.31385"/>
+        <Pair type1="mg2+" type2="f-" b_ct="2.1"/>
+        <Pair type1="mg2+" type2="cl-" b_ct="2.1"/>
+        <Pair type1="mg2+" type2="br-" b_ct="2.1"/>
+        <Pair type1="mg2+" type2="i-" b_ct="2.1"/>
+        <Pair type1="ca2+" type2="f-" b_ct="2.1"/>
+        <Pair type1="ca2+" type2="cl-" b_ct="2.1"/>
+        <Pair type1="ca2+" type2="br-" b_ct="2.1"/>
+        <Pair type1="ca2+" type2="i-" b_ct="2.1"/>
     </ChargeTransfer>
     <Polarization>
         <Pol type="ow" eta="0.0" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0"/>
