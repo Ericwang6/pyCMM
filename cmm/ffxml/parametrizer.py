@@ -498,7 +498,7 @@ class PairParametrizer(AtomicParametrizer):
         super().registerParameters(name, params)
         self._param_is_pairwise[name] = True
 
-        if specific_pair_types:
+        if len(specific_pair_params) != 0:
             assert len(specific_pair_params.shape) == 1, "Input specific pair parameter must be a 1-D tensor"
             assert specific_pair_params.shape[0] == len(specific_pair_types), \
                 f"Length of input parameters not correct, should be {len(specific_pair_types)}, but found {specific_pair_params.shape[0]}"

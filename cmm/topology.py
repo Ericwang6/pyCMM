@@ -214,7 +214,9 @@ class Topology:
         self._excl_data = excl_data
         self._excl_pairs = torch.tensor(list(excl_data.keys()), device=self.device)
         self._excl_dists = torch.tensor(list(excl_data.values()), device=self.device)
-    
+        if torch.numel(self._excl_pairs) == 0:
+            self._excl_pairs = torch.empty((0, 2), device=self._excl_dists.device, dtype=self._excl_dists.dtype)
+
         self._excl_pairs_bi = torch.vstack((self._excl_pairs, self._excl_pairs[:, [1, 0]]))
         self._excl_dists_bi = torch.hstack((self._excl_dists, self._excl_dists))
 

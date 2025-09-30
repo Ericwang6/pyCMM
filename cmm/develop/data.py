@@ -102,18 +102,35 @@ class EdaData:
 
     @classmethod
     def from_csv_file(cls, pdb_file, csv_file):
-        top = app.PDBFile(pdb_file).topology
+        loaded_pdb = app.PDBFile(pdb_file)
+        top = loaded_pdb.topology
         eda_df = pd.read_csv(csv_file)
-        enes_ref = {
-            "perm_elec": eda_df['CLS_ELEC'].values / 4.184,
-            "pauli": eda_df['MOD_PAULI'].values / 4.184,
-            'ct': eda_df['CHARGE_TRANSFER'].values / 4.184,
-            'pol': eda_df['POLARIZATION'].values / 4.184,
-            'disp': eda_df['DISP'].values / 4.184,
-            'total': eda_df['TOTAL'].values / 4.184
-        }
+        try:
+            enes_ref = {
+                "perm_elec": eda_df['CLS_ELEC'].values / 4.184,
+                "pauli": eda_df['MOD_PAULI'].values / 4.184,
+                'ct': eda_df['CHARGE_TRANSFER'].values / 4.184,
+                'pol': eda_df['POLARIZATION'].values / 4.184,
+                'disp': eda_df['DISP'].values / 4.184,
+                'total': eda_df['TOTAL'].values / 4.184
+            }
+        except KeyError:
+            # TODO: This is a band-aid. Should make the association between keys
+            # used here and possible keys from the csv file user-specifiable.
+            enes_ref = {
+                "perm_elec": eda_df['cls_elec'].values / 4.184,
+                "pauli": eda_df['mod_pauli'].values / 4.184,
+                'ct': eda_df['ct'].values / 4.184,
+                'pol': eda_df['pol'].values / 4.184,
+                'disp': eda_df['disp'].values / 4.184,
+                'total': eda_df['int'].values / 4.184
+            }
         enes_ref = {key: torch.tensor(enes_ref[key]) for key in enes_ref}
-        coords = np.array([np.array(xyz.split()).reshape(-1, 3).astype(float) / BOHR2ANG for xyz in eda_df['xyz']])
+        
+        if 'xyz' in eda_df:
+            coords = np.array([np.array(xyz.split()).reshape(-1, 3).astype(float) / BOHR2ANG for xyz in eda_df['xyz']])
+        else:
+            coords = np.array([loaded_pdb.getPositions(True, i_frame) for i_frame in range(loaded_pdb.getNumFrames())]) / BOHR2NM
         coords = torch.tensor(coords)
 
         data = cls(top, coords, enes_ref, eda_df)

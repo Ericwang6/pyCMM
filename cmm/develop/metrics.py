@@ -74,10 +74,17 @@ EDA_COLORS = {
 }
     
 
-def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_index', ylabel='Energy (kcal/mol)', xmin=-np.inf, xmax=np.inf):
+def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_index', ylabel='Energy (kcal/mol)', xmin=-np.inf, xmax=np.inf, ymin=None, ymax=None):
+    
+    if ymin:
+        plt.ylim(bottom=ymin)
+    if ymax:
+        plt.ylim(top=ymax)
+
     if ax is None:
         fig, ax = plt.subplots(1, 1, constrained_layout=True)
     
+
     xdata = as_numpy(xdata)
     mask = np.logical_and(xdata < xmax, xdata > xmin)
 

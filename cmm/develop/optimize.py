@@ -23,6 +23,7 @@ class Optimizer:
         l2: float = 100.0, 
         l2_params = dict(),
         additional_positive_constraints: List[str] = list(),
+        fit_pair_params_only: bool = False,
         **kwargs
     ):
 
@@ -35,6 +36,8 @@ class Optimizer:
         self.opt_params: Dict[str, torch.Tensor] = {}
         for force_name in ff.pset.data:
             for item_name in ff.pset.data[force_name]:
+                if fit_pair_params_only and item_name != 'Pair':
+                    continue
                 for param_name in ff.pset.data[force_name][item_name]:
                     p = ff.pset.data[force_name][item_name][param_name]
                     if torch.is_tensor(p) and p.is_floating_point():
