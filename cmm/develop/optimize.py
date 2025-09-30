@@ -90,7 +90,8 @@ class Optimizer:
             'PauliRepulsion/Pauli/q_pauli', 'PauliRepulsion/Pauli/b_pauli', 'PauliRepulsion/Pair/b_pauli',
             'ExchangePolarization/Xpol/b_xpol', 'ExchangePolarization/Pair/b_xpol',
             'Dispersion/Disp/C6_disp', 'Dispersion/Disp/b_disp', 'Dispersion/Pair/b_disp', 'Dispersion/Pair/C6_disp',
-            'ChargeTransfer/Direct/q_ct_don', 'ChargeTransfer/Direct/b_ct', 'ChargeTransfer/Pair/b_ct', 'ChargeTransfer/Indirect/eps_ct',
+            # 'ChargeTransfer/Direct/q_ct_don', 
+            'ChargeTransfer/Direct/b_ct', 'ChargeTransfer/Pair/b_ct', 'ChargeTransfer/Indirect/eps_ct',
             'Polarization/Pol/eta', 'Polarization/Pol/alpha_xx', 'Polarization/Pol/alpha_yy', 'Polarization/Pol/alpha_zz',
             'Polarization/Pol/alpha_damp_exponent', 'Polarization/Pol/alpha_damp_max',
             'Bonds/Bond/r_eq', 'Bonds/Bond/D', 'Bonds/Bond/k_b',
@@ -187,7 +188,8 @@ class Trainer:
         target_weights = dict(), 
         eda_weights = dict(), 
         qsum_constr: float = 1e5, 
-        weight_func: str | Callable | None = 'interaction'
+        weight_func: str | Callable | None = 'interaction',
+        imbalance_loss: float = 1.0
     ):
         self.ff = ff
         self.optimizer = optimizer
@@ -221,6 +223,8 @@ class Trainer:
             self.weight_func = interaction_weight
         else:
             raise NotImplementedError(f"Unsupported weighting: {weight_func}")
+
+        self.imbalance_loss = imbalance_loss
 
     def evaluate(self, data, system=None, **kwargs):
         if system is None:
@@ -260,7 +264,12 @@ class Trainer:
                 if isinstance(data, EdaData):
                     loss = {}
                     for key in ref:
-                        l = weight_mse(ref[key], res[key], self.weight_func(ref['total']))
+                        if self.imbalance_loss != 1.0:
+                            imbalance = torch.ones_like(ref[key], device=ref[key].device, dtype=ref[key].dtype) * self.imbalance_loss
+                            weights = torch.where(ref[key] > res[key], imbalance, 1.0) * self.weight_func(ref['total'])
+                        else:
+                            weights = self.weight_func(ref['total'])
+                        l = weight_mse(ref[key], res[key], weights)
                         total_loss += l * loss_weight * self.eda_weights.get(key, 1.0)
                         loss[key] = l.detach().item()
                 else:
