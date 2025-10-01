@@ -1,4 +1,5 @@
-from typing import List, Dict, Any, Optional, TextIO, Union
+from typing import List, Dict, Any, Optional, TextIO, Union, Literal
+from collections import defaultdict
 import os
 import numpy as np
 import parmed
@@ -166,6 +167,38 @@ class QChemWriter:
         return molstr
     
 
+def _parse_force_line(line: str):
+    return [float(line[5:17]), float(line[17:29]), float(line[29:41])]
+
+def _parse_force_block(f, natoms: int):
+    results = []
+    for i in range(natoms):
+        results.append(_parse_force_line(f.readline()))
+    return np.array(results)
+
+def _parse_molecule_block_with_fragments(f):
+    total_charge, total_mult = tuple(map(int, f.readline().strip().split()))
+    charges = []
+    mults = []
+    atoms = []
+    coords = []
+    while True:
+        line = f.readline()
+        if line.startswith('$end'):
+            break
+        elif line.startswith('-'):
+            charge, mult = tuple(map(int, f.readline().strip().split()))
+            charges.append(charge)
+            mults.append(mult)
+            atoms.append([])
+            coords.append([])
+        else:
+            content = line.strip().split()
+            atoms[-1].append(content[0])
+            coords[-1].append(list(map(float, content[1:])))
+    return atoms, coords, charges, mults, total_charge, total_mult
+
+
 class QChemReader:
     def __init__(self):
         pass
@@ -324,7 +357,49 @@ class QChemReader:
         dipo = np.array(dipo)
         molecule = Molecule(atoms, coords, charge=charge, dipo=dipo, polarizability=polarizability)
         return molecule
-
+    
+    @staticmethod
+    def read_fda_out(out: os.PathLike, unit: Literal['kJ/mol/A', 'kcal/mol/A'] = 'kJ/mol/A'):        
+        forces = {}
+        natoms = None
+        atoms, coords, charges = None, None, None
+        _read_atoms = False
+        with open(out) as f:
+            for line in f:
+                if line.startswith('$molecule') and (not _read_atoms):
+                    atoms, coords, charges, mults, total_charge, total_mult = _parse_molecule_block_with_fragments(f)
+                    natoms = sum(len(a) for a in atoms)
+                    _read_atoms = True
+                elif line.startswith(' Geometric Distortion Forces:'):
+                    f.readline()
+                    forces['geom'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Frozen Forces:'):
+                    f.readline()
+                    forces['frozen'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Classical Electrostatic Forces:'):
+                    f.readline()
+                    forces['perm_elec'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Non-Electrostatic Frozen Forces:'):
+                    f.readline()
+                    forces['pauli_disp'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Polarization Forces:'):
+                    f.readline()
+                    forces['pol'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Charge Transfer Forces:'):
+                   f.readline()
+                   forces['ct'] = _parse_force_block(f, natoms)
+                elif line.startswith(' Total Forces:'):
+                    f.readline()
+                    forces['total'] = _parse_force_block(f, natoms)
+                    break
+        
+        if unit == 'kcal/mol/A':
+            for f in forces:
+                forces[f] /= 4.184
+        
+        forces['interaction'] = forces['total'] - forces['geom']
+        return atoms, coords, charges, forces
+                
 
 class QChemTask(Task):
     def __init__(self, wdir: os.PathLike, molecule: Molecule, config: Dict[str, Any] = dict(), name: str = '', logger: Optional[logging.Logger] = None):

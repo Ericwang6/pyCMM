@@ -23,7 +23,7 @@ class NPTLangevinMonteCarloBarostat(Langevin):
         timestep,
         pressure_au=1.01325 * units.bar,
         bsinterval=25,
-        volume_scale=1.0,
+        volume_scale=None,
         temperature=None,
         friction=None,
         fixcm=True,
@@ -51,7 +51,8 @@ class NPTLangevinMonteCarloBarostat(Langevin):
             append_trajectory=append_trajectory,
         )
         self.pressure = pressure_au
-        self.volume_scale = volume_scale  # scales random move (i.e. +- 1.0 cubic Å)
+        # scales random move
+        self.volume_scale = atoms.get_volume() * 0.01 if volume_scale is None else volume_scale  
         self.bsinterval = bsinterval  # monte carlo move interval
 
         self.num_attempted = 0
@@ -85,7 +86,7 @@ class NPTLangevinMonteCarloBarostat(Langevin):
 
             # accept or reject
             dE = new_energy - old_energy
-            pdV = self.pressure * dV * 1e30 * units.J
+            pdV = self.pressure * dV #* 1e30 * units.J
             kT = self.temp  # kT
             w = dE + pdV - natoms * kT * np.log(new_volume / old_volume)
             if (w > 0) and (self.rng.uniform() > np.exp(-w / kT)):
