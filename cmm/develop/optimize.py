@@ -225,7 +225,6 @@ class Trainer:
     def evaluate(self, data, system=None, **kwargs):
         if system is None:
             system = self.ff.parametrize(Topology.fromOpenmm(data.top), batch=True, **kwargs)
-        
         if isinstance(data, EdaData):
             res = system.getEnergy(data.coords, energy_in_kcal=True, include_bonded=False)
             ref = data.energies

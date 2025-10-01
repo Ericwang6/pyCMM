@@ -210,7 +210,8 @@ class System(nn.Module):
         # if not self._expand_parametrizers_during_init:
         #     self.expandParametrizers()
 
-        
+        print("HEREREEERERRE!!!!!")
+
         boxInv = None if box is None else torch.linalg.inv(box)
 
         # Charge flux
