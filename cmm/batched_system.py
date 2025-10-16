@@ -316,6 +316,29 @@ class BatchedSystem(nn.Module):
 
         charges = torch.sum(mono.reshape(nbz, -1), dim=1)
         permanent_dipoles = torch.sum(torch.reshape(mono.reshape(-1, 1) * coords_flatten + dipo, (nbz, -1, 3)), dim=1)
+
+        if self.use_polarization:
+            eta = self.parametrizers['Polarization'].getExpandParameters("eta")[expand_to_batch_indices]
+            if self.use_hardness_change:
+                eta = eta * hardness_change.flatten() + hardness_flux.flatten()
+            eta_times_2 = eta * 2
+            inv_eta = 1 / eta_times_2
+
+            alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")[expand_to_batch_indices]
+            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")[expand_to_batch_indices]
+            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")[expand_to_batch_indices]
+            polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
+            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+            # shape nbz,3,3
+            molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
+            # shape nbz, 3, 3
+            tmp_a = torch.sum((inv_eta.view(-1, 1, 1) * torch.einsum('ni,nj->nij', coords_flatten, coords_flatten)).reshape(nbz, -1, 3, 3), dim=1)
+            # shape nbz, 3
+            weighted_coords = torch.sum((inv_eta.view(-1, 1) * coords_flatten).reshape(nbz, -1, 3), dim=1)
+            tmp_b = torch.einsum('ni,nj->nij', weighted_coords, weighted_coords) / torch.sum(inv_eta.reshape(nbz, -1), dim=1).view(-1, 1, 1)
+            molecular_polarizability += tmp_a - tmp_b
+        else:
+            molecular_polarizability = torch.zeros((nbz, 3, 3), device=device, dtype=dtype)
         
         # electrostatic potential
         grid_epot, grid_efield, grid_efield_grad = [], [], []
@@ -456,27 +479,6 @@ class BatchedSystem(nn.Module):
 
             # Polarization
             if self.use_polarization:
-                eta = self.parametrizers['Polarization'].getExpandParameters("eta")[expand_to_batch_indices]
-                if self.use_hardness_change:
-                    eta = eta * hardness_change.flatten() + hardness_flux.flatten()
-                eta_times_2 = eta * 2
-                inv_eta = 1 / eta_times_2
-
-                alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")[expand_to_batch_indices]
-                alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")[expand_to_batch_indices]
-                alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")[expand_to_batch_indices]
-                polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                
-                # shape nbz,3,3
-                molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
-                # shape nbz, 3, 3
-                tmp_a = torch.sum((inv_eta.view(-1, 1, 1) * torch.einsum('ni,nj->nij', coords_flatten, coords_flatten)).reshape(nbz, -1, 3, 3), dim=1)
-                # shape nbz, 3
-                weighted_coords = torch.sum((inv_eta.view(-1, 1) * coords_flatten).reshape(nbz, -1, 3), dim=1)
-                tmp_b = torch.einsum('ni,nj->nij', weighted_coords, weighted_coords) / torch.sum(inv_eta.reshape(nbz, -1), dim=1).view(-1, 1, 1)
-                molecular_polarizability += tmp_a - tmp_b
-
                 pol_tensor = computeInteractionTensor(
                     distVecs,
                     1-computeShortRangePolarizationDampFactors(dists, b_elec_ij),
@@ -507,8 +509,6 @@ class BatchedSystem(nn.Module):
                 solutions_ct = torch.linalg.solve(A_matrix, b_vector_ct)
                 ene_pol_ct = torch.bmm(solutions_ct.unsqueeze(1), 0.5 * torch.bmm(A_matrix, solutions_ct.unsqueeze(2)) - b_vector_ct.unsqueeze(2)).squeeze()
                 ene_ct_indirect = ene_pol_ct - ene_pol
-            else:
-                molecular_polarizability = torch.zeros((nbz, 3, 3), device=device, dtype=dtype)
         
         # Field-dependent morse 
         if not self.parametrizers['Bond'].is_empty:
