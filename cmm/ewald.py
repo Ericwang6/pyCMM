@@ -1,217 +1,102 @@
 import torch
+import torch.nn as nn
+from typing import Optional
+
+try:
+    import torchff
+    import torchff_ewald
+except Exception as e:
+    pass
 
 
-def long_range_potential(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor, 
-                           t: torch.Tensor, box: torch.Tensor, alpha: float, max_hkl: int):
-    """
-    Parameters
-    ----------
-    coords: torch.Tensor
-        Atomic coordinates (N, 3)
-    q: torch.Tensor
-        Charges (N,)
-    p: torch.Tensor
-        Dipoles (N, 3)
-    t: torch.Tensor
-        Quadrupoles (N, 3, 3)
-    box: torch.Tensor
-        Box vectors (3, 3)
-    alpha: torch.Tensor
-        Ewald splitting parameter
-    max_hkl: int
-        Maximum h,k,l index values for reciprocal space sum
+class Ewald(nn.Module):
+    def __init__(self, alpha: float, max_hkl: int, rank: int, use_customized_ops: bool = False):
+        super().__init__()
+        sym_factors = []
+        all_hkl = []
+        for h in range(0, max_hkl+1):
+            for k in range(-max_hkl, max_hkl+1):
+                for l in range(-max_hkl, max_hkl+1):
+                    if h == 0 and k == 0 and l == 0:
+                        continue
+                    all_hkl.append([float(h), float(k), float(l)])
+                    sym_factors.append(2.0 if h > 0 else 1.0)
+                        
+        self.register_buffer('sym_factors', torch.tensor(sym_factors).unsqueeze(1))
+        self.register_buffer('all_hkl', torch.tensor(all_hkl))
+        self.alpha = alpha
+        self.alpha2 = alpha * alpha
+        self.alpha_over_root_pi = self.alpha / torch.sqrt(torch.tensor(torch.pi))
+        self.rank = rank
+        self.use_customized_ops = use_customized_ops
     
-    Returns
-    -------
-    potential: torch.Tensor
-        Electric potential at each atom (N,)
-    field: torch.Tensor
-        Electric field at each atom (N, 3)
-    field_grad: torch.Tensor
-        Electric field gradient at each atom (N, 3, 3)
-    """
-    # Reciprocal lattice vectors
-    V = torch.det(box)  # volume of box
-    reciprocal_box = torch.stack((
-        torch.linalg.cross(box[1], box[2]),
-        torch.linalg.cross(box[2], box[0]),
-        torch.linalg.cross(box[0], box[1])
-    )) / V
+    def forward(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
+        if self.use_customized_ops:
+            return self._forward_cpp(coords, box, q, p, t)
+        else:
+            return self._forward_python(coords, box, q, p, t)
+    
+    def _forward_cpp(self, coords, box, q, p, t):
+        res = torch.ops.torchff.ewald_long_range_potential(coords, box, q, p, t, self.all_hkl, self.sym_factors, self.alpha, self.rank)
+        if self.rank == 2:
+            return res
+        elif self.rank == 1:
+            return res[0], res[1]
+        else:
+            return res[0]
+    
+    def _forward_python(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
+        box_inv = torch.inverse(box)
+        V = torch.det(box)
 
-    # We optimize for h ≥ 0, but keep full range for k and l
-    h_range = torch.arange(0, max_hkl + 1, device=coords.device)
-    kl_range = torch.arange(-max_hkl, max_hkl + 1, device=coords.device)
+        # Convert h,k,l indices to reciprocal space vectors
+        kvectors = torch.matmul(self.all_hkl, box_inv)
     
-    # Create all combinations and convert to float64
-    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(box.dtype)
-    
-    # Remove the origin (0,0,0)
-    all_hkl = all_hkl[torch.norm(all_hkl, dim=1) > 0.0]
-    
-    # Convert h,k,l indices to reciprocal space vectors
-    kvectors = torch.matmul(all_hkl, reciprocal_box)
-    
-    # Apply spherical cutoff based on k^2
-    k_squared = torch.einsum('ij,ij->i', kvectors, kvectors)
-    
-    # Compute symmetry factors - only need to double for h>0
-    h = all_hkl[:, 0]
-    sym_factors = torch.ones_like(h)
-    sym_factors[h > 0] = 2.0
-    
-    # Precalculating gaussian factors
-    gaussian_factors = torch.exp(-torch.pi * torch.pi * k_squared / (alpha * alpha)) / k_squared
+        # Apply spherical cutoff based on k^2
+        k_squared = torch.einsum('ij,ij->i', kvectors, kvectors)
+        gaussian_factors = torch.exp(-torch.pi * torch.pi * k_squared / self.alpha2) / k_squared
 
-    # Calculating all structure factors
-    k_dot_r = torch.matmul(kvectors, coords.T)
-    cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
-    sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
+        # Calculating all structure factors
+        k_dot_r = torch.matmul(kvectors, coords.T)
+        cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
+        sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
 
-    F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi) / 3
-    F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
-    
-    exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
-    exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
-    F_2 = torch.complex(F_l_real, F_l_imag)
-    structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
-    
-    # Apply symmetry factors to each k-vector contribution
-    sym_factors = sym_factors.unsqueeze(1)
-    phi_expanded = (gaussian_factors.unsqueeze(1) * structure_factors.unsqueeze(1) * sym_factors) * exp_minus_k_dot_r
-    
-    potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V)
-    field = 2 * (
-        torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
-    ) / V
-    # k_outer = torch.vmap(torch.outer)(kvectors, kvectors).reshape(-1, 9)
-    k_outer = torch.einsum('bi,bj->bij', kvectors, kvectors).reshape(-1, 9)
-    field_grad = 4 * torch.pi * (
-        torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
-    ) / V
+        if self.rank == 2:
+            F_l_real = q.expand(kvectors.size(0), -1) - torch.einsum('kj,nij,ki->kn', kvectors, t, kvectors) * (2 * torch.pi) * (2 * torch.pi) / 3
+            F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
+        elif self.rank == 1:
+            F_l_real = q.expand(kvectors.size(0), -1)
+            F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
+        else:
+            F_l_real = q.expand(kvectors.size(0), -1)
+            F_l_imag = torch.zeros(kvectors.size(0), q.size(0), device=q.device, dtype=q.dtype)
+        
+        exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
+        exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
+        F_2 = torch.complex(F_l_real, F_l_imag)
+        structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
+        
+        # Apply symmetry factors to each k-vector contribution
+        phi_expanded = (gaussian_factors.unsqueeze(1) * structure_factors.unsqueeze(1) * self.sym_factors) * exp_minus_k_dot_r
+        
+        potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V)
+        potential = potential - 2 * self.alpha_over_root_pi * q  # self contributions
+        if self.rank == 0:
+            return potential
+        
+        field = 2 * (
+            torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
+        ) / V
+        field = field + self.alpha_over_root_pi * (4 * self.alpha2 / 3) * p
 
-    # Now add in the self contributions to potential, field, and field gradient
-    alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
-    potential = potential - 2 * alpha_over_root_pi * q
-    field = field + alpha_over_root_pi * (4 * alpha * alpha / 3) * p
-    field_grad = field_grad + alpha_over_root_pi * (16 * alpha * alpha * alpha * alpha / 5) * t / 3
+        if self.rank == 1:
+            return potential, field
+        
+        k_outer = torch.einsum('bi,bj->bij', kvectors, kvectors).reshape(-1, 9)
+        field_grad = 4 * torch.pi * (
+            torch.matmul(phi_expanded.T, torch.complex(k_outer, torch.zeros_like(k_outer))).real.reshape(-1, 3, 3)
+        ) / V
+        field_grad = field_grad + self.alpha_over_root_pi * (16 * self.alpha2 * self.alpha2 / 5) * t / 3
 
-    return potential, field, field_grad
-
-def long_range_potential_rank_1(coords: torch.Tensor, q: torch.Tensor, p: torch.Tensor, 
-                                     box: torch.Tensor, alpha: float, max_hkl: int):
-    # @SPEED: It is possible to exploit symmetry even more when we are just using dipoles, I think...
-    # So, can potentially speed this up quite a bit which is nice since this gets called for every
-    # polarization iteration.
-    # Reciprocal lattice vectors
-    V = torch.det(box)  # volume of box
-    reciprocal_box = torch.stack((
-        torch.linalg.cross(box[1], box[2]),
-        torch.linalg.cross(box[2], box[0]),
-        torch.linalg.cross(box[0], box[1])
-    )) / V
-
-    # We optimize for h ≥ 0, but keep full range for k and l
-    h_range = torch.arange(0, max_hkl + 1, device=coords.device)
-    kl_range = torch.arange(-max_hkl, max_hkl + 1, device=coords.device)
-    
-    # Create all combinations and convert to float64
-    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(box.dtype)
-    
-    # Remove the origin (0,0,0)
-    all_hkl = all_hkl[torch.norm(all_hkl, dim=1) > 0.0]
-    
-    # Convert h,k,l indices to reciprocal space vectors
-    kvectors = torch.matmul(all_hkl, reciprocal_box)
-    
-    # Compute symmetry factors - only need to double for h>0
-    h = all_hkl[:, 0]
-    sym_factors = torch.ones_like(h)
-    sym_factors[h > 0] = 2.0
-    
-    # Precalculating gaussian factors
-    k_squared = torch.einsum('ij,ij->i', kvectors, kvectors)
-    gaussian_factors = torch.exp(-torch.pi * torch.pi * k_squared / (alpha * alpha)) / k_squared
-
-    # Calculating all structure factors
-    k_dot_r = torch.matmul(kvectors, coords.T)
-    cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
-    sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
-
-    F_l_real = q.expand(kvectors.size(0), -1)
-    F_l_imag = torch.matmul(kvectors, p.T) * 2 * torch.pi
-    
-    exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
-    exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
-    F_2 = torch.complex(F_l_real, F_l_imag)
-    structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
-    
-    # Apply symmetry factors to each k-vector contribution
-    phi_expanded = (gaussian_factors * structure_factors * sym_factors).unsqueeze(1) * exp_minus_k_dot_r
-    
-    potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V)
-    field = 2 * (
-        torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
-    ) / V
-    
-    # Now add in the self contributions to potential and field
-    alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
-    potential = potential - 2 * alpha_over_root_pi * q
-    field = field + alpha_over_root_pi * (4 * alpha * alpha / 3) * p
-
-    return potential, field
-
-def long_range_potential_rank_0(coords: torch.Tensor, q: torch.Tensor,
-                                     box: torch.Tensor, alpha: float, max_hkl: int):
-    # Reciprocal lattice vectors
-    V = torch.det(box)  # volume of box
-    reciprocal_box = torch.stack((
-        torch.linalg.cross(box[1], box[2]),
-        torch.linalg.cross(box[2], box[0]),
-        torch.linalg.cross(box[0], box[1])
-    )) / V
-
-    # We optimize for h ≥ 0, but keep full range for k and l
-    h_range = torch.arange(0, max_hkl + 1, device=coords.device)
-    kl_range = torch.arange(-max_hkl, max_hkl + 1, device=coords.device)
-    
-    # Create all combinations and convert to float64
-    all_hkl = torch.cartesian_prod(h_range, kl_range, kl_range).to(box.dtype)
-    
-    # Remove the origin (0,0,0)
-    all_hkl = all_hkl[torch.norm(all_hkl, dim=1) > 0.0]
-    
-    # Convert h,k,l indices to reciprocal space vectors
-    kvectors = torch.matmul(all_hkl, reciprocal_box)
-    
-    # Compute symmetry factors - only need to double for h>0
-    h = all_hkl[:, 0]
-    sym_factors = torch.ones_like(h)
-    sym_factors[h > 0] = 2.0
-    
-    # Precalculating gaussian factors
-    k_squared = torch.einsum('ij,ij->i', kvectors, kvectors)
-    gaussian_factors = torch.exp(-torch.pi * torch.pi * k_squared / (alpha * alpha)) / k_squared
-
-    # Calculating all structure factors
-    k_dot_r = torch.matmul(kvectors, coords.T)
-    cos_k_dot_r = torch.cos(2 * torch.pi * k_dot_r)
-    sin_k_dot_r = torch.sin(2 * torch.pi * k_dot_r)
-
-    F_l_real = q.expand(kvectors.size(0), -1)
-    F_l_imag = torch.zeros(kvectors.size(0), q.size(0), device=q.device, dtype=q.dtype)
-    
-    exp_k_dot_r = torch.complex(cos_k_dot_r, sin_k_dot_r)
-    exp_minus_k_dot_r = torch.complex(cos_k_dot_r, -sin_k_dot_r)
-    F_2 = torch.complex(F_l_real, F_l_imag)
-    structure_factors = torch.sum(F_2 * exp_k_dot_r, dim=1)
-    
-    # Apply symmetry factors to each k-vector contribution
-    phi_expanded = (gaussian_factors * structure_factors * sym_factors).unsqueeze(1) * exp_minus_k_dot_r
-    
-    potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V)
-    
-    # Now add in the self contributions to potential and field
-    alpha_over_root_pi = alpha / torch.sqrt(torch.tensor(torch.pi))
-    potential = potential - 2 * alpha_over_root_pi * q
-
-    return potential
+        if self.rank == 2:
+            return potential, field, field_grad

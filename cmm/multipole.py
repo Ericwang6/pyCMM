@@ -72,7 +72,6 @@ def computeLocal2GlobalRotationMatrixBatch(
     box: torch.Tensor
         Peroidic box, shape (3, 3), optional
     """
-
     zVec = applyPBC(positions[zAtoms] - positions, box, boxInv)
     zVec = normVec(zVec)
     xVec = torch.zeros_like(zVec)
