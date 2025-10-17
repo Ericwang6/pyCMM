@@ -11,7 +11,7 @@ A Python implementation of CMM model.
 
 ## Installation
 
-Please first install the following dependencies via conda or pip
+Please first install the following dependencies via conda/mamba/pip
 
 + numpy
 + pandas
@@ -21,6 +21,24 @@ Please first install the following dependencies via conda or pip
 + [parmed](https://github.com/ParmEd/ParmEd)
 + [torch](https://pytorch.org/)
 + [torch-scatter](https://github.com/rusty1s/pytorch_scatter)
++ ase
+
+For example, this code snippet provides how to setup the environment via `conda` and `pip`
+
+```bash
+mamba create -n cmm python=3.12
+pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+pip install torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
+# The numpy/scipy/matplotlib will be installed automatically with ASE
+pip install ase pandas
+mamba install openmm==8.2.0 -c conda-forge
+```
+
+If you encounter any errors, try to remove caches and run the code again:
+```bash
+rm -rf ~/.triton
+```
+
 
 In order to use the parameterization code, the following external programs are needed and their executables should be added to the `PATH` environment variables.
 
@@ -41,6 +59,26 @@ PyCMM implements the CMM model and it takes coordinates and box and outputs ener
 We are now building some workflow to automate the process of deriving new parameters beyond water. A script for fit nonbonded paramters for methanol against EDA data can be found in `scripts/methanol.ipynb`
 
 There are also some codes (`cmm/develop/workflow.py`) for streamlining the calculation of quantum chemsitry data for monomers (atomic multipoles, molecular polarizabilities, dipole surface data, electrostatic potential surface data) 
+
+### Customized OPs and Code Profiling
+Run profiling with environment variable `CMM_PROFILE=1`. For example,
+```bash
+cd scripts/
+CMM_PROFILE=1 python water_md_nve.py
+```
+
+To use customized torch operators for CMM, please install [torchff-lib](https://github.com/Ericwang6/torchff-lib) first and set `use_customized_ops=True` during `ff.parameterize`:
+
+```python
+ff = ForceFieldXML(ff_path, device='cuda')
+pdb = app.PDBFile(pdb_path)
+top = Topology.fromOpenmm(pdb.topology, device)
+system = ff.parametrize(
+    top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-5, 
+    use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, 
+    use_customized_ops=True
+)
+```
 
 ## Code structure
 

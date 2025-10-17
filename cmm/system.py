@@ -128,7 +128,7 @@ class System(nn.Module):
             self.natoms, 
             self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
             rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
-            verbose=PROFILE, use_lr=True
+            verbose=PROFILE, use_lr=True, use_customized_ops=use_customized_ops
         )
         self.polarization_solver.to(device=top.device, dtype=torch.get_default_dtype())
         self.polarization_max_iteration = polarization_max_iteration
