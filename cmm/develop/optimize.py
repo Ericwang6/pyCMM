@@ -24,6 +24,7 @@ class Optimizer:
         l2_params = dict(),
         additional_positive_constraints: List[str] = list(),
         fit_pair_params_only: bool = False,
+        enforce_iso_pol: List[str] = list(),
         **kwargs
     ):
 
@@ -67,6 +68,7 @@ class Optimizer:
         
         self.masks = {}
         reduce_func = any if freeze_rule == 'any' else all
+        self.enforce_iso_pol_indices = []
         for can_param_name in self.opt_params:
             mask = []
             force_name, item_name, param_name = tuple(can_param_name.split('/'))
@@ -76,6 +78,8 @@ class Optimizer:
                     mask.append(False)
                 else:
                     mask.append(True)
+                if can_param_name == 'Polarization/Pol/alpha_xx' and type[0] in enforce_iso_pol:
+                    self.enforce_iso_pol_indices.append(index)
             
             if len(self.opt_params[can_param_name].shape) > 1:
                 param_mask = torch.tensor(mask).reshape(-1, 1)
@@ -143,6 +147,14 @@ class Optimizer:
             if name in self.l2_params_tensors:
                 param.grad = param.grad + 2 * self.l2 * (param - self.l2_params_tensors[name])
             param.grad = param.grad * self.masks[name]
+        
+        if self.enforce_iso_pol_indices:
+            grad = (self.opt_params['Polarization/Pol/alpha_xx'].grad[self.enforce_iso_pol_indices] + \
+                self.opt_params['Polarization/Pol/alpha_yy'].grad[self.enforce_iso_pol_indices] + \
+                self.opt_params['Polarization/Pol/alpha_zz'].grad[self.enforce_iso_pol_indices] ) / 3
+            self.opt_params['Polarization/Pol/alpha_xx'].grad[self.enforce_iso_pol_indices] = grad
+            self.opt_params['Polarization/Pol/alpha_yy'].grad[self.enforce_iso_pol_indices] = grad
+            self.opt_params['Polarization/Pol/alpha_zz'].grad[self.enforce_iso_pol_indices] = grad
 
         self.optimizer.step()
         for name, param in self.opt_params.items():
