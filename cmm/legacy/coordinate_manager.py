@@ -2,7 +2,7 @@ from .neighbor_list import *
 import torch
 from typing import Dict, Tuple, List, Optional
 from .pbc import applyPBC
-from .axis_types import AxisTypes
+from .legacy.axis_types import AxisTypes
 from .topology import Topology
 from .timing_context import TimingContext
 

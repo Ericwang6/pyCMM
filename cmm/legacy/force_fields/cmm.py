@@ -10,7 +10,7 @@ from ..units import HARTREE2KCAL, BOHR2ANG, HARTREE2KJ
 
 import torch, math
 from ..multipole import computeCartesianQuadrupoles
-from ..axis_types import AxisTypes
+from ..legacy.axis_types import AxisTypes
 from ..polarization_solver import cg_solve, CG
 
 class CMM2(FF):
