@@ -117,6 +117,12 @@ class System(nn.Module):
         self.use_fd_morse = use_fd_morse
         self.use_hardness_change = use_hardness_change
 
+        # cutoff settings
+        self.use_cutoff = use_cutoff
+        self.cutoff_lr = cutoff_lr / BOHR2ANG
+        self.cutoff_sr = cutoff_sr / BOHR2ANG
+        self.cutoff_max = max(self.cutoff_lr, self.cutoff_sr)
+
         # polarization settings
         self.use_polarization = use_polarization
         self.n_pol_groups = self.top.n_pol_groups
@@ -127,18 +133,13 @@ class System(nn.Module):
         self.polarization_solver = CMMPolarization(
             self.natoms, 
             self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
+            rcut_sr=self.cutoff_sr, rcut_lr=self.cutoff_lr,
             rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
             verbose=PROFILE, use_lr=True, use_customized_ops=use_customized_ops
         )
         self.polarization_solver.to(device=top.device, dtype=torch.get_default_dtype())
         self.polarization_max_iteration = polarization_max_iteration
         self.polarization_tolerance = polarization_tolerance
-        
-        # cutoff settings
-        self.use_cutoff = use_cutoff
-        self.cutoff_lr = cutoff_lr / BOHR2ANG
-        self.cutoff_sr = cutoff_sr / BOHR2ANG
-        self.cutoff_max = max(self.cutoff_lr, self.cutoff_sr)
 
         # switch functions for interactions with cutoff
         self.use_switch = use_switch if self.use_cutoff else False
@@ -642,16 +643,16 @@ class System(nn.Module):
                     )
                 
                 # Prepare variables for polarization
-                if self.use_polarization:
-                    with timer("POL-Tensors"):
-                        drVecs_excl = applyPBC(coords[self.pairs_j_excl] - coords[self.pairs_i_excl], box, boxInv)
-                        dr_excl = torch.norm(drVecs_excl, dim=1)
-                        erfDamps = -computeDampFactorsErf(dr_excl, self.alpha_ewald)
-                        realSpaceTensor_excl_ij = computeInteractionTensor(drVecs_excl, erfDamps)
-                        realSpaceTensor_excl_ji = realSpaceTensor_excl_ij.permute(0, 2, 1)
-                        erfcDamps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
-                        realSpaceTensor_ij = computeInteractionTensor(distVecs_lr, erfcDamps, dists_inv_lr, 2)
-                        realSpaceTensor_ji = realSpaceTensor_ij.permute(0, 2, 1)
+                # if self.use_polarization:
+                #     with timer("POL-Tensors"):
+                #         drVecs_excl = applyPBC(coords[self.pairs_j_excl] - coords[self.pairs_i_excl], box, boxInv)
+                #         dr_excl = torch.norm(drVecs_excl, dim=1)
+                #         erfDamps = -computeDampFactorsErf(dr_excl, self.alpha_ewald)
+                #         realSpaceTensor_excl_ij = computeInteractionTensor(drVecs_excl, erfDamps)
+                #         realSpaceTensor_excl_ji = realSpaceTensor_excl_ij.permute(0, 2, 1)
+                #         erfcDamps = computeDampFactorsErfc(dists_lr, self.alpha_ewald)
+                #         realSpaceTensor_ij = computeInteractionTensor(distVecs_lr, erfcDamps, dists_inv_lr, 2)
+                #         realSpaceTensor_ji = realSpaceTensor_ij.permute(0, 2, 1)
 
                 ene_ct_direct = torch.tensor(0.0, device=coords.device)
                 ene_xpol = torch.tensor(0.0, device=coords.device)
@@ -672,70 +673,71 @@ class System(nn.Module):
 
             if self.use_polarization:
                 with timer("Polarization"):
-                    # Polarization parameters
-                    if self.use_hardness_change:
-                        eta = self.parametrizers['Polarization'].getExpandParameters("eta") * hardness_change + hardness_flux
-                    else:
-                        eta = self.parametrizers['Polarization'].getExpandParameters("eta")
-                    eta_times_2 = eta * 2
+                    b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))                    
+                    with torch.no_grad():
+                        with timer("  Polarization-Parameters"):
+                            # Polarization parameters
+                            if self.use_hardness_change:
+                                eta = self.parametrizers['Polarization'].getExpandParameters("eta") * hardness_change + hardness_flux
+                            else:
+                                eta = self.parametrizers['Polarization'].getExpandParameters("eta")
+                            eta_times_2 = eta * 2
 
-                    alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
-                    alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")
-                    alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")
+                            alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
+                            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")
+                            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")
 
-                    polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                    polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                    inverse_polarizabilities = torch.linalg.inv(polarizabilities)
-
-                    pol_tensor = computeInteractionTensor(
-                        distVecs_sr,
-                        -computeShortRangePolarizationDampFactors(dists_sr, b_elec_ij),
-                        dists_inv_sr,
-                        1
-                    )
-                    pol_tensor = torch.vstack((pol_tensor, pol_tensor.permute(0, 2, 1)))
-                    pairs_lr_bidir = torch.vstack((pairs_lr, pairs_lr[:, [1, 0]]))
-                    pairs_sr_bidir = torch.vstack((pairs_sr, pairs_sr[:, [1, 0]]))
-                    realSpaceTensor = torch.vstack((realSpaceTensor_ij[:, :4, :4], realSpaceTensor_ji[:, :4, :4]))
-                    realSpaceTensor_excl = torch.vstack((realSpaceTensor_excl_ij[:, :4, :4], realSpaceTensor_excl_ji[:, :4, :4]))
-
-                    b_vector = torch.hstack((-epot, efield.flatten(), dq_groups))
-
-                    with timer("Polarization-SCF"):
-                        with torch.no_grad():
-                            # Evaluate the initial guess #
-                            if self.last_induced_multipoles.numel() == 0:
-                                self.last_induced_multipoles = self.polarization_solver.direct_polarization_guess_without_charge(polarizabilities, efield)
+                            polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
+                            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+                        
+                        # Evaluate initial guess #
+                        if self.last_induced_multipoles.numel() == 0:
+                            self.last_induced_multipoles = self.polarization_solver.direct_polarization_guess_without_charge(polarizabilities, efield)
+                        
+                        if not self.use_customized_ops:
+                            with timer("  Polarization-tensors"):
+                                pol_tensor = computeInteractionTensor(
+                                    distVecs_sr,
+                                    -computeShortRangePolarizationDampFactors(dists_sr, b_elec_ij),
+                                    dists_inv_sr,
+                                    1
+                                )
+                                pol_tensor = torch.vstack((pol_tensor, pol_tensor.permute(0, 2, 1)))
+                                pairs_lr_bidir = torch.vstack((pairs_lr, pairs_lr[:, [1, 0]]))
+                                pairs_sr_bidir = torch.vstack((pairs_sr, pairs_sr[:, [1, 0]]))
+                                realSpaceTensor = torch.vstack((realSpaceTensor_ij[:, :4, :4], realSpaceTensor_ji[:, :4, :4]))
+                                realSpaceTensor_excl = torch.vstack((realSpaceTensor_excl_ij[:, :4, :4], realSpaceTensor_excl_ji[:, :4, :4]))
                             
-                            self.last_induced_multipoles = self.polarization_solver(
-                                coords,
-                                box,
-                                b_vector,
-                                self.last_induced_multipoles,
-                                pairs_lr_bidir[:, 0], pairs_lr_bidir[:, 1],
-                                pairs_sr_bidir[:, 0], pairs_sr_bidir[:, 1],
-                                self.pairs_i_excl_bidir, self.pairs_j_excl_bidir,
-                                realSpaceTensor,
-                                pol_tensor,
-                                realSpaceTensor_excl,
-                                eta_times_2,
-                                polarizabilities,
-                                inverse_polarizabilities
-                            )
+                            with timer("  Polarization-SCF"):
+                                self.last_induced_multipoles = self.polarization_solver(
+                                    coords,
+                                    box,
+                                    b_vector,
+                                    self.last_induced_multipoles,
+                                    eta_times_2,
+                                    polarizabilities,
+                                    pairs_lr_i_a=pairs_lr_bidir[:, 0], pairs_lr_j_a=pairs_lr_bidir[:, 1],
+                                    pairs_sr_i_a=pairs_sr_bidir[:, 0], pairs_sr_j_a=pairs_sr_bidir[:, 1],
+                                    pairs_excl_i_a=self.pairs_i_excl_bidir, pairs_excl_j_a=self.pairs_j_excl_bidir,
+                                    direct_field_tensor_lr=realSpaceTensor,
+                                    pol_interaction_tensor_sr=pol_tensor,
+                                    direct_field_tensor_excl=realSpaceTensor_excl,
+                                )
+                        else:
+                            with timer("  Polarization-SCF"):
+                                self.last_induced_multipoles = self.polarization_solver(
+                                    coords,
+                                    box,
+                                    b_vector,
+                                    self.last_induced_multipoles,
+                                    eta_times_2,
+                                    polarizabilities,
+                                    pairs=pairs_lr.to(torch.int32),
+                                    pairs_excl=self.pairs_excl.to(torch.int32),
+                                    b_elec_ij=b_elec_ij
+                                )
                     
-                    tmp = self.polarization_solver.compute_product_with_polarization_matrix(
-                            coords, box,
-                            self.last_induced_multipoles,
-                            pairs_lr_bidir[:, 0], pairs_lr_bidir[:, 1],
-                            pairs_sr_bidir[:, 0], pairs_sr_bidir[:, 1],
-                            self.pairs_i_excl_bidir, self.pairs_j_excl_bidir,
-                            realSpaceTensor,
-                            pol_tensor,
-                            realSpaceTensor_excl,
-                            eta_times_2,
-                            inverse_polarizabilities
-                    )
-                    ene_pol = torch.dot(self.last_induced_multipoles, (0.5 * tmp - b_vector))
+                    ene_pol = -0.5*torch.dot(self.last_induced_multipoles, b_vector)
                     self.last_induced_multipoles = self.last_induced_multipoles.detach().clone()
             else:
                 ene_pol = torch.tensor(0.0, device=coords.device)

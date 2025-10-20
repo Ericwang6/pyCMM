@@ -27,6 +27,12 @@ else:
     def timer(name: str = ''):
         yield
 
+try:
+    import torchff
+    import torchff_cmm
+except:
+    pass
+
 
 @torch.compile
 def get_field_dependent_polarizabilities(
@@ -50,6 +56,7 @@ class CMMPolarization(nn.Module):
         pol_group_indices_a,
         pol_group_segment_indices,
         pol_group_lengths_g,
+        rcut_sr, rcut_lr,
         rtol=1e-5, atol=0, maxiter=400, n_extrapolate_from=5, verbose=False,
         use_lr=True,
         use_customized_ops=True
@@ -82,7 +89,11 @@ class CMMPolarization(nn.Module):
         self.ewald = None
         self._set_ewald = False
 
+        self.rcut_lr = rcut_lr
+        self.rcut_sr = rcut_sr
+
     def set_ewald(self, alpha_ewald, k_max, device, dtype):
+        self.alpha_ewald = alpha_ewald
         self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops)
         self.ewald.to(device=device, dtype=dtype)
         self._set_ewald = True
@@ -121,237 +132,137 @@ class CMMPolarization(nn.Module):
         box,
         b_vector,
         guess,
-        pairs_lr_i_a, pairs_lr_j_a,
-        pairs_sr_i_a, pairs_sr_j_a,
-        pairs_excl_i_a, pairs_excl_j_a,
-        direct_field_tensor_lr,
-        pol_interaction_tensor_sr,
-        direct_field_tensor_excl,
         eta,
-        alpha,
-        alpha_inv
+        polarizabilities,
+        **kwargs
     ):
-        
+        with timer("  ***POL-INV-ALPHA"):
+            inverse_polarizabilities = torch.inverse(polarizabilities)
         with timer("  ***POL-EXTRAPOLATE"):
             self.get_extrapolated_guess_from_outputs()
             guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
 
         with timer("  ***POL-SOLVE"):
-            induced_multipoles, info = self.solve(
+            induced_multipoles, _ = self.solve(
                 coords, box, b_vector, guess_solution, 
-                pairs_lr_i_a, pairs_lr_j_a,
-                pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a,
-                direct_field_tensor_lr,
-                pol_interaction_tensor_sr,
-                direct_field_tensor_excl,
-                eta,
-                alpha,
-                alpha_inv
+                eta, polarizabilities, inverse_polarizabilities, **kwargs
             )
-            # print(info)
 
         with timer("  ***POL-STORE"):
             self.store_output(induced_multipoles)
 
         return induced_multipoles
-
+    
     def solve(
         self,
-        coords,
-        box,
-        b_vector,
-        X0,
-        pairs_lr_i_a, pairs_lr_j_a,
-        pairs_sr_i_a, pairs_sr_j_a,
-        pairs_excl_i_a, pairs_excl_j_a,
-        direct_field_tensor_lr,
-        pol_interaction_tensor_sr,
-        direct_field_tensor_excl,
-        eta,
-        polarizabilities,
-        inverse_polarizabilities
+        coords, box, b, x0, eta, polarizabilities,
+        inverse_polarizabilities=None,
+        **kwargs
     ):
-        with timer("  POL-SCF-PREP"):
-            X_k = X0
-            R_k = b_vector - self.compute_product_with_polarization_matrix(
-                coords, box, X_k,
-                pairs_lr_i_a, pairs_lr_j_a,
-                pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a,
-                direct_field_tensor_lr,
-                pol_interaction_tensor_sr,
-                direct_field_tensor_excl,
-                eta,
-                inverse_polarizabilities
-            )
-            Z_k = self.direct_polarization_guess_with_charge(R_k, polarizabilities, eta)
+        with timer("  POL-SCF-INIT"):
+            x = x0
+            r = b - self.compute_product_with_polarization_matrix(coords, box, x, eta, inverse_polarizabilities, **kwargs)
+            z = self.direct_polarization_guess_with_charge(r, polarizabilities, eta)
+            p = z.clone()
+            rz = torch.dot(r, z)
 
-            P_k = torch.zeros_like(Z_k)
+            b_norm = torch.norm(b)
+            tol = torch.max(self.rtol*b_norm, self.atol*torch.ones_like(b_norm))
+        
+        with timer("  POL-SCF-ITER"):
+            converged = False
+            for niter in range(1, self.maxiter+1):
+                Ap = self.compute_product_with_polarization_matrix(coords, box, p, eta, inverse_polarizabilities, **kwargs)
+                a = rz / torch.dot(p, Ap)
+                x = x + a * p
+                r = r - a * Ap
 
-            P_k1 = P_k
-            R_k1 = R_k
-            R_k2 = R_k
-            X_k1 = X0
-            Z_k1 = Z_k
-            Z_k2 = Z_k
-
-            B_norm = torch.norm(b_vector)
-            stopping_matrix = torch.max(self.rtol*B_norm, self.atol*torch.ones_like(B_norm))
-
-        # if self.verbose:
-        #     print("%03s | %010s %06s" % ("it", "dist", "it/s"))
-
-        optimal = 0
-
-        # time.perf_counter() is not supported by the torch.jit.script
-        # start = time.perf_counter()
-        # We need this extra counter variable instead of using k because of the jit
-        niter = 1
-        for k in range(1, self.maxiter + 1):
-            # start_iter = time.perf_counter()
-            # Z_k = direct_polarization_guess(R_k, self.natoms, self.n_pol_groups, polarizabilities)
-            with timer("  POL-GUESS"):
-                Z_k = self.direct_polarization_guess_with_charge(R_k, polarizabilities, eta)
-            
-            with timer("  POL-SCF-ITER-1"):
-                if k == 1:
-                    P_k = Z_k
-                    R_k1 = R_k
-                    X_k1 = X_k
-                    Z_k1 = Z_k
-                else:
-                    R_k2 = R_k1
-                    Z_k2 = Z_k1
-                    P_k1 = P_k
-                    R_k1 = R_k
-                    Z_k1 = Z_k
-                    X_k1 = X_k
-                    denominator = torch.dot(R_k2, Z_k2)
-                    beta = torch.dot(R_k1, Z_k1) / denominator
-                    P_k = Z_k1 + beta * P_k1
-
-            AP_k = self.compute_product_with_polarization_matrix(
-                coords, box, P_k,
-                pairs_lr_i_a, pairs_lr_j_a,
-                pairs_sr_i_a, pairs_sr_j_a,
-                pairs_excl_i_a, pairs_excl_j_a,
-                direct_field_tensor_lr,
-                pol_interaction_tensor_sr,
-                direct_field_tensor_excl,
-                eta,
-                inverse_polarizabilities
-            )
-
-            with timer("  POL-SCF-ITER-2"):
-                denominator = torch.dot(P_k, AP_k)
-                alpha = torch.dot(R_k1, Z_k1) / denominator
-                X_k = X_k1 + alpha * P_k
-                R_k = R_k1 - alpha * AP_k
-                # end_iter = time.perf_counter()
-
-                #residual_norm = torch.norm(R_k)
-                residual_norm = torch.max(torch.abs(R_k))
-
-                # if self.verbose:
-                #     print("%03d | %8.4e %4.2f" %
-                #         (k, torch.max(residual_norm-stopping_matrix),
-                #             1. / (end_iter - start_iter)))
-
-                if (residual_norm <= stopping_matrix).all():
-                    optimal = 1
+                if (torch.max(torch.abs(r)) <= tol).all():
+                    converged = True
                     break
-                niter += 1
 
-        # end = time.perf_counter()
+                z = self.direct_polarization_guess_with_charge(r, polarizabilities, eta)
+                rz_new = torch.dot(r, z)
+                p = z + rz_new / rz * p
+                rz = rz_new
 
         if self.verbose:
-            suffix = 'success' if optimal else 'reached maxiter'
+            suffix = 'success' if converged else 'reached maxiter'
             print(f"Terminated in {niter} steps ({suffix}).")
 
         info = {
             "niter": niter,
-            "optimal": optimal
+            "converged": converged
         }
 
-        return X_k, info
+        return x, info
     
-    # @torch.compile
     def compute_product_with_polarization_matrix(
         self, 
-        coords, box,
-        vec_in,
-        pairs_lr_i_a, pairs_lr_j_a,
-        pairs_sr_i_a, pairs_sr_j_a,
-        pairs_excl_i_a, pairs_excl_j_a,
-        direct_field_tensor_lr,
-        pol_interaction_tensor_sr,
-        direct_field_tensor_excl,
-        eta,
-        inverse_polarizabilities
+        coords, box, vec_in, eta, inverse_polarizabilities, 
+        **kwargs
     ):
-        with timer('  POL-PREP'):
+        vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)            
+        with timer('  POL-MATMUL-REAL'):
             induced_charges = torch.narrow(vec_in, 0, 0, self.natoms)
             induced_dipoles = torch.narrow(vec_in, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3)
-            lagrange_muls = torch.narrow(vec_in, 0, self.natoms + 3 * self.natoms, vec_in.size(0) - self.natoms - 3 * self.natoms)
-        with timer('  POL-REAL'):
-            induced_multipoles_a = torch.cat([induced_charges.unsqueeze(1), induced_dipoles], dim=1)
+            if not self.use_customized_ops:
+                induced_multipoles_a = torch.cat([induced_charges.unsqueeze(1), induced_dipoles], dim=1)
 
-            induced_multipoles_i_lr_p = induced_multipoles_a[pairs_lr_i_a]
-            induced_multipoles_i_sr_p = induced_multipoles_a[pairs_sr_i_a]
+                induced_multipoles_i_lr_p = induced_multipoles_a[kwargs['pairs_lr_i_a']]
+                induced_multipoles_i_sr_p = induced_multipoles_a[kwargs['pairs_sr_i_a']]
 
-            # Get real field data
-            edata_point_pairwise = torch.bmm(direct_field_tensor_lr, induced_multipoles_i_lr_p.unsqueeze(2))
-            edata_ss_pairwise = torch.bmm(pol_interaction_tensor_sr, induced_multipoles_i_sr_p.unsqueeze(2))
+                # Get real field data
+                edata_point_pairwise = torch.bmm(kwargs['direct_field_tensor_lr'], induced_multipoles_i_lr_p.unsqueeze(2))
+                edata_ss_pairwise = torch.bmm(kwargs['pol_interaction_tensor_sr'], induced_multipoles_i_sr_p.unsqueeze(2))
 
-            # Accumulate the total potentials and fields
-            induced_field_data = torch.zeros((self.natoms, 4), device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype)
-            induced_field_data.scatter_add_(0, pairs_lr_j_a.unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
-            induced_field_data.scatter_add_(0, pairs_sr_j_a.unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
-            
-            if self.use_lr:
-                induced_multipoles_i_excl_p = induced_multipoles_a[pairs_excl_i_a]
-                edata_point_excl_pairwise = torch.bmm(direct_field_tensor_excl, induced_multipoles_i_excl_p.unsqueeze(2))
-                induced_field_data.scatter_add_(0, pairs_excl_j_a.unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
-            
-            # pairs_i = torch.cat((pairs_lr_i_a, pairs_sr_i_a, pairs_excl_i_a))
-            # pairs_j = torch.cat((pairs_lr_j_a, pairs_sr_j_a, pairs_excl_j_a))
-            # tensors = torch.vstack((direct_field_tensor_lr, pol_interaction_tensor_sr, direct_field_tensor_excl))
-            # edata_pairwise = torch.bmm(tensors, induced_multipoles_a[pairs_i].unsqueeze(2))
-            # induced_field_data = torch.zeros((self.natoms, 4), device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype)
-            # induced_field_data.scatter_add_(0, pairs_j.unsqueeze(1).expand(-1, 4), edata_pairwise.squeeze(2))
-            
-            # induced_field_data .mul_(torch.tensor([1, -1, -1, -1], device=pairs_lr_i_a.device).reshape(1, -1))
-            induced_electric_potential = induced_field_data[:, 0]
-            induced_electric_field = -induced_field_data[:, 1:4]
+                # Accumulate the total potentials and fields
+                induced_field_data = torch.zeros((self.natoms, 4), device=induced_multipoles_a.device, dtype=induced_multipoles_a.dtype)
+                induced_field_data.scatter_add_(0, kwargs['pairs_lr_j_a'].unsqueeze(1).expand(-1, 4), edata_point_pairwise.squeeze(2))
+                induced_field_data.scatter_add_(0, kwargs['pairs_sr_j_a'].unsqueeze(1).expand(-1, 4), edata_ss_pairwise.squeeze(2))
+                
+                if self.use_lr:
+                    induced_multipoles_i_excl_p = induced_multipoles_a[kwargs['pairs_excl_i_a']]
+                    edata_point_excl_pairwise = torch.bmm(kwargs['direct_field_tensor_excl'], induced_multipoles_i_excl_p.unsqueeze(2))
+                    induced_field_data.scatter_add_(0, kwargs['pairs_excl_j_a'].unsqueeze(1).expand(-1, 4), edata_point_excl_pairwise.squeeze(2))
+                
+                induced_electric_potential = induced_field_data[:, 0]
+                induced_electric_field = -induced_field_data[:, 1:4]
+            else:
+                torch.ops.torchff.compute_cmm_polarization_real_space(
+                    coords, box, kwargs['pairs'], kwargs['pairs_excl'], kwargs['b_elec_ij'], vec_in, 
+                    self.alpha_ewald, self.rcut_sr, self.rcut_lr, vec_out)
         
-        with timer("  POL-RECIP"):
+        with timer("  POL-MATMUL-RECIP"):
             # Get reciprocal space field data (ewald + self contribution)
             if self.use_lr:
                 ewald_potential, ewald_field = self.ewald(
-                    coords, box, induced_charges, induced_dipoles
+                        coords, box, induced_charges, induced_dipoles
                 )
-                induced_electric_potential = induced_electric_potential + ewald_potential
-                induced_electric_field = induced_electric_field + ewald_field
+                if not self.use_customized_ops:
+                    induced_electric_potential = induced_electric_potential + ewald_potential
+                    induced_electric_field = induced_electric_field + ewald_field
+                else:
+                    induced_electric_potential = ewald_potential
+                    induced_electric_field = ewald_field
         
-        with timer("  POL-OTHER"):
+        with timer("  POL-MATMUL-CHARGE"):
             # Get sum of induced charges in every polarization group
             constraints = segment_csr(induced_charges[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
             # constraints = torch._segment_reduce(induced_charges[self.pol_group_indices_a], 'sum', offsets=self.pol_group_segment_indices)
 
             # Expand lagrange multipliers from group index space to atomic index space
-            expanded_lagrange_muls = lagrange_muls.repeat_interleave(self.pol_group_lengths_g)
+            expanded_lagrange_muls = vec_in[-self.n_pol_groups:].repeat_interleave(self.pol_group_lengths_g)
 
             # Scatter these values back to the atomic indices
-            lagrange_muls_a = torch.zeros(self.natoms, device=lagrange_muls.device)
+            lagrange_muls_a = torch.zeros(self.natoms, device=coords.device)
             lagrange_muls_a.scatter_add_(0, self.pol_group_indices_a, expanded_lagrange_muls)
-
-            residual = torch.concat((
-                eta * induced_charges + lagrange_muls_a + induced_electric_potential,
-                torch.bmm(inverse_polarizabilities, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten(),
-                constraints
-            ))
-        return residual
+        
+        with timer("  POL-MATMUL-OTHER"):
+            vec_out[:self.natoms] += eta * induced_charges + lagrange_muls_a + induced_electric_potential
+            vec_out[self.natoms:self.natoms*4] += torch.bmm(inverse_polarizabilities, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - induced_electric_field.flatten()
+            vec_out[-self.n_pol_groups:] += constraints
+        return vec_out
     
     def direct_polarization_guess_with_charge(self, vec_in: torch.Tensor, polarizabilities: torch.Tensor, eta: torch.Tensor):
         mean_eta = segment_csr(eta[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='mean') # size n_groups

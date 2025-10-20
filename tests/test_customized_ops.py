@@ -35,16 +35,15 @@ def test_customized_ops():
     energies_ref['total'].backward()
     coords_grad_ref = coords.grad.numpy(force=True)
     coords.grad = None
+    print('\n')
+    print('===== No Customized Ops =====')
+    pp(energies_ref)
+    pp(coords_grad_ref[:3])
     
-
     system = ff.parametrize(top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-7, use_hardness_change=False, cutoff_sr=9.0, use_customized_ops=True, use_switch=True)
     energies = system.getEnergy(coords, box)
     energies['total'].backward()
     coords_grad = coords.grad.numpy(force=True)
-
-    print('\n')
-    pp(energies_ref)
+    print('===== Customized Ops =====')
     pp(energies)
-
-    pp(coords_grad_ref[:3])
     pp(coords_grad[:3])
