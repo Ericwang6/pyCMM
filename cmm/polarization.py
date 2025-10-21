@@ -1,11 +1,16 @@
-import time
-
+import os, time
+from typing import Tuple
 import torch
 import torch.nn as nn
 from torch_scatter import segment_csr
 from .ewald import Ewald
 
-import time, os
+try:
+    import torchff
+    import torchff_cmm
+except:
+    pass
+
 from contextlib import contextmanager
 
 PROFILE = int(os.environ.get('CMM_PROFILE_POL', 0))
@@ -26,12 +31,6 @@ else:
     @contextmanager
     def timer(name: str = ''):
         yield
-
-try:
-    import torchff
-    import torchff_cmm
-except:
-    pass
 
 
 @torch.compile
@@ -135,24 +134,28 @@ class CMMPolarization(nn.Module):
         eta,
         polarizabilities,
         **kwargs
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         with timer("  ***POL-INV-ALPHA"):
             inverse_polarizabilities = torch.inverse(polarizabilities)
-        with timer("  ***POL-EXTRAPOLATE"):
-            self.get_extrapolated_guess_from_outputs()
-            guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
+        
+        with torch.no_grad():
+            with timer("  ***POL-EXTRAPOLATE"):
+                self.get_extrapolated_guess_from_outputs()
+                guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
 
-        with timer("  ***POL-SOLVE"):
-            induced_multipoles, _ = self.solve(
-                coords, box, b_vector, guess_solution, 
-                eta, polarizabilities, inverse_polarizabilities, **kwargs
-            )
+            with timer("  ***POL-SOLVE"):
+                induced_multipoles, _ = self.solve(
+                    coords, box, b_vector, guess_solution, 
+                    eta, polarizabilities, inverse_polarizabilities, **kwargs
+                )
 
-        with timer("  ***POL-STORE"):
-            self.store_output(induced_multipoles)
+            with timer("  ***POL-STORE"):
+                self.store_output(induced_multipoles)
+            
+        with timer("  ***POL-ENERGY"):
+            ene = self.compute_polarization_energy(coords, box, induced_multipoles, b_vector, eta, inverse_polarizabilities, **kwargs)
+        return ene, induced_multipoles
 
-        return induced_multipoles
-    
     def solve(
         self,
         coords, box, b, x0, eta, polarizabilities,
@@ -202,7 +205,7 @@ class CMMPolarization(nn.Module):
         coords, box, vec_in, eta, inverse_polarizabilities, 
         **kwargs
     ):
-        vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)            
+        vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)
         with timer('  POL-MATMUL-REAL'):
             induced_charges = torch.narrow(vec_in, 0, 0, self.natoms)
             induced_dipoles = torch.narrow(vec_in, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3)
@@ -240,8 +243,8 @@ class CMMPolarization(nn.Module):
                         coords, box, induced_charges, induced_dipoles
                 )
                 if not self.use_customized_ops:
-                    induced_electric_potential = induced_electric_potential + ewald_potential
-                    induced_electric_field = induced_electric_field + ewald_field
+                    induced_electric_potential = ewald_potential + induced_electric_potential
+                    induced_electric_field =  ewald_field + induced_electric_field 
                 else:
                     induced_electric_potential = ewald_potential
                     induced_electric_field = ewald_field
@@ -264,6 +267,45 @@ class CMMPolarization(nn.Module):
             vec_out[-self.n_pol_groups:] += constraints
         return vec_out
     
+    def compute_polarization_energy(
+        self, coords, box, induced_multipoles, b_vector, eta, inverse_polarizabilities, **kwargs
+    ):
+        if not self.use_customized_ops:
+            tmp = self.compute_product_with_polarization_matrix(coords, box, induced_multipoles, eta, inverse_polarizabilities, **kwargs)
+            return torch.dot(induced_multipoles, 0.5*tmp-b_vector)
+        else:
+            vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)
+            with timer("  POL-MATMUL-RECIP"):
+                # Get reciprocal space field data (ewald + self contribution)
+                if self.use_lr:
+                    induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
+                    induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
+                    ewald_potential, ewald_field = self.ewald(
+                            coords, box, induced_charges, induced_dipoles
+                    )
+            with timer("  POL-MATMUL-CHARGE"):
+                # Get sum of induced charges in every polarization group
+                constraints = segment_csr(induced_charges[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
+                # constraints = torch._segment_reduce(induced_charges[self.pol_group_indices_a], 'sum', offsets=self.pol_group_segment_indices)
+
+                # Expand lagrange multipliers from group index space to atomic index space
+                expanded_lagrange_muls = induced_multipoles[-self.n_pol_groups:].repeat_interleave(self.pol_group_lengths_g)
+
+                # Scatter these values back to the atomic indices
+                lagrange_muls_a = torch.zeros(self.natoms, device=coords.device)
+                lagrange_muls_a.scatter_add_(0, self.pol_group_indices_a, expanded_lagrange_muls)
+        
+            with timer("  POL-MATMUL-OTHER"):
+                vec_out[:self.natoms] += eta * induced_charges + lagrange_muls_a + ewald_potential
+                vec_out[self.natoms:self.natoms*4] += torch.bmm(inverse_polarizabilities, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - ewald_field.flatten()
+                vec_out[-self.n_pol_groups:] += constraints
+
+            ene = torch.dot(induced_multipoles, 0.5*vec_out-b_vector) + torch.ops.torchff.cmm_polarization_energy_from_induced_multipoles(
+                kwargs['dist_vecs'], kwargs['pairs'], kwargs['dist_vecs_excl'], kwargs['pairs_excl'],
+                induced_multipoles, kwargs['b_elec_ij'], self.alpha_ewald, self.rcut_sr, self.rcut_lr, self.natoms
+            )
+            return ene
+        
     def direct_polarization_guess_with_charge(self, vec_in: torch.Tensor, polarizabilities: torch.Tensor, eta: torch.Tensor):
         mean_eta = segment_csr(eta[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='mean') # size n_groups
         sum_pot = segment_csr(vec_in[:self.natoms][self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
