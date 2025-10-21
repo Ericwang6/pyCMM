@@ -16,6 +16,7 @@ from pprint import pprint as pp
 
 def test_customized_ops():
     ff_path = os.path.join(os.path.dirname(__file__), 'data/water_refit.xml')
+    # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/workspace/water_mc/water_refit.xml'
     pdb_path = os.path.join(os.path.dirname(__file__), 'data/water_216.pdb')
 
     # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/optimization/cmm_ethane.xml'
