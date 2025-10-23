@@ -6,13 +6,15 @@ from .metrics import plot_correlation, plot_eda_scan
 from ..units import HARTREE2KCAL
 
 
-def report_dipos(trainer, data):
+def report_dipos(trainer, data, report_norm=True):
     with torch.no_grad():
         res, ref, _, _ = trainer.evaluate(data)
-    dipo_cmm = np.linalg.norm(res.numpy(force=True), axis=1)
-    dipo_qm = np.linalg.norm(ref.numpy(force=True), axis=1)
-    # dipo_cmm = res.numpy(force=True).flatten()
-    # dipo_qm = res.numpy(force=True).flatten()
+    if report_norm:
+        dipo_cmm = np.linalg.norm(res.numpy(force=True), axis=1)
+        dipo_qm = np.linalg.norm(ref.numpy(force=True), axis=1)
+    else:
+        dipo_cmm = res.numpy(force=True).flatten()
+        dipo_qm = res.numpy(force=True).flatten()
     fig, ax = plt.subplots(1, 1, figsize=(4, 4), constrained_layout=True)
     plot_correlation(dipo_qm, dipo_cmm, 'QM Dipole Moment (a.u.)', 'CMM Dipole Moment (a.u.)', ax=ax)
 

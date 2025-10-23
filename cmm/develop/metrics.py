@@ -41,9 +41,12 @@ def plot_correlation(xdata, ydata, xlabel, ylabel, ax=None, calc_mae=True, calc_
     if ax is None:
         fig, ax = plt.subplots(1, 1)
     
-    data = np.vstack((xdata, ydata))
-    kde = gaussian_kde(data)
-    density = kde(data)
+    if len(xdata) > 1:
+        data = np.vstack((xdata, ydata))
+        kde = gaussian_kde(data)
+        density = kde(data)
+    else:
+        density = None
 
     label_mse = f"MSE: {np.mean(ydata - xdata):.4f}" if calc_mse else None
     ax.scatter(xdata, ydata, label=label_mse, s=10, c=density, cmap='plasma')
