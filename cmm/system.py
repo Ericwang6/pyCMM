@@ -450,20 +450,20 @@ class System(nn.Module):
                 self.last_perm_multipoles = multipoles
             
             ene_disp = torch.tensor(0.0, device=coords.device)
-            with timer("Dispersion-LR"):
-                c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
-                b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
-                if self.use_lr_dispersion and box is not None:
-                    boxV = torch.linalg.det(box)
-                    # ene_disp += computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_lr, self.natoms, boxV)
-                    ene_disp += -(2 / 3) * torch.pi * self.natoms * self.natoms * self.c6_mean / (self.cutoff_lr**3 * boxV)
+            if self.use_lr_dispersion:
+                with timer("Dispersion-LR"):
+                    if self.use_lr_dispersion and box is not None:
+                        boxV = torch.linalg.det(box)
+                        # ene_disp += computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_lr, self.natoms, boxV)
+                        ene_disp += -(2 / 3) * torch.pi * self.natoms * self.natoms * self.c6_mean / (self.cutoff_lr**3 * boxV)
             
             if not self.use_customized_ops:
-                # Dispersion
-                if self.use_lr_dispersion:
-                    with timer("Dispersion"):
-                        disp_pairwise = computeDispersionFromPairs(dists_lr, c6_disp_ij, b_disp_ij)
-                        ene_disp += torch.sum(disp_pairwise * switch_lr)
+                # Dispersion      
+                with timer("Dispersion"):
+                    c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
+                    b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
+                    disp_pairwise = computeDispersionFromPairs(dists_lr, c6_disp_ij, b_disp_ij)
+                    ene_disp += torch.sum(disp_pairwise * switch_lr)
                 
                 # Pauli
                 with timer("Pauli"):
@@ -599,6 +599,8 @@ class System(nn.Module):
             else:
                 # zero = torch.zeros(self.natoms, device=pairs_lr.device, dtype=coords.dtype)
                 with timer('Pauli+XPOL+CT+Disp'):
+                    c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
+                    b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
                     ene_pauli, dq_a = torch.ops.torchff.cmm_non_elec_nonbonded_interaction_from_pairs(
                         distVecs_lr, pairs_lr.to(torch.int32), multipoles,
                         self.parametrizers['Pauli'].getExpandParameters("q_pauli") + charge_flux_pauli,
