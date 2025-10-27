@@ -137,12 +137,12 @@ class EdaData:
         return data
     
     @classmethod
-    def from_qchem_out_files(cls, pdb_file, out_files):
+    def from_qchem_out_files(cls, pdb_file, out_files, **kwargs):
         top = app.PDBFile(pdb_file).topology
         coords = []
         energies = defaultdict(list)
         for out in out_files:
-            _, coord, _, ene = QChemReader.read_eda_out(out)
+            _, coord, _, ene = QChemReader.read_eda_out(out, **kwargs)
             coord = np.vstack(coord)
             for key in ene.keys():
                 energies[key].append(ene[key])
@@ -163,11 +163,11 @@ class EdaData:
         return data
     
     @classmethod
-    def from_files(cls, pdb_file, file):
+    def from_files(cls, pdb_file, file, **kwargs):
         if isinstance(file, str):
             return cls.from_csv_file(pdb_file, file)
         else:
-            return cls.from_qchem_out_files(pdb_file, file)
+            return cls.from_qchem_out_files(pdb_file, file, **kwargs)
     
 
     @staticmethod

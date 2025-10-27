@@ -204,7 +204,7 @@ class QChemReader:
         pass
 
     @staticmethod
-    def read_eda_out(out: os.PathLike, unit: str = 'kcal'):
+    def read_eda_out(out: os.PathLike, unit: str = 'kcal', use_cls_disp: bool = False):
         res = {
             "TOTAL": None, "PREPARATION": None,
             "ELEC": None, "CLS_ELEC": None,
@@ -215,6 +215,8 @@ class QChemReader:
         _read_coords = False
         old_version = None
         coords_lines = []
+
+        disp_id = "E_disp" if not use_cls_disp else "E_cls_disp"
 
         with open(out) as f:
             for line in f:
@@ -250,7 +252,7 @@ class QChemReader:
                         res['ELEC'] = float(content[-1])
                     elif content[0] == "E_pauli":
                         res['PAULI'] = float(content[-1])
-                    elif content[0] == "E_disp":
+                    elif content[0] == disp_id:
                         res["DISP"] = float(content[-1])
                     elif content[0] == "E_cls_elec":
                         res['CLS_ELEC'] = float(content[-1])
@@ -295,6 +297,8 @@ class QChemReader:
 
             content = line.split()
             atoms[-1].append(content[0])
+            if '=' in line:
+                continue
             coords[-1].append(list(map(float, content[1:])))
         
         coords = [np.array(coord) for coord in coords]
@@ -302,8 +306,8 @@ class QChemReader:
         for key in res:
             if res[key] is None:
                 raise RuntimeError(f"Fail to parse {out}")
-
-        assert abs(res["ELEC"] + res["PAULI"] - res["CLS_ELEC"] - res["MOD_PAULI"]) < 2e-4
+        if not use_cls_disp:
+            assert abs(res["ELEC"] + res["PAULI"] - res["CLS_ELEC"] - res["MOD_PAULI"]) < 2e-4
         frozen_error = abs(res["FROZEN"] - res["CLS_ELEC"] - res['MOD_PAULI'] - res['DISP'])
         assert frozen_error < 2e-4, f"{frozen_error} too large"
         

@@ -185,7 +185,7 @@ class System(nn.Module):
             raise NotImplementedError('expand_parametrizers_during_init=False not supported yet')
         
         # Long-Range dispersion correction
-        if self.use_lr_dispersion:
+        if self.use_lr_dispersion and self._has_nb:
             self.c6_mean = torch.mean(self.parametrizers['Dispersion'].getExpandParameters("C6_disp", self.all_pairs))
         
         self.use_customized_ops = use_customized_ops
