@@ -153,10 +153,8 @@ class BondParametrizer(Parametrizer):
         atomIndices = []
         for term in terms:
             types = tuple(self.atomTypes[t] for t in term)
-            # typ1 = types
-            # typ2 = tuple(reversed(typ1))
             typ1 = format_types(types, True)
-            typ2 = format_types(types, True)
+            typ2 = format_types(list(reversed(types)), True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
@@ -184,10 +182,8 @@ class AngleParametrizer(Parametrizer):
         atomIndices = []
         for term in terms:
             types = tuple(self.atomTypes[t] for t in term)
-            # typ1 = types
-            # typ2 = tuple(reversed(typ1))
             typ1 = format_types(types, True)
-            typ2 = format_types(types, True)
+            typ2 = format_types(list(reversed(types)), True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
@@ -254,6 +250,7 @@ class TorsionBondParametrizer(Parametrizer):
             # type 1: i-j-k-l/j-k
             # type 2: i-j-k-l/i-j
             # type 3: i-j-k-l/j-k'
+            # type 3: i-j-k-l/i-k'
             bonds = [dihe[1:3], dihe[:2], dihe[-2:]]
             couple_types = ["1", "2", "2"]
             for i in dihe[1:3]:
@@ -262,6 +259,13 @@ class TorsionBondParametrizer(Parametrizer):
                         continue
                     bonds.append((i, j))
                     couple_types.append("3")
+            
+            for i in [dihe[0], dihe[-1]]:
+                for j in self.top.getNeighborAtoms(i):
+                    if j in dihe:
+                        continue
+                    bonds.append((i, j))
+                    couple_types.append("4")
 
             for bo, couple_type in zip(bonds, couple_types, strict=True):
                 trials = [dihe+bo, dihe+bo[::-1], dihe[::-1]+bo, dihe[::-1]+bo[::-1]]
@@ -340,10 +344,8 @@ class TorsionParametrizer(Parametrizer):
         atomIndices = []
         for term in terms:
             types = tuple(self.atomTypes[t] for t in term)
-            # typ1 = types
-            # typ2 = tuple(reversed(typ1))
             typ1 = format_types(types, True)
-            typ2 = format_types(types, True)
+            typ2 = format_types(list(reversed(types)), True)
             if typ1 in self.typesAsDict:
                 paramIndices.append(self.typesAsDict[typ1])
                 atomIndices.append(term)
