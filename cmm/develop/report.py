@@ -2,8 +2,9 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import openmm.unit as unit
 from .metrics import plot_correlation, plot_eda_scan
-from ..units import HARTREE2KCAL
+from ..units import HARTREE2KCAL, BOHR2ANG
 
 
 def report_dipos(trainer, data, report_norm=True):
@@ -32,18 +33,35 @@ def report_eda_scan(trainer, data, xdata=None, xlabel=None, **kwargs):
         res, ref, _, _ = trainer.evaluate(data)
     
     if xdata is None:
-        if 'k_index' in data.eda_df.columns:
-            xdata = data.eda_df['k_index'].values
-            xlabel = 'k_index' if xlabel is None else xlabel
+        if data.eda_df is not None:
+            if 'k_index' in data.eda_df.columns:
+                xdata = data.eda_df['k_index'].values
+                xlabel = 'k_index' if xlabel is None else xlabel
+            else:
+                xdata = data.eda_df['dist'].values
+                xlabel = 'dist' if xlabel is None else xlabel
         else:
-            xdata = data.eda_df['dist'].values
-            xlabel = 'dist' if xlabel is None else xlabel
+            masses = torch.tensor([at.element.mass.value_in_unit(unit.dalton) for at in data.top.atoms()], dtype=data.coords.dtype, device=data.coords.device).reshape(-1, 1)
+            natoms = [len(list(res.atoms())) for res in data.top.residues()]
+            com1 = torch.sum(data.coords[:, :natoms[0]] * masses[:natoms[0]], dim=-2) / torch.sum(masses[:natoms[0]])
+            com2 = torch.sum(data.coords[:, natoms[0]:] * masses[natoms[0]:], dim=-2) / torch.sum(masses[natoms[0]:])
+            com_dist = torch.norm(com1 - com2, dim=1) * BOHR2ANG
+            argsort = torch.argsort(com_dist)
+            for key in res:
+                if torch.is_tensor(res[key]) and len(res[key]) > 0:
+                    res[key] = res[key][argsort]
+            for key in ref:
+                if torch.is_tensor(ref[key]) and len(ref[key]) > 0:
+                    ref[key] = ref[key][argsort]
+            xdata = com_dist[argsort]
+            xlabel = 'COM Dist. (Angstrom)' if xlabel is None else xlabel
     
     fig, axes = plt.subplots(1, 2, figsize=(8, 4))
     plot_eda_scan(
         xdata,
         ref,
         res,
+        xlabel=xlabel,
         ax=axes[0],
         **kwargs
     )

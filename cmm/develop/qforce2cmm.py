@@ -172,7 +172,7 @@ def convert_qforce_to_cmm(
                 elif BondedAtoms(p1, p2) == BondedAtoms(p5, p6) or BondedAtoms(p1, p2) == BondedAtoms(p6, p7) or BondedAtoms(p3, p4) == BondedAtoms(p5, p6) or BondedAtoms(p3, p4) == BondedAtoms(p6, p7):
                     ctype = 3
                 else:
-                    raise Exception("Unknown torsion angle couple type")
+                    raise Exception(f"Unknown torsion angle couple type between torsion {(p1,p2,p3,p4)} and angle {(p5,p6,p7)}")
                 
                 key = [atypes[p] for p in [p1, p2, p3, p4, p5, p6, p7]] + [ctype]
                 trials = [
@@ -212,8 +212,10 @@ def convert_qforce_to_cmm(
                     ctype = 2
                 elif p5 == p2 or p5 == p3 or p6 == p2 or p6 == p3:
                     ctype = 3
+                elif p5 == p1 or p5 == p4 or p6 == p1 or p6 == p4:
+                    ctype = 4
                 else:
-                    raise Exception("Unknown torsion bond couple type")
+                    raise Exception(f"Unknown torsion bond couple type between torsion {(p1,p2,p3,p4)} and bond {(p5,p6)}")
                 
 
                 key = [atypes[p] for p in [p1, p2, p3, p4, p5, p6]] + [ctype]
