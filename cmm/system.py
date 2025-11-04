@@ -185,7 +185,7 @@ class System(nn.Module):
             raise NotImplementedError('expand_parametrizers_during_init=False not supported yet')
         
         # Long-Range dispersion correction
-        if self.use_lr_dispersion and self._has_nb:
+        if self.use_lr_dispersion:
             self.c6_mean = torch.mean(self.parametrizers['Dispersion'].getExpandParameters("C6_disp", self.all_pairs))
         
         self.use_customized_ops = use_customized_ops
@@ -450,20 +450,20 @@ class System(nn.Module):
                 self.last_perm_multipoles = multipoles
             
             ene_disp = torch.tensor(0.0, device=coords.device)
-            if self.use_lr_dispersion:
-                with timer("Dispersion-LR"):
-                    if self.use_lr_dispersion and box is not None:
-                        boxV = torch.linalg.det(box)
-                        # ene_disp += computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_lr, self.natoms, boxV)
-                        ene_disp += -(2 / 3) * torch.pi * self.natoms * self.natoms * self.c6_mean / (self.cutoff_lr**3 * boxV)
+            with timer("Dispersion-LR"):
+                c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
+                b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
+                if self.use_lr_dispersion and box is not None:
+                    boxV = torch.linalg.det(box)
+                    # ene_disp += computeLongRangeDispersionCorrection(c6_disp_ij, self.cutoff_lr, self.natoms, boxV)
+                    ene_disp += -(2 / 3) * torch.pi * self.natoms * self.natoms * self.c6_mean / (self.cutoff_lr**3 * boxV)
             
             if not self.use_customized_ops:
-                # Dispersion      
-                with timer("Dispersion"):
-                    c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
-                    b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
-                    disp_pairwise = computeDispersionFromPairs(dists_lr, c6_disp_ij, b_disp_ij)
-                    ene_disp += torch.sum(disp_pairwise * switch_lr)
+                # Dispersion
+                if self.use_lr_dispersion:
+                    with timer("Dispersion"):
+                        disp_pairwise = computeDispersionFromPairs(dists_lr, c6_disp_ij, b_disp_ij)
+                        ene_disp += torch.sum(disp_pairwise * switch_lr)
                 
                 # Pauli
                 with timer("Pauli"):
@@ -599,8 +599,6 @@ class System(nn.Module):
             else:
                 # zero = torch.zeros(self.natoms, device=pairs_lr.device, dtype=coords.dtype)
                 with timer('Pauli+XPOL+CT+Disp'):
-                    c6_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("C6_disp", pairs_lr)
-                    b_disp_ij = self.parametrizers['Dispersion'].getExpandParameters("b_disp", pairs_lr)
                     ene_pauli, dq_a = torch.ops.torchff.cmm_non_elec_nonbonded_interaction_from_pairs(
                         distVecs_lr, pairs_lr.to(torch.int32), multipoles,
                         self.parametrizers['Pauli'].getExpandParameters("q_pauli") + charge_flux_pauli,
@@ -662,16 +660,24 @@ class System(nn.Module):
             
             with timer("Ewald (recip)"):
                 # ewald_potential, ewald_field, ewald_field_gradient = long_range_potential(coords, mono, dipo, quad, box, self.alpha_ewald, self.k_max)
-                ewald_potential, ewald_field, ewald_field_gradient = self.ewald(coords, box, mono, dipo, quad)
-                ene_ewald = 0.5 * (
-                    torch.einsum("n,n->", mono, ewald_potential) -
-                    torch.einsum("ni,ni->", dipo, ewald_field) -
-                    torch.einsum("nij,nij->", quad, ewald_field_gradient) / 3
-                )
-
-            ene_elec = ene_ewald + ene_perm_elec_real
-            epot = epot_real + ewald_potential
-            efield = efield_real + ewald_field
+                if not self.use_customized_ops:
+                    ewald_potential, ewald_field, ewald_field_gradient = self.ewald(coords, box, mono, dipo, quad)
+                    ene_ewald = 0.5 * (
+                        torch.einsum("n,n->", mono, ewald_potential) -
+                        torch.einsum("ni,ni->", dipo, ewald_field) -
+                        torch.einsum("nij,nij->", quad, ewald_field_gradient) / 3
+                    )
+                else:
+                   ewald_potential, ewald_field, ewald_field_gradient, ene_ewald, force_ewald =  self.ewald(coords, box, mono, dipo, quad)
+                #print(f"Ewald potential: {ewald_potential[:10]}")
+                #if ewald_field is not None:
+                #    print(f"Ewald field:     {ewald_field}[:2]")
+                #if ewald_field_gradient is not None:
+                #    print(f"Ewald field gradient: {ewald_field_gradient}[:2]")
+                #print(f"Ewald energy:    {ene_ewald}")
+                ene_elec = ene_ewald + ene_perm_elec_real
+                epot = epot_real + ewald_potential
+                efield = efield_real + ewald_field
 
             if self.use_polarization:
                 with timer("Polarization"):

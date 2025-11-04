@@ -239,7 +239,7 @@ class CMMPolarization(nn.Module):
         with timer("  POL-MATMUL-RECIP"):
             # Get reciprocal space field data (ewald + self contribution)
             if self.use_lr:
-                ewald_potential, ewald_field = self.ewald(
+                ewald_potential, ewald_field, _, _, _ = self.ewald(
                         coords, box, induced_charges, induced_dipoles
                 )
                 if not self.use_customized_ops:
@@ -280,7 +280,7 @@ class CMMPolarization(nn.Module):
                 if self.use_lr:
                     induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
                     induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
-                    ewald_potential, ewald_field = self.ewald(
+                    ewald_potential, ewald_field, _, _, _ = self.ewald(
                             coords, box, induced_charges, induced_dipoles
                     )
             with timer("  POL-MATMUL-CHARGE"):

@@ -271,6 +271,15 @@ class Trainer:
             for i, (data, system) in enumerate(zip(datas, systems)):
                 res, ref, ref_charge, charge = self.evaluate(data, system)
                 loss_weight = self.target_weights.get(data.__class__.__name__, 1000.0)
+                loss_weight = getattr(data, "loss_weight", None)
+                if loss_weight is None:
+                    loss_weight = self.target_weights.get(data.__class__.__name__, 1000.0)
+                print(
+                f"[Epoch {n}] Dataset {i} ({getattr(data, 'name', data.__class__.__name__)}) "
+                f"loss_weight={loss_weight:.4g}, "
+                f"num_samples={len(ref['total']) if isinstance(data, EdaData) else len(ref)}"
+                )
+
                 total_loss = 0.0
                 if isinstance(data, EdaData):
                     loss = {}
