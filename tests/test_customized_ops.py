@@ -4,7 +4,10 @@ os.environ["TORCH_COMPILE_DISABLE"] = "1"
 import numpy as np
 
 import openmm.app as app
+import sys
 
+
+sys.path.insert(0, "/pscratch/sd/a/asa/software/pyCMM")
 from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
 from cmm.units import BOHR2NM
@@ -15,7 +18,7 @@ from pprint import pprint as pp
 
 
 def test_customized_ops():
-    ff_path = os.path.join(os.path.dirname(__file__), 'data/water_refit.xml')
+    ff_path = os.path.join(os.path.dirname(__file__), 'data/test.xml')
     # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/workspace/water_mc/water_refit.xml'
     pdb_path = os.path.join(os.path.dirname(__file__), 'data/water_216.pdb')
 
@@ -48,3 +51,6 @@ def test_customized_ops():
     print('===== Customized Ops =====')
     pp(energies)
     pp(coords_grad[:3])
+
+if __name__ == "__main__":
+    test_customized_ops()

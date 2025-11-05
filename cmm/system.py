@@ -446,6 +446,10 @@ class System(nn.Module):
                 mono = self.parametrizers['Multipoles'].getExpandParameters('mono') + charge_flux
                 dipo = rotateDipoles(self.parametrizers['Multipoles'].getExpandParameters('dipo'), rotMatrices).squeeze(1)
                 quad = rotateQuadrupoles(self.parametrizers['Multipoles'].getExpandParameters('quad'), rotMatrices)
+                #torch.set_printoptions(threshold=float('inf'))
+                #print(mono)
+                #print(dipo)
+                #print(quad)
                 multipoles = convertMultipolesToPolytensor(mono, dipo, quad)
                 self.last_perm_multipoles = multipoles
             
@@ -669,12 +673,6 @@ class System(nn.Module):
                     )
                 else:
                    ewald_potential, ewald_field, ewald_field_gradient, ene_ewald, force_ewald =  self.ewald(coords, box, mono, dipo, quad)
-                #print(f"Ewald potential: {ewald_potential[:10]}")
-                #if ewald_field is not None:
-                #    print(f"Ewald field:     {ewald_field}[:2]")
-                #if ewald_field_gradient is not None:
-                #    print(f"Ewald field gradient: {ewald_field_gradient}[:2]")
-                #print(f"Ewald energy:    {ene_ewald}")
                 ene_elec = ene_ewald + ene_perm_elec_real
                 epot = epot_real + ewald_potential
                 efield = efield_real + ewald_field

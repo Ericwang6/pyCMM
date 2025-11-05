@@ -239,15 +239,18 @@ class CMMPolarization(nn.Module):
         with timer("  POL-MATMUL-RECIP"):
             # Get reciprocal space field data (ewald + self contribution)
             if self.use_lr:
-                ewald_potential, ewald_field, _, _, _ = self.ewald(
-                        coords, box, induced_charges, induced_dipoles
-                )
                 if not self.use_customized_ops:
+                    ewald_potential,ewald_field = self.ewald(coords,box,induced_charges,induced_dipoles)
                     induced_electric_potential = ewald_potential + induced_electric_potential
+                    print("pyCMM ewald potential:", induced_electric_potential[:3])
                     induced_electric_field =  ewald_field + induced_electric_field 
                 else:
-                    induced_electric_potential = ewald_potential
-                    induced_electric_field = ewald_field
+                    ewald_potential, ewald_field, _, _, _ = self.ewald(
+                            coords, box, induced_charges, induced_dipoles
+                    )
+                    induced_electric_potential = ewald_potential 
+                    print("CUDA ewald potential:", induced_electric_potential[:3])
+                    induced_electric_field = ewald_field 
         
         with timer("  POL-MATMUL-CHARGE"):
             # Get sum of induced charges in every polarization group
