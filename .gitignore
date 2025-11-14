@@ -178,3 +178,10 @@ nacl_opt.traj
 water216_cell_opt_no_lr_disp.json
 workspace*/
 optimization/
+
+benchmark/*_uma
+benchmark/*_mace*
+benchmark/*_aimnet
+benchmark/water_cluster/output*
+benchmark/water_rdf/*.pdf
+benchmark/water_rdf/rdf.ipynb
