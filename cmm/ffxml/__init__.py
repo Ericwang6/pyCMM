@@ -249,6 +249,7 @@ class ForceFieldXML:
         self.requires_grad = requires_grad
 
         self.atomTypeDefs: Dict[str, Dict[str, str]] = defaultdict(dict)
+        self.atomClassDefs: Dict[str, Dict[str, str]] = defaultdict(dict)
         self.pset: ParameterSet = None
 
         self.loadAtomTypeDefs()
@@ -276,8 +277,8 @@ class ForceFieldXML:
                 assert resname not in self.atomTypeDefs, f"Multiple definitions for residue {resname}"
                 for atom in res.findall("Atom"):
                     name = atom.get("name")
-                    atype = atom.get('type')
-                    self.atomTypeDefs[resname][name] = atype
+                    self.atomTypeDefs[resname][name] = atom.get('type')
+                    self.atomClassDefs[resname][name] = atom.get('class')
 
     def exportAtomTypeDefs(self):
         residues = ET.Element('Residues')
@@ -308,6 +309,7 @@ class ForceFieldXML:
         top.atomTypes.clear()
         for resname, name in top.atomSigs:
             top.atomTypes.append(self.atomTypeDefs[resname][name])
+            top.atomClasses.append(self.atomClassDefs[resname][name])
     
     def save(self, fname: os.PathLike = '') -> str:
         xmlstr = [
@@ -330,7 +332,11 @@ class ForceFieldXML:
         
         # bond
         bondTypes = list(zip(self.pset.find('Bonds/Bond/type1', []), self.pset.find('Bonds/Bond/type2', [])))
-        bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond')
+        use_aclass = False
+        if len(bondTypes) == 0:
+            bondTypes = list(zip(self.pset.find('Bonds/Bond/class1', []), self.pset.find('Bonds/Bond/class2', [])))
+            use_aclass = len(bondTypes) > 0
+        bondParametrizer = BondParametrizer(types=bondTypes, top=top, name='Bond', use_atom_class=use_aclass)
         bondParams = [
             'r_eq', 'D', 'k_b', 'j_cf', 'j_cf_pauli', 'k_hardness_b', 
             'dip_deriv_1', 'dip_deriv_2', 'ct_slope_1', 'ct_slope_2'
@@ -345,7 +351,15 @@ class ForceFieldXML:
             self.pset.find('Angles/Angle/type2', []),
             self.pset.find('Angles/Angle/type3', [])
         ))
-        angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
+        use_aclass = False
+        if len(angleTypes) == 0:
+            angleTypes = list(zip(
+                self.pset.find('Angles/Angle/class1', []), 
+                self.pset.find('Angles/Angle/class2', []),
+                self.pset.find('Angles/Angle/class3', [])
+            ))
+            use_aclass = len(angleTypes) > 0
+        angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle', use_atom_class=use_aclass)
         angleParams = [
             'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
             'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
@@ -359,7 +373,14 @@ class ForceFieldXML:
             self.pset.find('Torsions/Torsion/type1', []), self.pset.find('Torsions/Torsion/type2', []),
             self.pset.find('Torsions/Torsion/type3', []), self.pset.find('Torsions/Torsion/type4', [])
         ))
-        torsionParametrizer = TorsionParametrizer(torsionTypes, top, 'Torsion')
+        use_aclass = False
+        if len(torsionTypes) == 0:
+            torsionTypes = list(zip(
+                self.pset.find('Torsions/Torsion/class1', []), self.pset.find('Torsions/Torsion/class2', []),
+                self.pset.find('Torsions/Torsion/class3', []), self.pset.find('Torsions/Torsion/class4', [])
+            ))
+            use_aclass = len(torsionTypes) > 0
+        torsionParametrizer = TorsionParametrizer(torsionTypes, top, 'Torsion', use_atom_class=use_aclass)
         torsionParams = [
             'per1', 'phase1', 'k1', 'per2', 'phase2', 'k2',
             'per3', 'phase3', 'k3', 'per4', 'phase4', 'k4',
@@ -377,7 +398,16 @@ class ForceFieldXML:
             self.pset.find('AngleAngleCoupling/AngleAngle/type5', []), self.pset.find('AngleAngleCoupling/AngleAngle/type6', []),
             self.pset.find('AngleAngleCoupling/AngleAngle/ctype', []) # coupling type
         ))
-        aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle')
+        use_aclass = False
+        if len(aaTypes) == 0:
+            aaTypes = list(zip(
+                self.pset.find('AngleAngleCoupling/AngleAngle/class1', []), self.pset.find('AngleAngleCoupling/AngleAngle/class2', []),
+                self.pset.find('AngleAngleCoupling/AngleAngle/class3', []), self.pset.find('AngleAngleCoupling/AngleAngle/class4', []), 
+                self.pset.find('AngleAngleCoupling/AngleAngle/class5', []), self.pset.find('AngleAngleCoupling/AngleAngle/class6', []),
+                self.pset.find('AngleAngleCoupling/AngleAngle/ctype', []) # coupling type
+            ))
+            use_aclass = len(aaTypes) > 0
+        aaParametrizer = AngleAngleParametrizer(aaTypes, top, 'AngleAngle', use_atom_class=use_aclass)
         for p in ['theta_eq_1', 'theta_eq_2', 'k_aa']:
             aaParametrizer.registerParameters(p, self.pset.find(f'AngleAngleCoupling/AngleAngle/{p}', self._empty_tensor))
         parametrizers['AngleAngle'] = aaParametrizer
@@ -392,7 +422,19 @@ class ForceFieldXML:
             self.pset.find('TorsionBondCoupling/TorsionBond/type6', []),
             self.pset.find('TorsionBondCoupling/TorsionBond/ctype', []) # coupling type
         ))
-        tbParametrizer = TorsionBondParametrizer(tbTypes, top, 'TorsionBond')
+        use_aclass = False
+        if len(tbTypes) == 0:
+            tbTypes = list(zip(
+                self.pset.find('TorsionBondCoupling/TorsionBond/class1', []), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/class2', []),
+                self.pset.find('TorsionBondCoupling/TorsionBond/class3', []), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/class4', []), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/class5', []), 
+                self.pset.find('TorsionBondCoupling/TorsionBond/class6', []),
+                self.pset.find('TorsionBondCoupling/TorsionBond/ctype', []) # coupling type
+            ))
+            use_aclass = len(tbTypes) > 0
+        tbParametrizer = TorsionBondParametrizer(tbTypes, top, 'TorsionBond', use_atom_class=use_aclass)
         tbParams = [
             'per1', 'phase1', 'per2', 'phase2',
             'per3', 'phase3', 'per4', 'phase4',
@@ -413,7 +455,20 @@ class ForceFieldXML:
             self.pset.find('TorsionAngleCoupling/TorsionAngle/type7', []),
             self.pset.find('TorsionAngleCoupling/TorsionAngle/ctype', []) # coupling type
         ))
-        taParametrizer = TorsionAngleParametrizer(taTypes, top, 'TorsionAngle')
+        use_aclass = False
+        if len(taTypes) == 0:
+            taTypes = list(zip(
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class1', []), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class2', []),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class3', []), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class4', []), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class5', []), 
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class6', []),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/class7', []),
+                self.pset.find('TorsionAngleCoupling/TorsionAngle/ctype', []) # coupling type
+            ))
+            use_aclass = len(taTypes) > 0
+        taParametrizer = TorsionAngleParametrizer(taTypes, top, 'TorsionAngle', use_atom_class=use_aclass)
         taParams = [
             'per1', 'phase1', 'per2', 'phase2',
             'per3', 'phase3', 'per4', 'phase4',
@@ -424,13 +479,23 @@ class ForceFieldXML:
         parametrizers['TorsionAngle'] = taParametrizer
         
         # multipoles
-        mpoleTypes = list(zip(
-            self.pset.find('Multipoles/Multipole/type'),
-            self.pset.find('Multipoles/Multipole/kz'),
-            self.pset.find('Multipoles/Multipole/kx'),
-            self.pset.find('Multipoles/Multipole/ky'),
-        ))
-        mpoleParametrizer = MultipoleParametrizer(mpoleTypes, top, 'Multipole')
+        try:
+            mpoleTypes = list(zip(
+                self.pset.find('Multipoles/Multipole/type'),
+                self.pset.find('Multipoles/Multipole/kz'),
+                self.pset.find('Multipoles/Multipole/kx'),
+                self.pset.find('Multipoles/Multipole/ky'),
+            ))
+            use_aclass = False
+        except:
+            mpoleTypes = list(zip(
+                self.pset.find('Multipoles/Multipole/class'),
+                self.pset.find('Multipoles/Multipole/kz'),
+                self.pset.find('Multipoles/Multipole/kx'),
+                self.pset.find('Multipoles/Multipole/ky'),
+            ))
+            use_aclass = True
+        mpoleParametrizer = MultipoleParametrizer(mpoleTypes, top, 'Multipole', use_atom_class=use_aclass)
         mpoleParametrizer.registerParameters(
             'axistype',
             torch.tensor([AxisTypesAsDict[t] for t in self.pset.find('Multipoles/Multipole/axistype')], device=top.device)
@@ -441,86 +506,102 @@ class ForceFieldXML:
         parametrizers['Multipoles'] = mpoleParametrizer
         
         # charge penetration
-        cpParametrizer = PairParametrizer(
-            self.pset.find("ChargePenetration/CP/type"),
-            top, name='ChargePenetration'
-        )
+        try:
+            cpTypes = self.pset.find("ChargePenetration/CP/type")
+            use_aclass = False
+        except:
+            cpTypes = self.pset.find("ChargePenetration/CP/class")
+            use_aclass = True
+        keyword = 'class' if use_aclass else 'type'
+        cpParametrizer = PairParametrizer(cpTypes, top, name='ChargePenetration', use_atom_class=use_aclass)
         cpParametrizer.registerParameters('Z', self.pset.find('ChargePenetration/CP/Z'))
         cpParametrizer.registerPairwiseParameters(
             'b_elec', 
             self.pset.find('ChargePenetration/CP/b_elec'),
             specific_pair_types=list(zip(
-                self.pset.find('ChargePenetration/Pair/type1', list()),
-                self.pset.find('ChargePenetration/Pair/type2', list())
+                self.pset.find(f'ChargePenetration/Pair/{keyword}1', list()),
+                self.pset.find(f'ChargePenetration/Pair/{keyword}2', list())
             )),
             specific_pair_params=self.pset.find('ChargePenetration/Pair/b_elec', list())
         )
         parametrizers['ChargePenetration'] = cpParametrizer
 
         # Pauli
-        pauliParametrizer = PairParametrizer(
-            self.pset.find('PauliRepulsion/Pauli/type'),
-            top,
-            name='Pauli'
-        )
+        try:
+            pauliTypes = self.pset.find('PauliRepulsion/Pauli/type')
+            use_aclass = False
+        except:
+            pauliTypes = self.pset.find('PauliRepulsion/Pauli/class')
+            use_aclass = True
+        keyword = 'class' if use_aclass else 'type'
+        pauliParametrizer = PairParametrizer(pauliTypes, top, name='Pauli', use_atom_class=use_aclass)
         for p in ['q_pauli', 'Kdipo_pauli', 'Kquad_pauli']:
             pauliParametrizer.registerParameters(p, self.pset.find(f'PauliRepulsion/Pauli/{p}'))
         pauliParametrizer.registerPairwiseParameters(
             'b_pauli', 
             self.pset.find('PauliRepulsion/Pauli/b_pauli'),
             specific_pair_types=list(zip(
-                self.pset.find('PauliRepulsion/Pair/type1', list()),
-                self.pset.find('PauliRepulsion/Pair/type2', list())
+                self.pset.find(f'PauliRepulsion/Pair/{keyword}1', list()),
+                self.pset.find(f'PauliRepulsion/Pair/{keyword}2', list())
             )),
             specific_pair_params=self.pset.find('PauliRepulsion/Pair/b_pauli', list())
         )
         parametrizers['Pauli'] = pauliParametrizer
 
         # Exchange-Pol
-        xpolParametrizer = PairParametrizer(
-            self.pset.find('ExchangePolarization/Xpol/type'),
-            top,
-            name='ExchangePolarization'
-        )
+        try:
+            xpolTypes = self.pset.find('ExchangePolarization/Xpol/type')
+            use_aclass = False
+        except:
+            xpolTypes = self.pset.find('ExchangePolarization/Xpol/class')
+            use_aclass = True
+        keyword = 'class' if use_aclass else 'type'
+        xpolParametrizer = PairParametrizer(xpolTypes, top, name='ExchangePolarization', use_atom_class=use_aclass)
         for p in ['q_xpol', 'Kdipo_xpol', 'Kquad_xpol']:
             xpolParametrizer.registerParameters(p, self.pset.find(f'ExchangePolarization/Xpol/{p}'))
         xpolParametrizer.registerPairwiseParameters(
             'b_xpol', 
             self.pset.find('ExchangePolarization/Xpol/b_xpol'),
             specific_pair_types=list(zip(
-                self.pset.find('ExchangePolarization/Pair/type1', list()),
-                self.pset.find('ExchangePolarization/Pair/type2', list())
+                self.pset.find(f'ExchangePolarization/Pair/{keyword}1', list()),
+                self.pset.find(f'ExchangePolarization/Pair/{keyword}2', list())
             )),
             specific_pair_params=self.pset.find('ExchangePolarization/Pair/b_xpol', list())
         )
         parametrizers['ExchangePolarization'] = xpolParametrizer
 
         # Dispersion
-        dispParametrizer = PairParametrizer(
-            self.pset.find("Dispersion/Disp/type"),
-            top,
-            name='Dispersion'
-        )
-
+        try:
+            dispTypes = self.pset.find("Dispersion/Disp/type")
+            use_aclass = False
+        except KeyError:
+            dispTypes = self.pset.find("Dispersion/Disp/class")
+            use_aclass = True
+        
+        dispParametrizer = PairParametrizer(dispTypes, top, name='Dispersion', use_atom_class=use_aclass)
+        keyword = 'class' if use_aclass else 'type'
         for p in ['C6_disp', 'b_disp']:
             pair_params = self.pset.find(f'Dispersion/Pair/{p}', list())
             dispParametrizer.registerPairwiseParameters(
                 p,
                 self.pset.find(f'Dispersion/Disp/{p}'),
                 specific_pair_types=list(zip(
-                    self.pset.find('Dispersion/Pair/type1', list()),
-                    self.pset.find('Dispersion/Pair/type2', list())
+                    self.pset.find(f'Dispersion/Pair/{keyword}1', list()),
+                    self.pset.find(f'Dispersion/Pair/{keyword}2', list())
                 )),
                 specific_pair_params=pair_params
             )
         parametrizers['Dispersion'] = dispParametrizer
         
         # ChargeTransfer
-        ctParameterizer = PairParametrizer(
-            self.pset.find("ChargeTransfer/Direct/type"),
-            top,
-            name='ChargeTransfer'
-        )
+        try:
+            ctTypes = self.pset.find("ChargeTransfer/Direct/type")
+            use_aclass = False
+        except:
+            ctTypes = self.pset.find("ChargeTransfer/Direct/class")
+            use_aclass = True
+        keyword = 'class' if use_aclass else 'type'
+        ctParameterizer = PairParametrizer(ctTypes, top, name='ChargeTransfer', use_atom_class=use_aclass)
         for p in ['q_ct_acc', 'q_ct_don', 'Kdipo_ct_acc', 'Kdipo_ct_don', 'Kquad_ct_acc', 'Kquad_ct_don']:
             ctParameterizer.registerParameters(p, self.pset.find(f"ChargeTransfer/Direct/{p}"))
         
@@ -528,8 +609,8 @@ class ForceFieldXML:
             "b_ct",
             self.pset.find("ChargeTransfer/Direct/b_ct"),
             specific_pair_types=list(zip(
-                self.pset.find('ChargeTransfer/Pair/type1', list()),
-                self.pset.find('ChargeTransfer/Pair/type2', list())
+                self.pset.find(f'ChargeTransfer/Pair/{keyword}1', list()),
+                self.pset.find(f'ChargeTransfer/Pair/{keyword}2', list())
             )),
             specific_pair_params=self.pset.find('ChargeTransfer/Pair/b_ct', list())
         )
@@ -537,30 +618,28 @@ class ForceFieldXML:
             "eps_ct",
             torch.zeros_like(ctParameterizer.getParameters('q_ct_acc')),
             specific_pair_types=list(zip(
-                self.pset.find('ChargeTransfer/Indirect/type1'),
-                self.pset.find('ChargeTransfer/Indirect/type2')
+                self.pset.find(f'ChargeTransfer/Indirect/{keyword}1'),
+                self.pset.find(f'ChargeTransfer/Indirect/{keyword}2')
             )),
             specific_pair_params=self.pset.find('ChargeTransfer/Indirect/eps_ct')
         )
         parametrizers['ChargeTransfer'] = ctParameterizer
 
         # Polarization
-        polParametrizer = PolarizationParametrizer(
-            self.pset.find("Polarization/Pol/type"),
-            top,
-            name='Polarization'
-        )
+        try:
+            polTypes = self.pset.find("Polarization/Pol/type")
+            use_aclass = False
+        except KeyError:
+            polTypes = self.pset.find("Polarization/Pol/class")
+            use_aclass = True
+        keyword = 'class' if use_aclass else 'type'
+        polParametrizer = PolarizationParametrizer(polTypes, top, name='Polarization', use_atom_class=use_aclass)
         for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz', 'alpha_damp_exponent', 'alpha_damp_max']:
             polParametrizer.registerParameters(p, self.pset.find(f'Polarization/Pol/{p}'))
         parametrizers['Polarization'] = polParametrizer
-
-        # for param in parametrizers:
-        #     for k, v in parametrizers[param].params.items():
-        #         print(param, k, v.storage().data_ptr())
         
         return parametrizers
     
-
     def parametrize(self, top: Topology, batch: bool = False, **kwargs):
         parametrizers = self.createParametrizers(top)
         if batch:

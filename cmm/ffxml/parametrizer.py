@@ -27,13 +27,14 @@ class Parametrizer(ABC, nn.Module):
         types: Iterable, 
         top: Topology, 
         name: str = '',
-        handle_unmatched: str = 'default'
+        handle_unmatched: str = 'default',
+        use_atom_class: bool = False
     ):
         super().__init__()
         self.top = top
         assert top.atomTypes, 'Atom types are not assigned'
 
-        self.atomTypes = self.top.atomTypes
+        self.atomTypes = self.top.atomTypes if not use_atom_class else self.top.atomClasses
         self.typesAsDict = {}
         
         if len(types) > 0:
@@ -468,8 +469,9 @@ class PairParametrizer(AtomicParametrizer):
         top: Topology, 
         name: str,
         combination_rule: str = 'geometric',
+        use_atom_class: bool = False
     ):
-        super().__init__(types, top, name)
+        super().__init__(types, top, name, use_atom_class=use_atom_class)
         self.combination_rule = combination_rule
         assert combination_rule == 'geometric', f'Combination rule {combination_rule} not supported'
 

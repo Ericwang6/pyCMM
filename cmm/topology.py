@@ -23,6 +23,7 @@ class Topology:
 
         self._atom_symbols: List[str] = []
         self._atom_types: List[str] = []
+        self._atom_classes: List[str] = []
         self._atom_sigs: List[Tuple[str, str]] = []
         self._graph = nx.Graph()
     
@@ -60,6 +61,10 @@ class Topology:
     @property
     def atomTypes(self) -> List[str]:
         return self._atom_types
+    
+    @property
+    def atomClasses(self) -> List[str]:
+        return self._atom_classes
     
     @property
     def atomSigs(self) -> List[Tuple[str, str]]:
