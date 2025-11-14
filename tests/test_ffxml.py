@@ -60,29 +60,38 @@ def test_parse_ffxml():
     xmlstr = ff.save()
 
 
-# def test_parametrize():
-#     device = 'cpu'
-#     float_dtype = torch.float64
-#     torch.set_default_dtype(float_dtype)
+def test_parametrize():
+    device = 'cpu'
+    float_dtype = torch.float64
+    torch.set_default_dtype(float_dtype)
 
-#     pdb = app.PDBFile(os.path.join(os.path.dirname(__file__), 'data/water_dimer_2.pdb'))
-#     coords = torch.tensor((pdb.getPositions(asNumpy=True)._value / BOHR2NM).tolist(), device=device, dtype=float_dtype)
-#     box = torch.tensor([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]], device=device, dtype=float_dtype)
+    pdb = app.PDBFile(os.path.join(os.path.dirname(__file__), 'data/water_dimer_2.pdb'))
+    coords = torch.tensor((pdb.getPositions(asNumpy=True)._value / BOHR2NM).tolist(), device=device, dtype=float_dtype)
+    box = torch.tensor([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]], device=device, dtype=float_dtype)
 
-#     ff = ForceFieldXML(os.path.join(os.path.dirname(__file__), 'data/water.xml'), device=device, float_dtype=torch.float64)
-#     top = Topology.fromOpenmm(pdb.topology, device)
-#     system = ff.parametrize(top)
+    ff = ForceFieldXML(os.path.join(os.path.dirname(__file__), 'data/water.xml'), device=device, float_dtype=torch.float64)
+    top = Topology.fromOpenmm(pdb.topology, device)
+    system = ff.parametrize(top)
 
-#     print(system.getEnergy(coords, box))
+
+def test_parametrize_with_class():
+    device = 'cpu'
+    float_dtype = torch.float64
+    torch.set_default_dtype(float_dtype)
+
+    pdb = app.PDBFile(os.path.join(os.path.dirname(__file__), 'data/water_dimer_2.pdb'))
+    coords = torch.tensor((pdb.getPositions(asNumpy=True)._value / BOHR2NM).tolist(), device=device, dtype=float_dtype)
+    box = torch.tensor([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]], device=device, dtype=float_dtype)
+
+    ff = ForceFieldXML(os.path.join(os.path.dirname(__file__), 'data/water_class.xml'), device=device, float_dtype=torch.float64)
+    top = Topology.fromOpenmm(pdb.topology, device)
+    system = ff.parametrize(top)
 
 
 def test_ase_interface():
     device = 'cpu'
     float_dtype = torch.float64
     torch.set_default_dtype(float_dtype)
-
-    # pdb = app.PDBFile(os.path.join(os.path.dirname(__file__), 'data/water_dimer_2.pdb'))
-    # box = torch.tensor([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]], device=device, dtype=float_dtype)
 
     pdb = app.PDBFile(os.path.join(os.path.dirname(__file__), 'data/water_216.pdb'))
     box = torch.tensor([[v.x/BOHR2NM, v.y/BOHR2NM, v.z/BOHR2NM] for v in pdb.topology.getPeriodicBoxVectors()], device=device, dtype=float_dtype)
