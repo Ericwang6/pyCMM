@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional, TextIO, Union, Literal
 from collections import defaultdict
 import os
 import numpy as np
-import parmed
+
 import logging
 from pathlib import Path
 import warnings
@@ -11,6 +11,8 @@ from .base import Molecule, Task
 
 
 def to_pdb(coords, symbols, fname, resname="UNK"):
+    import parmed
+    
     struct = parmed.Structure()
     res = parmed.Residue(name=resname)
     struct.residues.append(res)
@@ -279,6 +281,11 @@ class QChemReader:
         total_charge, total_mult = tuple(map(int, coords_lines[0].split()))
         charges, mults = [], []
         for line in coords_lines[1:]:
+            # the settings can be mis-placed in the coordinate blocks
+            # ignore them
+            if '=' in line:
+                continue
+
             if not line:
                 continue
             
@@ -297,8 +304,6 @@ class QChemReader:
 
             content = line.split()
             atoms[-1].append(content[0])
-            if '=' in line:
-                continue
             coords[-1].append(list(map(float, content[1:])))
         
         coords = [np.array(coord) for coord in coords]
@@ -318,7 +323,7 @@ class QChemReader:
             for key in res.keys():
                 res[key] /= 4.184
 
-        return atoms, coords, charges, res
+        return atoms, coords, charges, mults, total_charge, total_mult, res
     
     @staticmethod
     def read_out(out: Union[TextIO, os.PathLike]):

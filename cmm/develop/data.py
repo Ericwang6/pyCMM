@@ -1,22 +1,24 @@
 import os, glob
 from dataclasses import dataclass, field
 from collections import defaultdict
-from typing import Dict, Iterable
+from typing import Dict, List, TYPE_CHECKING
 import random
 
-import openmm.app as app
+if TYPE_CHECKING:
+    import openmm.app as app
+
 import numpy as np
 import pandas as pd
 import torch
 
-from ..units import BOHR2ANG, BOHR2NM, DEBYE2AU
+from ..units import BOHR2ANG, BOHR2NM, DEBYE2AU, SYMB2Z
 from .multiwfn import MultiwfnReader
 from .qchem import QChemReader
 
 
 @dataclass
 class EspData:
-    top: app.Topology
+    topology: "app.Topology"
     coord: torch.Tensor
     grid: torch.Tensor
     esp: torch.Tensor
@@ -24,6 +26,8 @@ class EspData:
 
     @classmethod
     def from_files(cls, pdb_file, multiwfn_esp_file, multiwfn_chg_file=None):
+        import openmm.app as app
+        
         pdb = app.PDBFile(pdb_file)
         if multiwfn_chg_file:
             coord = MultiwfnReader.read_chg_file(multiwfn_chg_file)[1]
@@ -43,7 +47,7 @@ class EspData:
 
 @dataclass
 class DipoleData:
-    top: app.Topology
+    topology: "app.Topology"
     coords: torch.Tensor
     dipos: torch.Tensor
     charge: int = 0
@@ -54,6 +58,8 @@ class DipoleData:
 
     @classmethod
     def from_files(cls, pdb_file, qchem_out_files):
+        import openmm.app as app
+        
         top = app.PDBFile(pdb_file).topology
         coords, dipos = [], []
         for file in qchem_out_files:
@@ -67,7 +73,7 @@ class DipoleData:
 
 @dataclass
 class PolarizabilityData:
-    top: app.Topology
+    topology: "app.Topology"
     coords: torch.Tensor
     pol: torch.Tensor
     charge: int = 0
@@ -78,6 +84,8 @@ class PolarizabilityData:
     
     @classmethod
     def from_files(cls, pdb_file, qchem_out_files):
+        import openmm.app as app
+        
         top = app.PDBFile(pdb_file).topology
         coords, pols = [], []
         for file in qchem_out_files:
@@ -91,19 +99,40 @@ class PolarizabilityData:
 
 @dataclass
 class EdaData:
-    top: app.Topology
+    atoms: List[List[str]]
     coords: torch.Tensor
-    energies: Dict[str, torch.Tensor]
-    eda_df: pd.DataFrame = None
+    energies: Dict[str, torch.Tensor]    
+    charges: List[int] = field(default_factory=list, repr=False)
+    spins: List[int] = field(default_factory=list, repr=False)
+    total_charge: List[int] = None
+    total_spin: List[int] = None
+    num_atoms: int = field(init=False)
+    num_frags: int = field(init=False)
     num: int = field(init=False)
+    topology: "app.Topology" = field(default=None, kw_only=True)
+    files: List[os.PathLike] = field(default_factory=list, repr=False, kw_only=True)
+    eda_df: pd.DataFrame = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self):
         self.num = int(self.coords.shape[0])
+        self.num_atoms = sum([len(a) for a in self.atoms])
+        self.num_frags = len(self.atoms)
+        if len(self.charges) == 0:
+            self.charges = [0 for _ in range(self.num_frags)]
+        if len(self.spins) == 0:
+            self.spins = [1 for _ in range(self.num_frags)]
+        if self.total_charge is None:
+            self.total_charge = sum(self.charges)
+        assert self.total_charge == sum(self.charges)
+        if self.total_spin is None:
+            self.total_spin = 1
 
     @classmethod
     def from_csv_file(cls, pdb_file, csv_file):
+        import openmm.app as app
         loaded_pdb = app.PDBFile(pdb_file)
         top = loaded_pdb.topology
+        atoms = [[at.element.symbol for at in residue] for residue in top.residues()]
         eda_df = pd.read_csv(csv_file)
         try:
             enes_ref = {
@@ -133,20 +162,49 @@ class EdaData:
             coords = np.array([loaded_pdb.getPositions(True, i_frame) for i_frame in range(loaded_pdb.getNumFrames())]) / BOHR2NM
         coords = torch.tensor(coords)
 
-        data = cls(top, coords, enes_ref, eda_df)
+        data = cls(atoms, coords, enes_ref, topology=top, eda_df=eda_df)
         return data
     
     @classmethod
-    def from_qchem_out_files(cls, pdb_file, out_files, **kwargs):
-        top = app.PDBFile(pdb_file).topology
-        coords = []
+    def from_qchem_out_files(cls, pdb_file=None, out_files=list(), **kwargs):
+        assert len(out_files) > 0, 'out_files must not be empty'
+
+        if pdb_file:
+            import openmm.app as app
+            top = app.PDBFile(pdb_file).topology
+            _atoms = [[at.element.symbol for at in residue.atoms()] for residue in top.residues()]
+        else:
+            top = None
+            _atoms = []
+        
         energies = defaultdict(list)
-        for out in out_files:
-            _, coord, _, ene = QChemReader.read_eda_out(out, **kwargs)
+        coords = []
+        _charges = []
+        _spins = []
+        _t_charge = None
+        _t_spin = None
+        for i, out in enumerate(out_files):
+            atoms, coord, charges, spins, total_charge, total_spin, ene = QChemReader.read_eda_out(out, **kwargs)
             coord = np.vstack(coord)
             for key in ene.keys():
                 energies[key].append(ene[key])
             coords.append(coord)
+
+            if len(_atoms) > 0:
+                assert _atoms == atoms, f'{atoms}, {_atoms}'
+            else:
+                _atoms = atoms
+
+            if i == 0:
+                _charges = charges
+                _spins = spins
+                _t_charge = total_charge
+                _t_spin = total_spin
+            else:
+                assert charges == _charges
+                assert spins == _spins
+                assert total_charge == _t_charge
+                assert total_spin == _t_spin
 
         coords = torch.tensor(np.array(coords) / BOHR2ANG)
 
@@ -159,7 +217,11 @@ class EdaData:
             'total': torch.tensor(energies['TOTAL'])
         }
         
-        data = cls(top, coords, energies)
+        data = cls(
+            _atoms, coords, energies, topology=top, 
+            charges=_charges, spins=_spins, total_charge=_t_charge, total_spin=_t_spin, 
+            files=out_files
+        )
         return data
     
     @classmethod
@@ -169,12 +231,11 @@ class EdaData:
         else:
             return cls.from_qchem_out_files(pdb_file, file, **kwargs)
     
-
     @staticmethod
     def gather_dimer_scan_eda(dirpath, smi0="", smi1=""):
         df = []
         for edaout in glob.glob(f'{dirpath}/k_*/eda.out'):
-            atoms, coords, charges, res = QChemReader.read_eda_out(edaout, return_coords=True)
+            atoms, coords, charges, spins, total_charge, total_spin, res = QChemReader.read_eda_out(edaout, return_coords=True)
             res['smiles0'] = smi0
             res['smiles1'] = smi1
             res['k_index'] = int(os.path.basename(os.path.dirname(edaout)).split('_')[-1])
@@ -220,9 +281,45 @@ class EdaData:
                 sliced_eda_df = self.eda_df.iloc[idx]
         else:
             sliced_eda_df = None
+        
+        if self.files is not None:
+            if torch.is_tensor(idx):
+                idx = idx.numpy(force=True)
+            sliced_files = np.array(self.files)[idx].tolist()
+        else:
+            sliced_files = None
 
         # Create a new instance of EdaData with the sliced data
-        return EdaData(self.top, sliced_coords, sliced_energies, sliced_eda_df)
+        return EdaData(
+            self.atoms, sliced_coords, sliced_energies, 
+            charges=self.charges, spins=self.spins,
+            total_charge=self.total_charge, total_spin=self.total_spin,
+            topology=self.topology, eda_df=sliced_eda_df, files=sliced_files
+        )
+    
+    def get_ase_atoms(self):
+        from ase import Atoms
+
+        natoms_acc = [0]
+        for i in range(self.num_frags):
+            natoms_acc.append(natoms_acc[-1]+len(self.atoms[i]))
+        
+        symbols_total = []
+        for a in self.atoms:
+            symbols_total += a
+         
+        coords_numpy = self.coords.numpy(force=True) * BOHR2ANG
+        frags_list = []
+        for n in range(self.num):
+            frags = []
+            for f in range(self.num_frags):
+                ats = Atoms(symbols=self.atoms[f], positions=coords_numpy[n][natoms_acc[f]:natoms_acc[f+1]])
+                ats.info.update({"spin": self.spins[f], "charge": self.charges[f]})
+                frags.append(ats)
+            total = Atoms(symbols=symbols_total, positions=coords_numpy[n])
+            total.info.update({"spin": self.total_spin, "charge": self.total_charge})
+            frags_list.append((total, frags))
+        return frags_list
 
 
 def slice_data(data: EdaData, num: int):
