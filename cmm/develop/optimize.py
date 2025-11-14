@@ -1,11 +1,16 @@
+import os
 import torch
-from typing import Dict, Callable, List, Literal, Optional
+
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+from typing import Dict, Callable, List, Literal, Optional, Union
 from .base import Logger
 from .data import DipoleData, EdaData, EspData, PolarizabilityData
 from ..ffxml import ForceFieldXML
-from ..units import HARTREE2KCAL
+from ..units import EV2KCAL, BOHR2ANG, HARTREE2KCAL
 from ..topology import Topology
-from tqdm import tqdm
 
 
 class Optimizer:
@@ -192,6 +197,23 @@ def misquitta_weight(energies: torch.Tensor, alpha=0.4, e0=25):
     return torch.exp(-alpha * torch.log(energies / e0) ** 2)
 
 
+def read_ase_log(logfile):
+    data = []
+    with open(logfile) as f:
+        f.readline()
+        for line in f:
+            content = line.split()
+            if len(content) == 5: # no time
+                data.append(tuple(map(float, line.split()[1:])))
+            else:
+                data.append(tuple(map(float, line.split()[1:-1])))
+
+    if len(data[0]) == 4:
+        return pd.DataFrame(data, columns=['time', 'temperature', 'energy', 'density'])
+    else:
+        return pd.DataFrame(data, columns=['time', 'temperature', 'epot', 'etot', 'density'])
+
+
 class Trainer:
     def __init__(
         self, 
@@ -240,7 +262,7 @@ class Trainer:
 
     def evaluate(self, data, system=None, **kwargs):
         if system is None:
-            system = self.ff.parametrize(Topology.fromOpenmm(data.top), batch=True, **kwargs)
+            system = self.ff.parametrize(Topology.fromOpenmm(data.topology), batch=True, **kwargs)
         if isinstance(data, EdaData):
             res = system.getEnergy(data.coords, energy_in_kcal=True, include_bonded=False)
             ref = data.energies
@@ -263,7 +285,7 @@ class Trainer:
         return res, ref, ref_charge, charge
     
     def train(self, datas, num_epoch: int = 10, **kwargs):
-        systems = [self.ff.parametrize(Topology.fromOpenmm(data.top), batch=True, **kwargs) for data in datas]
+        systems = [self.ff.parametrize(Topology.fromOpenmm(data.topology), batch=True, **kwargs) for data in datas]
         losses = [[] for _ in range(len(datas))]
 
         for n in range(num_epoch):
@@ -299,3 +321,165 @@ class Trainer:
                 self.optimizer.step()
 
         return losses
+
+    def compute_density_loss_and_gradient(
+        self,
+        pdbs: List[os.PathLike],
+        trajs: List[os.PathLike],
+        ref_densities: List[float],
+        temperatures: List[float],
+        weights: Union[float, List[float]] = 1.0,
+        index: str = ':',
+        **kwargs
+    ):
+        from ase.io import read
+        from ase.units import kB
+
+        grads = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+        device = self.ff.device
+
+        weights = [weights for _ in range(len(pdbs))] if isinstance(weights, float) else weights
+        for n, (pdb, traj_path, ref_d, temp, weight) in enumerate(zip(pdbs, trajs, ref_densities, temperatures, weights, strict=True)):
+            top = Topology.fromPDB(pdb, device)
+            system = self.ff.parametrize(top, batch=False, expand_parametrizers_during_init=False, **kwargs)
+            traj = read(traj_path, index=index)
+            param_grad = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+            density_param_grad = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+
+            densities = []
+            for atoms in tqdm(traj, total=len(traj), desc=f'Processing {n}'):
+                coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
+                box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
+                energy = system.getEnergy(coords, box)['total'] * HARTREE2KCAL
+                energy.backward()
+                d = np.sum(atoms.get_masses()) * 1.66053906892  / atoms.get_volume()
+                densities.append(d)
+
+                for key in self.optimizer.opt_params:
+                    g = self.optimizer.opt_params[key].grad
+                    with torch.no_grad():
+                        param_grad[key].add_(g)
+                        density_param_grad[key].add_(g * d)
+                    g.zero_()
+            
+            avg_d = np.mean(densities)
+            beta = 1 / (temp * kB * EV2KCAL)
+
+            loss = 0.5*(avg_d-ref_d)**2
+            print(f"Density Calculated: {avg_d:.5f}, Reference: {ref_d:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weight}")
+            for key in self.optimizer.opt_params:
+                grad = -beta * (density_param_grad[key] / len(traj) - param_grad[key] * (avg_d / len(traj)) ) * (avg_d - ref_d) * weight
+                grads[key].add_(grad)
+        
+        for key in grads:
+            self.optimizer.opt_params[key].grad += grads[key] / len(pdbs)
+    
+    def compute_heat_of_vap_loss_and_gradient(
+        self,
+        liq_pdbs: List[os.PathLike],
+        liq_trajs: List[os.PathLike],
+        gas_pdbs: List[os.PathLike],
+        gas_trajs: List[Union[os.PathLike, float, None]],
+        ref_hs: List[float],
+        temperatures: List[float],
+        weights: Union[float, List[float]] = 1.0,
+        index: str = ':',
+        **kwargs
+    ):
+        from ase.io import read
+        from ase.units import kB
+
+        grads = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+        device = self.ff.device
+
+        weights = [weights for _ in range(len(ref_hs))] if isinstance(weights, float) else weights
+        for n in range(len(liq_pdbs)):
+            liq_top = Topology.fromPDB(liq_pdbs[n], device)
+            liq_system = self.ff.parametrize(liq_top, batch=False, expand_parametrizers_during_init=False, **kwargs)
+            liq_traj = read(liq_trajs[0], index=index)
+            liq_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+            liq_u_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+
+            u_liq = []
+            t_liq = []
+            for atoms in tqdm(liq_traj, total=len(liq_traj), desc=f'Processing liq-phase {n}'):
+                coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
+                box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
+                energy = liq_system.getEnergy(coords, box)['total'] * HARTREE2KCAL
+                energy.backward()
+
+                u = energy.item()
+                u_liq.append(u)
+                t_liq.append(atoms.get_temperature())
+                for key in self.optimizer.opt_params:
+                    g = self.optimizer.opt_params[key].grad
+                    with torch.no_grad():
+                        liq_du_dparam[key].add_(g)
+                        liq_u_du_dparam[key].add_(g * u)
+                    g.zero_()
+            
+            beta = 1 / (temperatures[n] * kB * EV2KCAL)
+            u_liq_avg = np.mean(u_liq)
+            t_liq_avg = np.mean(t_liq)
+            liq_duavg_dparam = {}
+            for key in grads:
+                liq_duavg_dparam[key] = (1 + beta * u_liq_avg) * liq_du_dparam[key] / len(liq_traj) - beta * liq_u_du_dparam[key] / len(liq_traj)
+            
+            gas_top = Topology.fromPDB(gas_pdbs[n], device)
+            num_mols = liq_top.natoms // gas_top.natoms
+            
+            # Gas-phase
+            gas_duavg_dparam = {}
+            t_gas_avg = None
+            if isinstance(gas_trajs[n], float):
+                u_gas_avg = gas_pdbs[n]
+            elif str(gas_trajs[n]).endswith('.log'):
+                df = read_ase_log(gas_trajs[n])
+                u_gas_avg = np.mean(df['epot'].values) * EV2KCAL
+                t_gas_avg = np.mean(df['temperature'].values)
+            else:
+                gas_system = self.ff.parametrize(gas_top, batch=False, expand_parametrizers_during_init=False, **kwargs)
+                gas_traj = read(gas_trajs[n], index=index)
+                u_gas = []
+                t_gas = []
+                gas_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+                gas_u_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
+                for atoms in tqdm(gas_traj, total=len(gas_traj), desc=f'Processing gas-phase {n}'):
+                    coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
+                    box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
+                    energy = gas_system.getEnergy(coords, box)['total'] * HARTREE2KCAL
+                    energy.backward()
+
+                    u = energy.item()
+                    u_gas.append(u)
+                    t_gas.append(atoms.get_temperature())
+                    for key in self.optimizer.opt_params:
+                        g = self.optimizer.opt_params[key].grad
+                        with torch.no_grad():
+                            gas_du_dparam[key].add_(g)
+                            gas_u_du_dparam[key].add_(g * u)
+                        g.zero_()
+                
+                u_gas_avg = np.mean(u_gas)
+                t_gas_avg = np.mean(t_gas)
+                for key in grads:
+                    gas_duavg_dparam[key] = (1 + beta * u_gas_avg) * gas_du_dparam[key] / len(gas_traj) - beta * gas_u_du_dparam[key] / len(gas_traj)
+
+            # compute heat of vaporization
+            dh = u_gas_avg - u_liq_avg / num_mols + kB * EV2KCAL * temperatures[n]
+            if t_gas_avg is not None:
+                dh -= kB * EV2KCAL * (t_gas_avg - t_liq_avg) * (3 * gas_top.natoms - 6) / 2
+            
+            for key in self.optimizer.opt_params:
+                if len(gas_duavg_dparam) > 0:
+                    grad = (gas_duavg_dparam[key] - liq_duavg_dparam[key] / num_mols) * (dh - ref_hs[n]) * weights[n]
+                else:
+                    grad = (-liq_duavg_dparam[key] / num_mols)  * (dh - ref_hs[n]) * weights[n]
+                grads[key].add_(grad)
+
+            loss = 0.5*(ref_hs[n]-dh)**2
+            print(f"Delta H Calculated: {dh:.5f}, Reference: {ref_hs[n]:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weights[n]}")
+
+        for key in grads:
+            self.optimizer.opt_params[key].grad += grads[key] / len(liq_pdbs)
+

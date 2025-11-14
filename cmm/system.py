@@ -181,11 +181,9 @@ class System(nn.Module):
         self._expand_parametrizers_during_init = expand_parametrizers_during_init
         if self._expand_parametrizers_during_init:
             self.expandParametrizers()
-        else:
-            raise NotImplementedError('expand_parametrizers_during_init=False not supported yet')
         
         # Long-Range dispersion correction
-        if self.use_lr_dispersion and self._has_nb:
+        if self.use_lr_dispersion and self._has_nb and self._expand_parametrizers_during_init:
             self.c6_mean = torch.mean(self.parametrizers['Dispersion'].getExpandParameters("C6_disp", self.all_pairs))
         
         self.use_customized_ops = use_customized_ops
@@ -217,6 +215,10 @@ class System(nn.Module):
         self._set_ewald = True
     
     def getEnergy(self, coords: torch.Tensor, box: torch.Tensor | None = None):
+
+        if not self._expand_parametrizers_during_init:
+            self.expandParametrizers()
+            self.c6_mean = torch.mean(self.parametrizers['Dispersion'].getExpandParameters("C6_disp", self.all_pairs))
         
         boxInv = None if box is None else torch.linalg.inv(box)
 
