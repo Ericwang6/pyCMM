@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch_scatter import segment_csr
 from .ewald import Ewald
+from.pme_helper import PME
 
 try:
     import torchff
@@ -86,7 +87,9 @@ class CMMPolarization(nn.Module):
 
         self.use_customized_ops = use_customized_ops
         self.ewald = None
+        self.pme = None
         self._set_ewald = False
+        self.set_pme = False
 
         self.rcut_lr = rcut_lr
         self.rcut_sr = rcut_sr
@@ -95,6 +98,11 @@ class CMMPolarization(nn.Module):
         self.alpha_ewald = alpha_ewald
         self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops)
         self.ewald.to(device=device, dtype=dtype)
+        self._set_ewald = True
+    def set_pme(self, alpha_ewald, k_max, device, dtype):
+        self.alpha_ewald = alpha_ewald
+        self.pme = PME(alpha_ewald, k_max, 1, self.use_customized_ops)
+        self.pme.to(device=device, dtype=dtype)
         self._set_ewald = True
     
     def store_output(self, solution_vector: torch.Tensor):
@@ -239,15 +247,32 @@ class CMMPolarization(nn.Module):
         with timer("  POL-MATMUL-RECIP"):
             # Get reciprocal space field data (ewald + self contribution)
             if self.use_lr:
-                ewald_potential, ewald_field, _, _, _ = self.ewald(
-                        coords, box, induced_charges, induced_dipoles
-                )
                 if not self.use_customized_ops:
-                    induced_electric_potential = ewald_potential + induced_electric_potential
-                    induced_electric_field =  ewald_field + induced_electric_field 
+                    if not self.use_pme:
+                        ewald_potential, ewald_field = self.ewald(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+                        induced_electric_potential = ewald_potential + induced_electric_potential
+                        induced_electric_field =  ewald_field + induced_electric_field 
+                    else:
+                        pme_potential, pme_field = pme(
+                                coords,induced_charges, induced_dipoles , box
+                        )
+                        induced_electric_potential = pme_potential + induced_electric_potential
+                        induced_electric_field =  pme_field + induced_electric_field 
                 else:
-                    induced_electric_potential = ewald_potential
-                    induced_electric_field = ewald_field
+                    if not self.use_pme:
+                        ewald_potential, ewald_field, _, _, _ = self.ewald(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+                        induced_electric_potential = ewald_potential
+                        induced_electric_field = ewald_field
+                    else:
+                        pme_potential, pme_field, _, _, _ = self.pme(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+                        induced_electric_potential = pme_potential
+                        induced_electric_field = pme_field
         
         with timer("  POL-MATMUL-CHARGE"):
             # Get sum of induced charges in every polarization group
@@ -280,9 +305,15 @@ class CMMPolarization(nn.Module):
                 if self.use_lr:
                     induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
                     induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
-                    ewald_potential, ewald_field, _, _, _ = self.ewald(
-                            coords, box, induced_charges, induced_dipoles
-                    )
+                    if self.use_ewald:
+                        ewald_potential, ewald_field, _, _, _ = self.ewald(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+                    if self.use_pme:
+                        ewald_potential, ewald_field, _, _, _ = self.pme(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+
             with timer("  POL-MATMUL-CHARGE"):
                 # Get sum of induced charges in every polarization group
                 constraints = segment_csr(induced_charges[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
