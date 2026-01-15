@@ -9,6 +9,41 @@ except Exception as e:
     pass
 
 
+class EwaldFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, coords, box, q, p, t, max_hkl, rank, alpha):
+        #Run CUDA kernel
+        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
+            coords, box, q, p, t, max_hkl, rank, alpha
+        )
+
+        # Save the Field and Field Gradient for the backward pass
+        ctx.save_for_backward(fld, grad, forces)
+        ctx.rank = rank
+
+        return pot, fld, grad, energy, forces
+
+    @staticmethod
+    def backward(ctx, grad_pot, grad_fld, grad_grad, grad_energy, grad_forces):
+        fld, grad_field_tensor, forces = ctx.saved_tensors
+        rank = ctx.rank
+
+        # --- CALCULATE GRADIENTS ---
+        # 1. Gradient w.r.t Position (The Translational Force)
+        d_coords = -forces * grad_energy
+
+        # 2. Gradient w.r.t Multipoles (The Torque Source)
+        d_p = None
+        if rank >= 1:
+            d_p = -fld * grad_energy
+
+        # 3. Gradient w.r.t Quadrupoles
+        d_t = None
+        if rank >= 2:
+            d_t = -(1.0/3.0) * grad_field_tensor * grad_energy
+
+        return d_coords, None, None, d_p, d_t, None, None, None
+
 class Ewald(nn.Module):
     def __init__(self, alpha: float, max_hkl: int, rank: int, use_customized_ops: bool = False):
         super().__init__()
@@ -44,7 +79,6 @@ class Ewald(nn.Module):
         box    = box.to(device=dev, dtype=dtype).contiguous()
         q      = q.to(device=dev, dtype=dtype).contiguous()
         N = q.shape[0]
-            # Provide valid tensors even if None
         if p is None:
             p = torch.zeros((N, 3), device=dev, dtype=dtype)
         else:
@@ -54,11 +88,9 @@ class Ewald(nn.Module):
             t = torch.zeros((N, 3, 3), device=dev, dtype=dtype)
         else:
             t = t.to(device=dev, dtype=dtype).contiguous()
-        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
+        return EwaldFunction.apply(
             coords, box, q, p, t, self.max_hkl, self.rank, float(self.alpha)
         )
-        # res = {potential, field, field_grad, energy, forces}
-        # Return structure identical to _forward_python
         return pot, fld, grad, energy, forces
     def _forward_python(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
         box_inv = torch.inverse(box)
