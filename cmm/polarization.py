@@ -90,6 +90,7 @@ class CMMPolarization(nn.Module):
         self.pme = None
         self._set_ewald = False
         self.set_pme = False
+        self.use_pme = False
 
         self.rcut_lr = rcut_lr
         self.rcut_sr = rcut_sr
@@ -99,11 +100,13 @@ class CMMPolarization(nn.Module):
         self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops)
         self.ewald.to(device=device, dtype=dtype)
         self._set_ewald = True
+        self.use_pme = False
     def set_pme(self, alpha_ewald, k_max, device, dtype):
         self.alpha_ewald = alpha_ewald
         self.pme = PME(alpha_ewald, k_max, 1, self.use_customized_ops)
         self.pme.to(device=device, dtype=dtype)
         self._set_ewald = True
+        self.use_pme = True
     
     def store_output(self, solution_vector: torch.Tensor):
         index = self.n_solves
@@ -255,8 +258,8 @@ class CMMPolarization(nn.Module):
                         induced_electric_potential = ewald_potential + induced_electric_potential
                         induced_electric_field =  ewald_field + induced_electric_field 
                     else:
-                        pme_potential, pme_field = pme(
-                                coords,induced_charges, induced_dipoles , box
+                        pme_potential, pme_field = self.pme(
+                                coords, box, induced_charges, induced_dipoles
                         )
                         induced_electric_potential = pme_potential + induced_electric_potential
                         induced_electric_field =  pme_field + induced_electric_field 
@@ -305,12 +308,12 @@ class CMMPolarization(nn.Module):
                 if self.use_lr:
                     induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
                     induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
-                    if self.use_ewald:
-                        ewald_potential, ewald_field, _, _, _ = self.ewald(
-                                coords, box, induced_charges, induced_dipoles
-                        )
                     if self.use_pme:
                         ewald_potential, ewald_field, _, _, _ = self.pme(
+                                coords, box, induced_charges, induced_dipoles
+                        )
+                    else:
+                        ewald_potential, ewald_field, _, _, _ = self.ewald(
                                 coords, box, induced_charges, induced_dipoles
                         )
 
