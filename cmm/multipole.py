@@ -80,8 +80,12 @@ def computeLocal2GlobalRotationMatrixBatch(
     # Z-Only
     filterZOnly = torch.logical_or(axisTypes == AxisTypes.ZOnly.value, axisTypes == AxisTypes.NoAxisType.value)
     xVecNotZOnly = applyPBC(positions[xAtoms][~filterZOnly] - positions[~filterZOnly], box, boxInv)
-    xVec[~filterZOnly] += normVec(xVecNotZOnly)
-    xVec[filterZOnly, 0] += 1 - zVec[filterZOnly, 0]
+    #xVec[~filterZOnly] += normVec(xVecNotZOnly)
+    #xVec[filterZOnly, 0] += 1 - zVec[filterZOnly, 0]
+    xVec_new = xVec.clone()
+    xVec_new[~filterZOnly] = xVec[~filterZOnly] + normVec(xVecNotZOnly)
+    xVec_new[filterZOnly, 0] = xVec[filterZOnly, 0] + (1 - zVec[filterZOnly, 0])
+    xVec = xVec_new
     xVec[filterZOnly, 1] += zVec[filterZOnly, 0]
 
     # Bisector
@@ -565,3 +569,43 @@ def computePairwisePermElecEnergyNoDamp(drVec: torch.Tensor, mPoles_i: torch.Ten
     else:
         energies = torch.bmm(mPoles_j.unsqueeze(1), torch.bmm(iTensor, mPoles_i.unsqueeze(2))).flatten()
     return energies
+
+
+@torch.compile
+def createPMEPolytensor(poly: torch.Tensor):
+    """
+    Takes cartesian polytensor and outputs spherical harmonic polytensor for PME calculation
+    """
+    mono = poly[:, 0:1]
+    dipo = poly[:, 1:4]
+    quad = poly[:, 4:10]
+    #convert
+    dipo_s = computeSphericalDipoles(dipo)
+    quad_s = computeSphericalQuadrupoles(quad)
+    #stack  ---> (N,9)
+    return torch.cat([mono,dipo_s,quad_s],dim=1)
+@torch.compile
+def split_spherical_polytensor(multipoles: torch.Tensor):
+    """
+    Splits (N,9) tensor into monopole, dipole, and quadrupole tensors seperately for system.py
+    """
+    mono = multipoles[:,0]
+    dipo = multipoles[:, slice(1,4)]
+    quad = multipoles[:, slice(4,9)]
+    return mono, dipo, quad
+@torch.compile
+def computeSphericalDipoles(dipo: torch.Tensor):
+    '''
+    Compute dipoles in a spherical harmonic basis as follows:
+    [Z,X,Y] instead of [X,Y,Z]. Necessary for PME calculation
+    
+    Parameters
+    ----------
+    dipo: torch.Tensor
+        Dipoles in cartesian form (x,y,z), shape (N,3)
+    Returns
+    -------
+        Dipoles in spherical harmonics form (z,x,y), shape (N,3)
+    '''
+    return torch.stack([dipo[...,2], dipo[...,0], dipo[...,1]], dim=-1)
+
