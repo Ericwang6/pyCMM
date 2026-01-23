@@ -2,44 +2,12 @@ import torch
 import torch.nn as nn
 from typing import Optional
 from .pme import compute_pme
-from .multipole import (
-    convertMultipolesToPolytensor,
-    createPMEPolytensor, 
-    split_spherical_polytensor
-)
-
 try:
     import torchff
     import torchff_pme
 except ImportError:
     pass
 
-def get_pme_multipoles(q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
-    """
-    Converts Cartesian multipoles to Spherical Harmonic basis.
-    Wraps in no_grad to prevent 'IndexPutBackward' errors if gradients 
-    w.r.t multipoles are not strictly required through the conversion.
-    """
-    # Use no_grad to fix the Autograd/Dynamo warnings you saw earlier
-    with torch.no_grad():
-        device = q.device
-        dtype = q.dtype
-        N = q.shape[0]
-
-        if p is None: 
-            p = torch.zeros((N, 3), device=device, dtype=dtype)
-        if t is None: 
-            # Default to Cartesian 3x3 input shape
-            t = torch.zeros((N, 3, 3), device=device, dtype=dtype)
-
-        # Cartesian -> Polytensor -> Spherical PME Basis
-        multipoles = convertMultipolesToPolytensor(q, p, t)
-        multipoles_s = createPMEPolytensor(multipoles)
-        
-        # Split back into (q, p, t) where t is now shape (N, 5)
-        q_s, p_s, t_s = split_spherical_polytensor(multipoles_s)
-        
-    return q_s, p_s, t_s
 
 class PME(nn.Module):
     def __init__(self, alpha: float, max_hkl: int, rank: int, use_customized_ops: bool = False):
@@ -50,13 +18,10 @@ class PME(nn.Module):
         self.use_customized_ops = use_customized_ops
 
     def forward(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
-        q_s, p_s, t_s = get_pme_multipoles(q, p, t)
-
-        # 2. Dispatch
         if self.use_customized_ops:
-            return self._forward_cpp(coords, box, q_s, p_s, t_s)
+            return self._forward_cpp(coords, box, q, p, t)
         else:
-            return self._forward_python(coords, box, q_s, p_s, t_s)
+            return self._forward_python(coords, box, q, p, t)
 
     def _forward_cpp(self, coords, box, q, p, t):
         # Returns: (phi, E, EG, energy, forces)
@@ -64,29 +29,47 @@ class PME(nn.Module):
             coords, box, q, p, t, 
             self.max_hkl, self.rank, self.alpha
         )
-
     def _forward_python(self, coords, box, q, p, t):
-        # 1. Compute Potentials (Returns: phi, E, EG)
+        # 1. Compute PME terms
         ret = compute_pme(coords, box, q, p, t, self.alpha, self.max_hkl, self.rank)
-        
-        if isinstance(ret, tuple):
-            phi = ret[0]
-            # Handle cases where rank < 2 might return fewer items
-            E   = ret[1] if len(ret) > 1 else torch.zeros_like(p)
-            EG  = ret[2] if len(ret) > 2 else torch.zeros_like(t)
-        else:
-            phi = ret
-            E = torch.zeros_like(p)
-            EG = torch.zeros_like(t)
+        # 2. Unpack results based on rank
+        pot = ret if self.rank == 0 else ret[0]
+        field = ret[1] if self.rank >= 1 else torch.zeros_like(p)
+        EG = ret[2] if self.rank >= 2 else torch.zeros_like(t)
+        #DEBUGGING E_K
+        #E_k = ret[3] if self.rank>=2 else 0
+        # 3. Calculate Energy Terms
+        # Term Q (Charge Energy): 0.5 * sum(q * phi)
+        term_q = 0.5 * torch.sum(q * pot)
+        # Term P (Dipole Energy): -0.5 * sum(p * E)
+        term_p = 0.0
+        if self.rank >= 1:
+            term_p = -0.5 * torch.sum(p * field)
+        # Term T (Quadrupole Energy): -(1/2) * sum(Q : gradE)
+        term_t = 0.0
+        if self.rank >= 2:
+            #term_t = -(1.0/2.0) * torch.sum(t * EG)
+            eg_xx = EG[:, 0, 0]
+            eg_xy = EG[:, 0, 1]
+            eg_xz = EG[:, 0, 2]
+            eg_yy = EG[:, 1, 1]
+            eg_yz = EG[:, 1, 2]
+            eg_zz = EG[:, 2, 2]
 
-        # 2. Compute Scalar Energy Manually
-        # Formula for Spherical Harmonics contraction
-        # U = 0.5 * (q*phi) - 0.5 * (p*E) - 1/6 * (t*EG)
-        term_q = 0.5 * torch.sum(q * phi)
-        term_p = -0.5 * torch.sum(p * E)
-        term_t = -(1.0/6.0) * torch.sum(t * EG)
+            # 2. Calculate the dot product Q : sum(grad E)
+            contraction = (
+                t[:, 0] * eg_xx +
+                t[:, 3] * eg_yy +
+                t[:, 5] * eg_zz +
+                2.0 * (t[:, 1] * eg_xy + t[:, 2] * eg_xz + t[:, 4] * eg_yz)
+            )
+
+            term_t = -(1.0/2.0) * torch.sum(contraction)
+        # Total Reciprocal Energy
+        print(f"CARTESIAN PME MONOPOLE   RECIPROCAL ENERGY: {term_q}")
+        print(f"CARTESIAN PME DIPOLE     RECIPROCAL ENERGY: {term_p}")
+        print(f"CARTESIAN PME QUADRUPOLE RECIPROCAL ENERGY: {term_t}")
         energy = term_q + term_p + term_t
-        forces = None 
+        forces = None
+        return pot, field, EG, energy, forces
 
-        # Return 5 items to match C++ signature
-        return phi, E, EG, energy, forces

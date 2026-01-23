@@ -596,11 +596,10 @@ class System(nn.Module):
                         print(f"(PY) POTENTIAL  ATOM 0 {pme_potential[0]}")
                         print(f"(PY) FIELD      ATOM 0 {pme_field[0]}")
                         print(f"(PY) FIELD GRAD ATOM 0 {pme_field_gradient[0]}")
-                        #Note energy expression below differs from the ewald expression. However they are functionally the same as all differences have been taken care of in pme.py
                         ene_pme = 0.5 * (
                             torch.einsum("n,n->", mono, pme_potential) +
                             torch.einsum("ni,ni->", dipo, pme_field) +
-                            torch.einsum("ni,ni->", quad, pme_field_gradient)
+                            torch.einsum("nij,nij->", quad, pme_field_gradient) / 3
                         )
                         print("Interpolated PME energy ", ene_pme)
                         ene_elec = ene_pme + ene_perm_elec_real
@@ -688,7 +687,7 @@ class System(nn.Module):
                     else:
                         ene_bond = torch.tensor(0.0, device=coords.device)
         else: #USE CUSTOMIZE OPS
-                 
+                
             with timer("Bonded"):
                 with timer("  Bond"):
                     if not self.parametrizers['Bond'].is_empty:
@@ -920,6 +919,7 @@ class System(nn.Module):
                         ene_elec = ene_ewald + ene_perm_elec_real
                         epot = epot_real + ewald_potential
                         efield = efield_real + ewald_field
+                        grad_perm = ewald_field_gradient
                     if self.use_pme:
                         pme_potential, pme_field, pme_field_gradient, ene_pme, force_pme =  self.pme(coords, box, mono, dipo, quad)
                         print(f"(PY) POTENTIAL  ATOM 0 {pme_potential[0]}")
@@ -928,6 +928,7 @@ class System(nn.Module):
                         ene_elec = ene_pme + ene_perm_elec_real
                         epot = epot_real + pme_potential
                         efield = efield_real + pme_field
+                        grad_perm = ewald_field_gradient
 
                 if self.use_polarization:
                     with timer("Polarization"):
@@ -952,7 +953,7 @@ class System(nn.Module):
                             self.last_induced_multipoles = self.polarization_solver.direct_polarization_guess_without_charge(polarizabilities, efield)
                             
                         with timer("  Polarization-compute"):
-                            ene_pol, induced_multipoles = self.polarization_solver(
+                            ene_pol, induced_multipoles, induced_ewald_field_grad= self.polarization_solver(
                                 coords,
                                 box,
                                 b_vector,
@@ -965,7 +966,7 @@ class System(nn.Module):
                                 dist_vecs=distVecs_lr,
                                 dist_vecs_excl=drVecs_excl
                             )
-                    self.last_induced_multipoles = induced_multipoles.detach().clone()
+                        self.last_induced_multipoles = induced_multipoles.detach().clone()
                 else:
                     ene_pol = torch.tensor(0.0, device=coords.device)
 
@@ -999,8 +1000,8 @@ class System(nn.Module):
             "torsion_bond": ene_torsion_bond,
             "torsion_angle": ene_torsion_angle,
             "torsion_angle_angle": ene_torsion_angle_angle,
-            "perm_elec": ene_elec,
-            "pol": ene_pol,
+           "perm_elec": ene_elec,
+           "pol": ene_pol,
             "ct_direct": ene_ct_direct,
             "xpol": ene_xpol,
             "pauli": ene_pauli,

@@ -2,14 +2,9 @@ import torch
 from scipy import special
 from torch.special import erfc
 import math
-from . import units, pbc
-from .units import HARTREE2KCAL, BOHR2ANG 
-from .pbc import applyPBC
 import numpy as np
 from itertools import combinations
-
 torch.set_printoptions(profile="full")
-diff_flag = 1
 torch.set_default_device("cuda")
 
 ########################################################################################################################
@@ -29,37 +24,9 @@ def get_u_reference(coords, Nj_Aji_star):
     R_in_m_basis = torch.einsum("ij,kj->ki",Nj_Aji_star,coords)
     m_u0 = torch.ceil(R_in_m_basis).to(torch.int64)
     u0 = (m_u0 - R_in_m_basis) + bspline_order/2
-    
-#    # --- DEBUG: Match CUDA [GPU] Coords and Mapping ---
-#    print(f"\n[PY] Mapping Coords[0]: {coords[0].tolist()}")
-#    print(f"[PY] Atom 0 Grid Mapping: m_u0={m_u0[0].tolist()}, u_frac={u0[0].tolist()}")
-#    # --------------------------------------------------
-    
     return m_u0, u0
 
 # ... [Splines] ...
-def b5spline(u, order=5):
-    #B-spline order 5
-    if order == 5:
-        u2 = u ** 2
-        u3 = u ** 3
-        u4 = u ** 4
-        conditions = [
-            (u >= 0.) & (u < 1.),
-            (u >= 1.) & (u < 2.),
-            (u >= 2.) & (u < 3.),
-            (u >= 3.) & (u < 4.),
-            (u >= 4.) & (u < 5.)
-        ]
-        outputs = [
-            u4 / 24,
-            -u4/6 + 5*u3/6 -5*u2/4 + 5*u/6 - 5/24,
-            u4/4 - 5*u3/2 + 35*u2/4 - 25*u/2 + 155/24,
-            -u4/6 + 5*u3/2 - 55*u2/4 + 65*u/2 - 655/24,
-            ((5 - u) ** 4) / 24
-        ]
-    return torch.sum(torch.stack([cond * out for cond, out in zip(conditions, outputs)]), axis=0)
-
 def bspline(u, order = 6):
     #B-spline function
     if order == 6:
@@ -141,82 +108,6 @@ def bspline_prime2(u,order = 6):
         ]
     return torch.sum(torch.stack([condition * output for condition, output in zip(conditions, outputs)]),axis=0)
 
-def get_theta(u,M_u):
-    theta = torch.prod(M_u,axis=-1)
-    return theta
-
-def get_thetaprime(u,Nj_Aji_star, M_u,Mprime_u):
-    div = torch.stack([
-                Mprime_u[:, 0] * M_u[:, 1] * M_u[:, 2],
-                Mprime_u[:, 1] * M_u[:, 2] * M_u[:, 0],
-                Mprime_u[:, 2] * M_u[:, 0] * M_u[:, 1],
-            ]).T
-    return torch.einsum("ij,kj->ki",-Nj_Aji_star,div)
-
-def get_theta2prime(u, Nj_Aji_star, M_u, Mprime_u, M2prime_u):
-    div_00 = M2prime_u[:, 0] * M_u[:, 1] * M_u[:, 2]
-    div_11 = M2prime_u[:, 1] * M_u[:, 0] * M_u[:, 2]
-    div_22 = M2prime_u[:, 2] * M_u[:, 0] * M_u[:, 1]
-    div_01 = Mprime_u[:, 0] * Mprime_u[:, 1] * M_u[:, 2]
-    div_02 = Mprime_u[:, 0] * Mprime_u[:, 2] * M_u[:, 1]
-    div_12 = Mprime_u[:, 1] * Mprime_u[:, 2] * M_u[:, 0]
-    div_10 = div_01
-    div_20 = div_02
-    div_21 = div_12
-    div = torch.stack([
-        torch.stack([div_00, div_01, div_02]),
-        torch.stack([div_10, div_11, div_12]),
-        torch.stack([div_20, div_21, div_22]),
-    ]).permute(2,0,1)
-    return torch.einsum("im,jn,kmn->kij", -Nj_Aji_star, -Nj_Aji_star, div)
-
-def sph_harmonics_GO(u0, Nj_Aji_star,shifts,n_mesh, rank):
-    n_harm = int((rank + 1)**2)
-    N_a = u0.shape[0]
-    u = (u0[:, None, :] + shifts).reshape((N_a * n_mesh, 3))
-    M_u = bspline(u)
-    theta = get_theta(u, M_u)
-    if rank == 0:
-        return theta.reshape(N_a, n_mesh, n_harm)
-    Mprime_u = bspline_prime(u)
-    thetaprime = get_thetaprime(u, Nj_Aji_star, M_u, Mprime_u)
-    harmonics_1 = torch.stack(
-        [theta,
-        thetaprime[:, 2],
-        thetaprime[:, 0],
-        thetaprime[:, 1]],
-        axis = -1
-    )
-    if rank == 1:
-        return harmonics_1.reshape(N_a, n_mesh, n_harm)
-    M2prime_u = bspline_prime2(u)
-    theta2prime = get_theta2prime(u, Nj_Aji_star, M_u, Mprime_u, M2prime_u)
-    rt3 = np.sqrt(3)
-    theta2prime_trace = torch.einsum("ijj->i", theta2prime)
-    harmonics_2 = torch.hstack(
-        [harmonics_1,
-        torch.stack([(3*theta2prime[:,2,2] - theta2prime_trace)/2,
-        rt3 * theta2prime[:, 0, 2],
-        rt3 * theta2prime[:, 1, 2],
-        rt3/2 * (theta2prime[:, 0, 0] - theta2prime[:, 1, 1]),
-        rt3 * theta2prime[:, 0, 1]], axis = 1)]
-    )
-    if rank == 2:
-        return harmonics_2.reshape(N_a, n_mesh, n_harm)
-    else:
-        raise NotImplementedError('l > 2 (beyond quadrupole) not supported')
-
-def Q_m_peratom(Q, sph_harms,n_mesh, rank):
-    N_a = sph_harms.shape[0] 
-    Q_dbf = Q[:, 0:1]
-    if rank >= 1:
-        Q_dbf = torch.hstack([Q_dbf, Q[:,1:4]])
-    if rank >= 2:
-        Q_dbf = torch.hstack([Q_dbf, Q[:,4:9]/3])
-    Q_m_pera = torch.sum(Q_dbf.unsqueeze(1) * sph_harms, dim=2)
-    assert Q_m_pera.shape == (N_a, n_mesh)
-    return Q_m_pera
-
 def Q_mesh_on_m(Q_mesh_pera, m_u0, N, shifts):
     if isinstance(N, torch.Tensor):
         N = N.int()
@@ -251,106 +142,127 @@ def setup_kpts(box, kpts_int):
     ksq = torch.sum(kpts**2, axis=1)
     kpts = torch.hstack((kpts, ksq.unsqueeze(1))).T
     return kpts
-
-def spread_Q(N, positions, box, Q, n_mesh, rank):
-   # print("[HOST] Grid Zeroed. Starting Spread Kernel...")
-
-    # --- CUDA DEBUG: DEEP INSPECTION REPLICATION ---
-    #print("\n=== PYTHON DEBUG: DEEP INSPECTION ===")
-    #print(f"Kernel Rank received: {rank}")
-
-    raw_q = Q[0].detach() # Atom 0
-    q_val = raw_q[0].item()
-    px = raw_q[1].item() if rank >= 1 else 0.0
-    # Replicating the logic: Q values 4-8 are stored unscaled in Q tensor?
-    q20 = (raw_q[4].item() / 3.0) if rank >= 2 else 0.0
-
-    #print("\n--- Computed Values ---")
-    #print(f"q_val: {q_val:.6e}")
-    #if rank >= 1:
-    #    print(f"p_vec: {raw_q[1:4].tolist()}")
-    #print("=======================================")
-
+def spread_Q(N, positions, box, Q_dict, n_mesh, rank):
+    """
+    Cartesian Spread Kernel (Updated for 6-component Quadrupoles)
+    Uses Q_dict containing:
+      - 'q': (N, 1)
+      - 'p': (N, 3)
+      - 'theta_vec': (N, 6) -> [xx, xy, xz, yy, yz, zz]
+    """
     shifts = make_stencil(order=6)
     Nj_Aji_star = get_recip_vectors(N, box)
-
-    # 1. Map to Grid
     m_u0, u0 = get_u_reference(positions, Nj_Aji_star)
 
-    # --- CUDA SYSTEMATIC DEBUG REPLICATION (Atom 0, Stencil 0,0,0) ---
-    #print("\n=== CUDA SYSTEMATIC DEBUG (Atom 0, Stencil 0,0,0) ===")
-    
-    # B-Splines for Stencil 0
-    stencil_idx = 0
-    shift_val = shifts[0, stencil_idx] 
-    u_eval = u0[0] + shift_val
+    N_a = positions.shape[0]
+    n_stencil = shifts.shape[1]
 
-    M = bspline(u_eval)
-    dM = bspline_prime(u_eval)
-    
-    # 1. Charge Term = q * Theta
-    theta_val = torch.prod(M).item()
-    term_charge = q_val * theta_val
+    # u shape: (N_a, n_stencil, 3)
+    u = (u0[:, None, :] + shifts)
+    M  = bspline(u)       # Value
 
-    # 2. Dipole Term = P . Grad(Theta)
-    div = torch.tensor([
-        dM[0] * M[1] * M[2],
-        dM[1] * M[2] * M[0],
-        dM[2] * M[0] * M[1]
-    ], device=M.device)
-    grad_theta = torch.mv(-Nj_Aji_star, div)
+    # --- Charge Term ---
+    W_tot = Q_dict['q'] * torch.prod(M, dim=2)
 
-    term_dipole = 0.0
+    # --- Dipole Term ---
     if rank >= 1:
-        term_dipole = torch.dot(raw_q[1:4], grad_theta).item()
+        dM = bspline_prime(u)
 
-    # 3. Quad Term
-    term_quad = 0.0
-    # (Simplified debug for quad omitted to focus on dipole as requested, 
-    # but the variable exists in flow)
+        # Rotate Dipole: p_grid = p_real * Recip_Vectors
+        p_u = torch.matmul(Q_dict['p'], Nj_Aji_star.T)
 
-    total_term = term_charge + term_dipole + term_quad
+        grad_W_u = torch.stack([
+            dM[:,:,0] * M[:,:,1] * M[:,:,2], # du_x
+            M[:,:,0] * dM[:,:,1] * M[:,:,2], # du_y
+            M[:,:,0] * M[:,:,1] * dM[:,:,2]  # du_z
+        ], dim=2)
 
-    #print("\n--- Component Breakdown ---")
-    #print(f"Term CHARGE (q*theta): {term_charge:.6e}")
-    #print(f"Term DIPOLE (p*grad):  {term_dipole:.6e}")
-    #print(f"   > P vector: {raw_q[1:4].tolist() if rank>=1 else '0'}")
-    #print(f"   > GradTheta: {grad_theta.tolist()}")
-    #print(f"Term QUAD   (Q*hess):  {term_quad:.6e}")
-    #print(f"Total Term:            {total_term:.6e}")
-    #print("=====================================================")
+        dip_term = torch.sum(p_u.unsqueeze(1) * grad_W_u, dim=2)
+        W_tot -= dip_term
 
-    # 2. Calculate Theta and Terms (Standard Vectorized Code)
-    sph_harms = sph_harmonics_GO(u0, Nj_Aji_star, shifts, n_mesh, rank)
-    Q_mesh_pera = Q_m_peratom(Q, sph_harms, n_mesh, rank)
+    # --- Quadrupole Term (6-Component Vector) ---
+    if rank >= 2:
+        d2M = bspline_prime2(u)
 
-    Q_mesh = Q_mesh_on_m(Q_mesh_pera, m_u0, N, shifts)
+        # 1. Rotate the 6-component Quadrupole into Grid Basis
+        # We need the full 3x3 rotation of the unique components.
+        # It's actually cleaner to reconstruct the 3x3 locally for the rotation
+        # OR rotate the tensor explicitly. Let's do the reconstruction method
+        # as it is safer for generic triclinic boxes.
 
-    # --- DEBUG: Grid Summary ---
-    flat_grid = Q_mesh.flatten()
-    sum_1000 = flat_grid[:1000].sum().item()
-    #print(f"[HOST] DEBUG CHECK: First 1000 grid points sum: {sum_1000:.6e}")
-    #print("PYTHON DEBUG END")
-    # ---------------------------
+        # Unpack [xx, xy, xz, yy, yz, zz] -> 3x3
+        t_vec = Q_dict['theta_vec'] # (N, 6)
+        Theta_real = torch.zeros(N_a, 3, 3, device=u.device, dtype=u.dtype)
 
+        # Fill diagonal
+        Theta_real[:, 0, 0] = t_vec[:, 0] # xx
+        Theta_real[:, 1, 1] = t_vec[:, 3] # yy
+        Theta_real[:, 2, 2] = t_vec[:, 5] # zz
+        trace_check = Theta_real[:,0,0] + Theta_real[:,1,1] + Theta_real[:,2,2]
+        print(f"Mean Trace: {trace_check.mean().item()}")
+        print(f"Max Trace:  {trace_check.abs().max().item()}")
+
+        # Fill off-diagonal (Symmetric)
+        Theta_real[:, 0, 1] = t_vec[:, 1]; Theta_real[:, 1, 0] = t_vec[:, 1] # xy
+        Theta_real[:, 0, 2] = t_vec[:, 2]; Theta_real[:, 2, 0] = t_vec[:, 2] # xz
+        Theta_real[:, 1, 2] = t_vec[:, 4]; Theta_real[:, 2, 1] = t_vec[:, 4] # yz
+
+        # Rotate: T_u = R * T_real * R.T
+        Theta_u = torch.einsum('im,jn,kmn->kij', Nj_Aji_star, Nj_Aji_star, Theta_real)
+        #2. Spline Hessians
+        H_xx = d2M[:,:,0] * M[:,:,1] * M[:,:,2]
+        H_yy = M[:,:,0] * d2M[:,:,1] * M[:,:,2]
+        H_zz = M[:,:,0] * M[:,:,1] * d2M[:,:,2]
+        H_xy = dM[:,:,0] * dM[:,:,1] * M[:,:,2]
+        H_xz = dM[:,:,0] * M[:,:,1] * dM[:,:,2]
+        H_yz = M[:,:,0] * dM[:,:,1] * dM[:,:,2]
+        # 3. Contraction (Explicit Summation)
+        # Sum = T_xx*H_xx + T_yy*H_yy + T_zz*H_zz + 2*(T_xy*H_xy + ...)
+
+        term_diag = (Theta_u[:, None, 0, 0] * H_xx +
+                     Theta_u[:, None, 1, 1] * H_yy +
+                     Theta_u[:, None, 2, 2] * H_zz)
+
+        term_off  = 2.0 * (Theta_u[:, None, 0, 1] * H_xy +
+                           Theta_u[:, None, 0, 2] * H_xz +
+                           Theta_u[:, None, 1, 2] * H_yz)
+
+        quad_term = term_diag + term_off
+
+        scale = 0.5
+        W_tot += scale * quad_term
+
+    # Scatter to grid
+    Q_mesh = Q_mesh_on_m(W_tot, m_u0, N, shifts)
+#    print("CARTESIAN SPREAD")
+#    print(f"Total Sum of Grid: {torch.sum(Q_mesh).item()}") # Should be close to sum(q)
+#    print(f"Max Value in Grid: {torch.max(torch.abs(Q_mesh)).item()}")
+#    print(f"Q_mesh shape: {Q_mesh.shape}")
+#    print("CARTESIAN Q_MESH[0]")
+#    print(Q_mesh[0])
+#    print("CARTESIAN Q_MESH[1]")
+#    print(Q_mesh[1])
+#    print("CARTESIAN Q_MESH[2]")
+#    print(Q_mesh[2])
     return Q_mesh
-
 def Ck_1(ksq, kappa, V):
     return 4*torch.pi/V/ksq * torch.exp(-ksq/4/kappa**2)
 
-def get_pme_recip(Ck_fn, kappa,positions,box,Q,K1,K2,K3,rank, bspline_order = 6):
+def get_pme_recip(Ck_fn, kappa,positions,box,Q_dict,K1,K2,K3,rank, bspline_order = 6):
     bspline_range = torch.arange(-bspline_order//2, bspline_order//2)
-    n_mesh = (bspline_order)**3
     shifts  = make_stencil(order=6)
+    
     # spread Q
     N = torch.tensor([K1, K2, K3])
-    N_ = torch.tensor([K1, K2, K3])
     n_mesh = shifts.shape[1]
-    Q_mesh = spread_Q(N,positions, box, Q,n_mesh,rank)
+    
+    # CALL CARTESIAN SPREAD
+    Q_mesh = spread_Q(N,positions, box, Q_dict, n_mesh, rank)
+    
     N = N.reshape((1, 1, 3))
     kpts_int = setup_kpts_integer(N)
     kpts = setup_kpts(box, kpts_int)
-    half   = bspline_order // 2                     
+    half   = bspline_order // 2                    
     m = torch.arange(-half, half).reshape(-1, 1, 1)              
     theta_k = torch.prod(
             torch.sum(
@@ -366,200 +278,194 @@ def get_pme_recip(Ck_fn, kappa,positions,box,Q,K1,K2,K3,rank, bspline_order = 6)
     Phi_k[1:] = C_k*S_k[1:]/torch.abs(theta_k[1:])**2
     Phi_k_3d = Phi_k.reshape(K1,K2,K3)
     Phi_real_space = torch.fft.ifftn(Phi_k_3d, norm='forward').real
-    E_k = 0.5 * torch.sum(C_k * torch.abs(S_k[1:] / theta_k[1:])**2) 
-    
-    E_grid,EG_grid = 0,0 
-    if rank == 0:
-        long_range_potential, long_range_field, long_range_field_gradient= interpolate_to_atoms(Phi_real_space,E_grid,EG_grid,positions,box,N_,rank)
-    if diff_flag == 2:
-        if rank >= 1:
-            kx = kpts[0].reshape(K1, K2, K3)
-            ky = kpts[1].reshape(K1, K2, K3)
-            kz = kpts[2].reshape(K1, K2, K3)
-            E_kx = 1j * kx * Phi_k_3d
-            E_ky = 1j * ky * Phi_k_3d
-            E_kz = 1j * kz * Phi_k_3d
-            E_grid_x = torch.fft.ifftn(E_kx, norm='forward').real
-            E_grid_y = torch.fft.ifftn(E_ky, norm='forward').real
-            E_grid_z = torch.fft.ifftn(E_kz, norm='forward').real
-            E_grid = torch.stack([E_grid_z, E_grid_x, E_grid_y], dim=-1)
-        if rank>=2:
-            kx2 = kx**2
-            ky2 = ky**2
-            kz2 = kz**2
-            kxy = kx * ky
-            kxz = kx * kz
-            kyz = ky * kz
-            sqrt3 = torch.sqrt(torch.tensor(3.0))
-            Phi_k_20  = 0.5 * (2 * kz2 - kx2 - ky2) * Phi_k_3d
-            Phi_k_21c = sqrt3 * kxz * Phi_k_3d
-            Phi_k_21s = sqrt3 * kyz * Phi_k_3d
-            Phi_k_22c = 0.5 * sqrt3* (kx2 - ky2) * Phi_k_3d
-            Phi_k_22s =    sqrt3 * kxy * Phi_k_3d
-            EG_20  = -torch.fft.ifftn(Phi_k_20,  norm='forward').real
-            EG_21c = -torch.fft.ifftn(Phi_k_21c, norm='forward').real
-            EG_21s = -torch.fft.ifftn(Phi_k_21s, norm='forward').real
-            EG_22c = -torch.fft.ifftn(Phi_k_22c, norm='forward').real
-            EG_22s = -torch.fft.ifftn(Phi_k_22s, norm='forward').real
-            EG_grid = torch.stack([EG_20, EG_21c, EG_21s, EG_22c, EG_22s], dim=-1)
-        long_range_potential, long_range_field, long_range_field_gradient= interpolate_to_atoms(Phi_real_space,E_grid,EG_grid,positions,box,N_, rank)
-    else:
-        E_grid, EG_grid = 0,0
-        long_range_potential, long_range_field, long_range_field_gradient= interpolate_to_atoms(Phi_real_space, E_grid, EG_grid, positions, box, N_, rank)
-    return long_range_potential, long_range_field, long_range_field_gradient 
+    #Energy straight from grid. Useful for debugging
+    #E_k = 0.5 * torch.sum(C_k * torch.abs(S_k[1:] / theta_k[1:])**2) 
+    #print(f"CARTESIAN PME ENERGY FROM STRUCTURE FACTOR: {E_k}")
 
+    # Interpolate Back
+    long_range_potential, long_range_field, long_range_field_gradient = interpolate_to_atoms(
+        Phi_real_space, positions, box, N, rank
+    )
+    
+    return long_range_potential, long_range_field, long_range_field_gradient 
 def construct_Q(q, p, t, rank):
-    #print(f"\n[DEBUG construct_Q] Rank={rank}")
-    #print(f"  Input shapes - q: {q.shape}, p: {p.shape}, t: {t.shape}")
+    """
+    Args:
+        q: (N, 1)
+        p: (N, 3)
+        t: (N, 6) Quadrupoles [xx, xy, xz, yy, yz, zz]
+    """
     N_a = q.shape[0]
-    q = q.reshape(N_a, 1)
-    if rank == 0:
-        return q
-    p = p.reshape(N_a, 3)
-    if rank == 1:
-        return torch.hstack([q, p])
-    if rank == 2:
-        if t.abs().sum() == 0:
-             print("  [CRITICAL WARNING] 't' tensor passed to construct_Q is ALL ZEROS!")
-        try:
-            t_vec = t.reshape(N_a, 5)
-        except RuntimeError as e:
-            print(f"  [ERROR] Reshape failed. 't' shape is {t.shape}, cannot reshape to ({N_a}, 5)")
-            raise e
-        Q = torch.hstack([q, p, t_vec])
-        Q = Q.contiguous()
-        return Q
+    Q_dict = {'q': q.reshape(N_a, 1)}
+
+    if rank >= 1:
+        Q_dict['p'] = p.reshape(N_a, 3)
+
+    if rank >= 2:
+        # Enforce Tracelessness just in case
+        # Trace = Qxx + Qyy + Qzz
+        trace = t[:, 0] + t[:, 3] + t[:, 5]
+
+        # Check if trace is effectively zero
+        if torch.any(torch.abs(trace) > 1e-5):
+            print("WARNING: Input Quadrupoles are not traceless. Removing trace...")
+            t_clean = t.clone()
+            correction = trace / 3.0
+            t_clean[:, 0] -= correction
+            t_clean[:, 3] -= correction
+            t_clean[:, 5] -= correction
+            Q_dict['theta_vec'] = t_clean
+        else:
+            Q_dict['theta_vec'] = t
+
+    return Q_dict
+
 
 def make_stencil(order: int):
     half = order // 2
     r     = torch.arange(-half, half)          
     shifts = torch.stack(torch.meshgrid(r, r, r, indexing='ij'), dim=-1)
     shifts = shifts.reshape(1, order**3, 3)                   
-    return shifts                                             
+    return shifts                                     
 
 def interpolate_to_atoms(phi_grid: torch.Tensor,
-                         E_grid: torch.Tensor,
-                         EG_grid: torch.Tensor,
-                         positions: torch.Tensor,
-                         box: torch.Tensor,
-                         N: torch.Tensor,
-                         rank) -> torch.Tensor:
+                          positions: torch.Tensor,
+                          box: torch.Tensor,
+                          N: torch.Tensor,
+                          rank) -> torch.Tensor:
 
     """
-    B‑spline interpolation consistent with spread_Q().
+    Cartesian Interpolation.
+    Calculates Potential, Field, and Gradient by taking derivatives of B-splines.
     """
-    print("\n[PY] Interpolate Kernel Started for Atom 0")
-
     order = 6
-    E_atoms,EG_atoms = 0,0
     Nj_Aji_star = get_recip_vectors(N, box)                 
     m_u0, u0    = get_u_reference(positions, Nj_Aji_star)   
     shifts      = make_stencil(order)
     n_mesh      = order**3
     Na          = positions.shape[0]
 
-    stgo = sph_harmonics_GO(u0, Nj_Aji_star, shifts, n_mesh,rank)                           
-    theta = stgo[...,0]
+    # Reciprocal Space "Metric" for chain rule
+    # grad_r = M * grad_u  => M = Nj_Aji_star
+    M_mat = Nj_Aji_star # (3, 3)
 
+    # 1. Gather Grid Values
+    if N.dim() > 1: N = N.flatten()
     Nx, Ny, Nz = N.tolist() 
     m_idx = (m_u0[:, None, :] + shifts[0]) % N[None, None, :]
     flat   = phi_grid.reshape(-1)    
     grid_i = (m_idx[..., 0] * Ny * Nz  +
               m_idx[..., 1] * Nz +
               m_idx[..., 2])                                
-    phi_loc = flat[grid_i]  
+    phi_loc = flat[grid_i] # Shape (Na, n_stencil)
 
-    # --- DEBUG: Match CUDA [GPU] Interpolate Check ---
-    #print(f"[PY] Interpolate found Non-Zero grid value! {phi_loc[0, 0].item():.6e} at {grid_i[0, 0].item()}")
-    # -------------------------------------------------
-
-    phi_atoms = (theta * phi_loc).sum(dim=1)                
+    # 2. Evaluate Splines
+    u = (u0[:, None, :] + shifts) 
+    B  = bspline(u)       # (Na, S, 3)
     
-    print(f"[PY] Atom 0 Final Phi (No self correction): {phi_atoms[0].item():.6e}")
+    # --- Potential (Phi) ---
+    # Sum( GridVal * Bx * By * Bz )
+    W_base = torch.prod(B, dim=2)
+    phi_atoms = torch.sum(phi_loc * W_base, dim=1)
 
     E_atoms, EG_atoms = None, None
-    if diff_flag == 2:
-        if rank >=1:
-            E_grid_flat = E_grid.reshape(-1, 3)
-            E_stencil = E_grid_flat[grid_i]
-            E_atoms = torch.sum(theta.unsqueeze(-1) * E_stencil, dim=1)
-        if rank>=2:
-            EG_flat = EG_grid.reshape(-1, 5)
-            EG_stencil = EG_flat[grid_i]
-            theta /= 3.0
-            EG_atoms = torch.sum(theta.unsqueeze(-1) * EG_stencil, dim=1)
-    else:  
-        if rank>=1:
-            # sph_harmonics_GO rank 1 returns [theta, dTheta_z, dTheta_x, dTheta_y]
-            thetaprime_z = stgo[...,1]
-            thetaprime_x = stgo[...,2]
-            thetaprime_y = stgo[...,3]
-            
-            # --- DEBUG: Field Interpolation Atom 0 Stencil 0 ---
-            # Manually calculate the contribution of the first stencil point to the field
-            dval_z = thetaprime_z[0,0].item()
-            dval_x = thetaprime_x[0,0].item()
-            dval_y = thetaprime_y[0,0].item()
-            grid_val = phi_loc[0,0].item()
-            
-            #print(f"\n[PY] Field Interpolation Atom 0 Stencil 0:")
-            #print(f"     Grid Phi: {grid_val:.6e}")
-            #print(f"     dTheta (x,y,z): {dval_x:.6e}, {dval_y:.6e}, {dval_z:.6e}")
-            #print(f"     Contribution (E = dTheta * Phi):")
-            #print(f"       Ex: {dval_x * grid_val:.6e}")
-            #print(f"       Ey: {dval_y * grid_val:.6e}")
-            #print(f"       Ez: {dval_z * grid_val:.6e}")
-            # ---------------------------------------------------
 
-            E_x = (thetaprime_x * phi_loc).sum(dim=1)  
-            E_y = (thetaprime_y * phi_loc).sum(dim=1) 
-            E_z = (thetaprime_z * phi_loc).sum(dim=1)
-            E_atoms = torch.stack([E_z,E_x,E_y],dim=1)
-            print(f"[PY] Atom 0 Final Field (Uncorrected): {E_atoms[0].tolist()}")
+    # --- Field (E = - grad Phi) ---
+    if rank >= 1:
+        dB = bspline_prime(u)
+        
+        # Gradient in u-space
+        grad_W_u = torch.stack([
+            dB[:,:,0] * B[:,:,1] * B[:,:,2], 
+            B[:,:,0] * dB[:,:,1] * B[:,:,2], 
+            B[:,:,0] * B[:,:,1] * dB[:,:,2]
+        ], dim=2) 
+        
+        # Interpolate Gradient in u-space
+        # grad_phi_u = Sum( phi_loc * grad_W_u )
+        grad_phi_u = torch.sum(phi_loc.unsqueeze(-1) * grad_W_u, dim=1) # (Na, 3)
+        
+        # Transform to Real Space: grad_r = M * grad_u
+        # E = - grad_r
+        E_atoms = torch.matmul(grad_phi_u, M_mat.T) # Note: M_mat is (3,3) Recip
 
-        if rank>=2:
-            thetaprime2 = stgo[...,4:9] / 3 
-            thetaprime2_1 = thetaprime2[...,0]  
-            thetaprime2_2 = thetaprime2[...,1]  
-            thetaprime2_3 = thetaprime2[...,2]  
-            thetaprime2_4 = thetaprime2[...,3] 
-            thetaprime2_5 = thetaprime2[...,4]
-            EG_1 = (thetaprime2_1 * phi_loc).sum(dim=1)
-            EG_2 = (thetaprime2_2 * phi_loc).sum(dim=1)
-            EG_3 = (thetaprime2_3 * phi_loc).sum(dim=1)
-            EG_4 = (thetaprime2_4 * phi_loc).sum(dim=1)
-            EG_5 = (thetaprime2_5 * phi_loc).sum(dim=1)
-            EG_atoms = torch.stack([EG_1,EG_2,EG_3,EG_4,EG_5], dim=1)
+    # --- Field Gradient (grad E = - hess Phi) ---
+    if rank >= 2:
+        d2B = bspline_prime2(u)
+        
+        # Hessian in u-space
+        H_xx = d2B[:,:,0] * B[:,:,1] * B[:,:,2]
+        H_yy = B[:,:,0] * d2B[:,:,1] * B[:,:,2]
+        H_zz = B[:,:,0] * B[:,:,1] * d2B[:,:,2]
+        H_xy = dB[:,:,0] * dB[:,:,1] * B[:,:,2]
+        H_xz = dB[:,:,0] * B[:,:,1] * dB[:,:,2]
+        H_yz = B[:,:,0] * dB[:,:,1] * dB[:,:,2]
+        
+        hess_W_u = torch.zeros(Na, n_mesh, 3, 3, device=u.device, dtype=u.dtype)
+        hess_W_u[:,:,0,0] = H_xx
+        hess_W_u[:,:,1,1] = H_yy
+        hess_W_u[:,:,2,2] = H_zz
+        hess_W_u[:,:,0,1] = H_xy; hess_W_u[:,:,1,0] = H_xy
+        hess_W_u[:,:,0,2] = H_xz; hess_W_u[:,:,2,0] = H_xz
+        hess_W_u[:,:,1,2] = H_yz; hess_W_u[:,:,2,1] = H_yz
+        # Interpolate Hessian in u-space
+        hess_phi_u = torch.sum(phi_loc.reshape(Na, n_mesh, 1, 1) * hess_W_u, dim=1) # (Na, 3, 3)
+        # Transform to Real Space: Hess_r = M * Hess_u * M.T
+        # Einstein: H_r_ij = M_im * H_u_mn * M_jn
+        grad_E = torch.einsum('mi,knm,nj->kij', M_mat, hess_phi_u, M_mat) / 2.0
+        EG_atoms = -grad_E
+
     return phi_atoms, E_atoms, EG_atoms
+def compute_pme(coords, box, q, p, t, kappa, k_max, rank):
+    K1, K2, K3 = k_max, k_max, k_max
 
+    # 1. Setup Data
+    Q_dict = construct_Q(q, p, t, rank)
 
-def compute_pme(coords, box, q ,p, t, kappa, k_max ,rank):
-  K1,K2,K3 = k_max, k_max, k_max
-  Q = construct_Q(q,p,t, rank)
-  long_range_potential, long_range_field, long_range_field_gradient = get_pme_recip(Ck_1, kappa,coords,box,Q,K1,K2,K3, rank, bspline_order=6)
-  
-  # Self Corrections
-  kappa_over_root_pi = kappa / torch.sqrt(torch.tensor(torch.pi))
-  
-  # 1. Potential Self Correction
-  long_range_potential = long_range_potential - 2 * kappa_over_root_pi * q
-  
-  if rank == 0:
-      return long_range_potential
-      
-  # 2. Field Self )
-  field_correction = kappa_over_root_pi * (4 * kappa * kappa / 3) * p
-  print(f"[PY] Atom 0 Field Self Correction: {field_correction[0].tolist()}")
-  
-  long_range_field = long_range_field + field_correction
+    # 2. Reciprocal Space Calculation
+    # Note: get_pme_recip internally calls the NEW spread_Q
+    long_range_potential, long_range_field, long_range_field_gradient= get_pme_recip(
+        Ck_1, kappa, coords, box, Q_dict, K1, K2, K3, rank, bspline_order=6
+    )
 
-  if rank == 1:
-      return long_range_potential, long_range_field
-      
-  # 3. Gradient Self Correction
-  grad_correction = kappa_over_root_pi * (16 * kappa * kappa * kappa * kappa / 5) * t / 3
-  print(f"[PY] Atom 0 Field Grad Self Correction: {grad_correction[0].tolist()}")
-  long_range_field_gradient = long_range_field_gradient + grad_correction
-  
-  if rank == 2:
-      return long_range_potential, long_range_field, long_range_field_gradient
+    # 3. Self Corrections
+    kappa_val = kappa
+    kappa_over_root_pi = kappa_val / math.sqrt(math.pi)
+
+    # Potential Correction
+    # E_self = E_recip - E_real. We subtract self energy.
+    # Monopole Self
+    self_potential = - 2 * kappa_over_root_pi * q
+    print(f"CARTESIAN PME  Atom 0 Potential Self Correction: {self_potential[0].tolist()}") 
+    long_range_potential += self_potential
+
+    if rank == 0: return long_range_potential
+
+    # Field Correction (Dipole)
+    # 4*k^3 / 3*sqrt(pi)
+    field_correction = kappa_over_root_pi * (4 * kappa_val**2 / 3.0) * p
+    print(f"CARTESIAN PME  Atom 0 Field Self Correction: {field_correction[0].tolist()}") 
+    long_range_field += field_correction
+
+    if rank == 1: return long_range_potential, long_range_field
+
+    # Gradient Correction (Quadrupole)
+    # For Quadrupoles, we need to be careful with the self-energy definition.
+    # If t is [xx, xy, xz, yy, yz, zz], the self energy usually involves
+    # a contraction Q:Q.
+
+    # Factor: 16 * k^5 / 15 * sqrt(pi) * Q
+
+    t_vec = Q_dict['theta_vec']
+    t_full = torch.zeros(t_vec.shape[0], 3, 3, device=t_vec.device)
+    t_full[:,0,0] = t_vec[:,0]; t_full[:,1,1] = t_vec[:,3]; t_full[:,2,2] = t_vec[:,5]
+    t_full[:,0,1] = t_vec[:,1]; t_full[:,1,0] = t_vec[:,1]
+    t_full[:,0,2] = t_vec[:,2]; t_full[:,2,0] = t_vec[:,2]
+    t_full[:,1,2] = t_vec[:,4]; t_full[:,2,1] = t_vec[:,4]
+
+    grad_correction = kappa_over_root_pi * (16 * kappa_val**4 / 15.0) * t_full
+    print(f"CARTESIAN PME  Atom 0 Field Grad Self Correction: {grad_correction[0].tolist()}")
+    long_range_field_gradient += grad_correction
+
+    return long_range_potential, long_range_field, long_range_field_gradient
+

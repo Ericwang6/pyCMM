@@ -9,40 +9,40 @@ except Exception as e:
     pass
 
 
-class EwaldFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, coords, box, q, p, t, max_hkl, rank, alpha):
-        #Run CUDA kernel
-        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
-            coords, box, q, p, t, max_hkl, rank, alpha
-        )
-
-        # Save the Field and Field Gradient for the backward pass
-        ctx.save_for_backward(fld, grad, forces)
-        ctx.rank = rank
-
-        return pot, fld, grad, energy, forces
-
-    @staticmethod
-    def backward(ctx, grad_pot, grad_fld, grad_grad, grad_energy, grad_forces):
-        fld, grad_field_tensor, forces = ctx.saved_tensors
-        rank = ctx.rank
-
-        # --- CALCULATE GRADIENTS ---
-        # 1. Gradient w.r.t Position (The Translational Force)
-        d_coords = -forces * grad_energy
-
-        # 2. Gradient w.r.t Multipoles (The Torque Source)
-        d_p = None
-        if rank >= 1:
-            d_p = -fld * grad_energy
-
-        # 3. Gradient w.r.t Quadrupoles
-        d_t = None
-        if rank >= 2:
-            d_t = -(1.0/3.0) * grad_field_tensor * grad_energy
-
-        return d_coords, None, None, d_p, d_t, None, None, None
+#class EwaldFunction(torch.autograd.Function):
+#    @staticmethod
+#    def forward(ctx, coords, box, q, p, t, max_hkl, rank, alpha):
+#        #Run CUDA kernel
+#        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
+#            coords, box, q, p, t, max_hkl, rank, alpha
+#        )
+#
+#        # Save the Field and Field Gradient for the backward pass
+#        ctx.save_for_backward(fld, grad, forces)
+#        ctx.rank = rank
+#
+#        return pot, fld, grad, energy, forces
+#
+#    @staticmethod
+#    def backward(ctx, grad_pot, grad_fld, grad_grad, grad_energy, grad_forces):
+#        fld, grad_field_tensor, forces = ctx.saved_tensors
+#        rank = ctx.rank
+#
+#        # --- CALCULATE GRADIENTS ---
+#        # 1. Gradient w.r.t Position (The Translational Force)
+#        d_coords = -forces * grad_energy
+#
+#        # 2. Gradient w.r.t Multipoles (The Torque Source)
+#        d_p = None
+#        if rank >= 1:
+#            d_p = -fld * grad_energy
+#
+#        # 3. Gradient w.r.t Quadrupoles
+#        d_t = None
+#        if rank >= 2:
+#            d_t = -(1.0/3.0) * grad_field_tensor * grad_energy
+#
+#        return d_coords, None, None, d_p, d_t, None, None, None
 
 class Ewald(nn.Module):
     def __init__(self, alpha: float, max_hkl: int, rank: int, use_customized_ops: bool = False):
@@ -88,7 +88,10 @@ class Ewald(nn.Module):
             t = torch.zeros((N, 3, 3), device=dev, dtype=dtype)
         else:
             t = t.to(device=dev, dtype=dtype).contiguous()
-        return EwaldFunction.apply(
+        #return EwaldFunction.apply(
+        #    coords, box, q, p, t, self.max_hkl, self.rank, float(self.alpha)
+        #)
+        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
             coords, box, q, p, t, self.max_hkl, self.rank, float(self.alpha)
         )
         return pot, fld, grad, energy, forces

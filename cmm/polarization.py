@@ -164,8 +164,11 @@ class CMMPolarization(nn.Module):
                 self.store_output(induced_multipoles)
             
         with timer("  ***POL-ENERGY"):
-            ene = self.compute_polarization_energy(coords, box, induced_multipoles, b_vector, eta, inverse_polarizabilities, **kwargs)
-        return ene, induced_multipoles
+            ene, ewald_field_grad = self.compute_polarization_energy(coords, box, induced_multipoles, b_vector, eta, inverse_polarizabilities, **kwargs)
+        if self.use_customized_ops and ewald_field_grad is not None:
+            return ene, induced_multipoles, ewald_field_grad
+        else:
+            return ene, induced_multipoles
 
     def solve(
         self,
@@ -300,7 +303,7 @@ class CMMPolarization(nn.Module):
     ):
         if not self.use_customized_ops:
             tmp = self.compute_product_with_polarization_matrix(coords, box, induced_multipoles, eta, inverse_polarizabilities, **kwargs)
-            return torch.dot(induced_multipoles, 0.5*tmp-b_vector)
+            return torch.dot(induced_multipoles, 0.5*tmp-b_vector), None
         else:
             vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)
             with timer("  POL-MATMUL-RECIP"):
@@ -309,11 +312,11 @@ class CMMPolarization(nn.Module):
                     induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
                     induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
                     if self.use_pme:
-                        ewald_potential, ewald_field, _, _, _ = self.pme(
+                        ewald_potential, ewald_field, ewald_field_grad, _, _ = self.pme(
                                 coords, box, induced_charges, induced_dipoles
                         )
                     else:
-                        ewald_potential, ewald_field, _, _, _ = self.ewald(
+                        ewald_potential, ewald_field, ewald_field_grad, _, _ = self.ewald(
                                 coords, box, induced_charges, induced_dipoles
                         )
 
@@ -338,7 +341,7 @@ class CMMPolarization(nn.Module):
                 kwargs['dist_vecs'], kwargs['pairs'], kwargs['dist_vecs_excl'], kwargs['pairs_excl'],
                 induced_multipoles, kwargs['b_elec_ij'], self.alpha_ewald, self.rcut_sr, self.rcut_lr, self.natoms
             )
-            return ene
+            return ene, ewald_field_grad
         
     def direct_polarization_guess_with_charge(self, vec_in: torch.Tensor, polarizabilities: torch.Tensor, eta: torch.Tensor):
         mean_eta = segment_csr(eta[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='mean') # size n_groups
