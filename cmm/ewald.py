@@ -91,10 +91,10 @@ class Ewald(nn.Module):
         #return EwaldFunction.apply(
         #    coords, box, q, p, t, self.max_hkl, self.rank, float(self.alpha)
         #)
-        pot, fld, grad, energy, forces = torch.ops.torchff.ewald_long_range(
+        pot, fld, grad, energy, _ = torch.ops.torchff.ewald_long_range(
             coords, box, q, p, t, self.max_hkl, self.rank, float(self.alpha)
         )
-        return pot, fld, grad, energy, forces
+        return pot, fld, grad, energy
     def _forward_python(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
         box_inv = torch.inverse(box)
         V = torch.det(box)

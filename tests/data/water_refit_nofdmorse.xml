@@ -1,0 +1,44 @@
+<ForceField>
+    <Residues>
+        <Residue name="HOH">
+            <Atom name="O" type="ow"/>
+            <Atom name="H1" type="hw"/>
+            <Atom name="H2" type="hw"/>
+        </Residue>
+    </Residues>
+    <Bonds>
+        <Bond type1="ow" type2="hw" r_eq="1.81211318" D="0.19968199" k_b="0.54375456" j_cf="0.0" j_cf_pauli="0.0" k_hardness_b="0.0" dip_deriv_1="0.0" dip_deriv_2="0.0" ct_slope_1="0.0" ct_slope_2="0.0" />
+    </Bonds>
+    <Angles>
+        <Angle type1="hw" type2="ow" type3="hw" theta_eq="1.822532146" r_eq_1="1.81211318" r_eq_2="1.81211318" k_theta="0.1722274" k_bb="-0.006521268391698836" k_ba_1="-0.03222549577618679" k_ba_2="-0.03222549577618679" j_cf_angle="0.0" k_hardness_angle="0.0" j_cf_bb="0.0" k_hardness_bb="0.0" />
+    </Angles>
+    <Multipoles>
+        <Multipole type="ow" kz="hw" kx="hw" ky="" axistype="Bisector" c0="-0.390896" dx="0.0" dy="0.0" dz="-0.094298" q20="-0.330685" q21c="0.0" q21s="0.0" q22c="0.869923" q22s="0.0" />
+        <Multipole type="hw" kz="ow" kx="hw" ky="" axistype="ZThenX" c0="0.195448" dx="0.0910288" dy="0.0" dz="-0.207851" q20="-0.0739388" q21c="0.0929482" q21s="0.0" q22c="0.00532425" q22s="0.0" />
+    </Multipoles>
+    <ChargePenetration>
+        <CP type="ow" Z="5.5473" b_elec="2.3635" />
+        <CP type="hw" Z="1.0031" b_elec="2.5154" />
+    </ChargePenetration>
+    <PauliRepulsion>
+        <Pauli type="ow" q_pauli="4.5998" Kdipo_pauli="-3.4278" Kquad_pauli="-0.9743" b_pauli="1.9550" />
+        <Pauli type="hw" q_pauli="0.9290" Kdipo_pauli="-0.6437" Kquad_pauli="-0.6274" b_pauli="2.5732" />
+    </PauliRepulsion>
+    <ExchangePolarization>
+        <Xpol type="ow" q_xpol="0.8491" Kdipo_xpol="1.0026" Kquad_xpol="-0.3606" b_xpol="2.5447" />
+        <Xpol type="hw" q_xpol="0.7142" Kdipo_xpol="0.2058" Kquad_xpol="-0.2712" b_xpol="3.5033" />
+    </ExchangePolarization>
+    <Dispersion>
+        <Disp type="ow" C6_disp="35.8289" b_disp="1.84302" />
+        <Disp type="hw" C6_disp="1.98954" b_disp="1.30993" />
+    </Dispersion>
+    <ChargeTransfer>
+        <Direct type="ow" q_ct_acc="-0.67857" q_ct_don="0.757752" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.512036" Kquad_ct_acc="0.0" Kquad_ct_don="-0.208186" b_ct="1.89485" />
+        <Direct type="hw" q_ct_acc="1.36735" q_ct_don="0.00888982" Kdipo_ct_acc="0.0" Kdipo_ct_don="-0.0511668" Kquad_ct_acc="0.0" Kquad_ct_don="0.0568152" b_ct="2.36763" />
+        <Indirect type1="ow" type2="hw" eps_ct="2.624816590940708" />
+    </ChargeTransfer>
+    <Polarization>
+        <Pol type="ow" eta="6.18699e-06" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+        <Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" alpha_damp_exponent="0.0" alpha_damp_max="0.0" />
+    </Polarization>
+</ForceField>

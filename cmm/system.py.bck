@@ -644,8 +644,6 @@ class System(nn.Module):
                                 pol_interaction_tensor_sr=pol_tensor,
                                 direct_field_tensor_excl=realSpaceTensor_excl,
                             )
-                            print("ene_pol")
-                            print(ene_pol)
                 else:
                     ene_pol = torch.tensor(0.0, device=coords.device)
 
@@ -911,7 +909,6 @@ class System(nn.Module):
                         epot = epot_real + ewald_potential
                         efield = efield_real + ewald_field
                     if self.use_pme:
-                        #ONLY USE IF DOING NO POLARIZATION AND NO FD-MORSE
                         pme_potential, pme_field, pme_field_gradient, ene_pme, _ =  self.pme(coords, box, mono, dipo, quad)
                         ene_elec = ene_pme + ene_perm_elec_real
                         epot = epot_real + pme_potential

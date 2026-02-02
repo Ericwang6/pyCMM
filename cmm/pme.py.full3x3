@@ -183,67 +183,41 @@ def spread_Q(N, positions, box, Q_dict, n_mesh, rank):
     # --- Quadrupole Term (6-Component Vector) ---
     if rank >= 2:
         d2M = bspline_prime2(u)
-
-        # 1. Rotate the 6-component Quadrupole into Grid Basis
-        # We need the full 3x3 rotation of the unique components.
-        # It's actually cleaner to reconstruct the 3x3 locally for the rotation
-        # OR rotate the tensor explicitly. Let's do the reconstruction method
-        # as it is safer for generic triclinic boxes.
-
-        # Unpack [xx, xy, xz, yy, yz, zz] -> 3x3
-        t_vec = Q_dict['theta_vec'] # (N, 6)
-        Theta_real = torch.zeros(N_a, 3, 3, device=u.device, dtype=u.dtype)
-
-        # Fill diagonal
-        Theta_real[:, 0, 0] = t_vec[:, 0] # xx
-        Theta_real[:, 1, 1] = t_vec[:, 3] # yy
-        Theta_real[:, 2, 2] = t_vec[:, 5] # zz
-        trace_check = Theta_real[:,0,0] + Theta_real[:,1,1] + Theta_real[:,2,2]
-        print(f"Mean Trace: {trace_check.mean().item()}")
-        print(f"Max Trace:  {trace_check.abs().max().item()}")
-
-        # Fill off-diagonal (Symmetric)
-        Theta_real[:, 0, 1] = t_vec[:, 1]; Theta_real[:, 1, 0] = t_vec[:, 1] # xy
-        Theta_real[:, 0, 2] = t_vec[:, 2]; Theta_real[:, 2, 0] = t_vec[:, 2] # xz
-        Theta_real[:, 1, 2] = t_vec[:, 4]; Theta_real[:, 2, 1] = t_vec[:, 4] # yz
-
-        # Rotate: T_u = R * T_real * R.T
-        Theta_u = torch.einsum('im,jn,kmn->kij', Nj_Aji_star, Nj_Aji_star, Theta_real)
-        #2. Spline Hessians
-        H_xx = d2M[:,:,0] * M[:,:,1] * M[:,:,2]
-        H_yy = M[:,:,0] * d2M[:,:,1] * M[:,:,2]
-        H_zz = M[:,:,0] * M[:,:,1] * d2M[:,:,2]
-        H_xy = dM[:,:,0] * dM[:,:,1] * M[:,:,2]
-        H_xz = dM[:,:,0] * M[:,:,1] * dM[:,:,2]
-        H_yz = M[:,:,0] * dM[:,:,1] * dM[:,:,2]
-        # 3. Contraction (Explicit Summation)
-        # Sum = T_xx*H_xx + T_yy*H_yy + T_zz*H_zz + 2*(T_xy*H_xy + ...)
-
-        term_diag = (Theta_u[:, None, 0, 0] * H_xx +
-                     Theta_u[:, None, 1, 1] * H_yy +
-                     Theta_u[:, None, 2, 2] * H_zz)
-
-        term_off  = 2.0 * (Theta_u[:, None, 0, 1] * H_xy +
-                           Theta_u[:, None, 0, 2] * H_xz +
-                           Theta_u[:, None, 1, 2] * H_yz)
-
-        quad_term = term_diag + term_off
+        T = Q_dict['T'] # Shape: (N, 3, 3)
+        # 1. Rotate Quadrupoles to Grid Frame
+        # Q_u = B * Q * B.T
+        Theta_u = torch.einsum('im,jn,kmn->kij', Nj_Aji_star, Nj_Aji_star, T)
+        # 2. Compute Spline Hessians 
+        mx, my, mz = M[:,:,0], M[:,:,1], M[:,:,2]
+        dmx, dmy, dmz = dM[:,:,0], dM[:,:,1], dM[:,:,2]
+        d2mx, d2my, d2mz = d2M[:,:,0], d2M[:,:,1], d2M[:,:,2]
+        # Result shape: (N, K, K, K)
+        # Helper lambda for 3D outer product: (N,K) * (N,K) * (N,K) -> (N,K,K,K)
+        outer3 = lambda x, y, z: x.unsqueeze(2).unsqueeze(3) * y.unsqueeze(1).unsqueeze(3) * z.unsqueeze(1).unsqueeze(2)
+        H_xx = outer3(d2mx, my, mz)
+        H_yy = outer3(mx, d2my, mz)
+        H_zz = outer3(mx, my, d2mz)
+        H_xy = outer3(dmx, dmy, mz)
+        H_xz = outer3(dmx, my, dmz)
+        H_yz = outer3(mx, dmy, dmz)
+        # 3. Construct the Full Hessian Tensor (N, 3, 3, K, K, K)
+        # Row 0
+        row0 = torch.stack([H_xx, H_xy, H_xz], dim=1)
+        # Row 1 (Symmetric: yx=xy)
+        row1 = torch.stack([H_xy, H_yy, H_yz], dim=1)
+        # Row 2 (Symmetric: zx=xz, zy=yz)
+        row2 = torch.stack([H_xz, H_yz, H_zz], dim=1)
+        # Stack rows to make 3x3 matrix at dim 1 and 2
+        grad_W2_u = torch.stack([row0, row1, row2], dim=1) # Shape: (N, 3, 3, K, K, K)
+        # 4. Contraction
+        # Theta_u: (N, 3, 3) -> (N, 3, 3, 1, 1, 1)
+        quad_term = torch.sum(Theta_u.view(-1, 3, 3, 1, 1, 1) * grad_W2_u)
 
         scale = 0.5
         W_tot += scale * quad_term
 
     # Scatter to grid
     Q_mesh = Q_mesh_on_m(W_tot, m_u0, N, shifts)
-#    print("CARTESIAN SPREAD")
-#    print(f"Total Sum of Grid: {torch.sum(Q_mesh).item()}") # Should be close to sum(q)
-#    print(f"Max Value in Grid: {torch.max(torch.abs(Q_mesh)).item()}")
-#    print(f"Q_mesh shape: {Q_mesh.shape}")
-#    print("CARTESIAN Q_MESH[0]")
-#    print(Q_mesh[0])
-#    print("CARTESIAN Q_MESH[1]")
-#    print(Q_mesh[1])
-#    print("CARTESIAN Q_MESH[2]")
-#    print(Q_mesh[2])
     return Q_mesh
 def Ck_1(ksq, kappa, V):
     return 4*torch.pi/V/ksq * torch.exp(-ksq/4/kappa**2)
@@ -293,30 +267,15 @@ def construct_Q(q, p, t, rank):
     Args:
         q: (N, 1)
         p: (N, 3)
-        t: (N, 6) Quadrupoles [xx, xy, xz, yy, yz, zz]
+        t: (N, 3, 3) Quadrupoles [xx, xy, xz, yy, yy, yz, zx, zy, zz]
     """
     N_a = q.shape[0]
     Q_dict = {'q': q.reshape(N_a, 1)}
-
     if rank >= 1:
         Q_dict['p'] = p.reshape(N_a, 3)
 
     if rank >= 2:
-        # Enforce Tracelessness just in case
-        # Trace = Qxx + Qyy + Qzz
-        trace = t[:, 0] + t[:, 3] + t[:, 5]
-
-        # Check if trace is effectively zero
-        if torch.any(torch.abs(trace) > 1e-5):
-            print("WARNING: Input Quadrupoles are not traceless. Removing trace...")
-            t_clean = t.clone()
-            correction = trace / 3.0
-            t_clean[:, 0] -= correction
-            t_clean[:, 3] -= correction
-            t_clean[:, 5] -= correction
-            Q_dict['theta_vec'] = t_clean
-        else:
-            Q_dict['theta_vec'] = t
+        Q_dict['T'] = t.reshape(N_a, 3, 3)
 
     return Q_dict
 
@@ -391,29 +350,55 @@ def interpolate_to_atoms(phi_grid: torch.Tensor,
 
     # --- Field Gradient (grad E = - hess Phi) ---
     if rank >= 2:
-        d2B = bspline_prime2(u)
-        
-        # Hessian in u-space
-        H_xx = d2B[:,:,0] * B[:,:,1] * B[:,:,2]
-        H_yy = B[:,:,0] * d2B[:,:,1] * B[:,:,2]
-        H_zz = B[:,:,0] * B[:,:,1] * d2B[:,:,2]
-        H_xy = dB[:,:,0] * dB[:,:,1] * B[:,:,2]
-        H_xz = dB[:,:,0] * B[:,:,1] * dB[:,:,2]
-        H_yz = B[:,:,0] * dB[:,:,1] * dB[:,:,2]
-        
-        hess_W_u = torch.zeros(Na, n_mesh, 3, 3, device=u.device, dtype=u.dtype)
-        hess_W_u[:,:,0,0] = H_xx
-        hess_W_u[:,:,1,1] = H_yy
-        hess_W_u[:,:,2,2] = H_zz
-        hess_W_u[:,:,0,1] = H_xy; hess_W_u[:,:,1,0] = H_xy
-        hess_W_u[:,:,0,2] = H_xz; hess_W_u[:,:,2,0] = H_xz
-        hess_W_u[:,:,1,2] = H_yz; hess_W_u[:,:,2,1] = H_yz
-        # Interpolate Hessian in u-space
-        hess_phi_u = torch.sum(phi_loc.reshape(Na, n_mesh, 1, 1) * hess_W_u, dim=1) # (Na, 3, 3)
-        # Transform to Real Space: Hess_r = M * Hess_u * M.T
-        # Einstein: H_r_ij = M_im * H_u_mn * M_jn
-        grad_E = torch.einsum('mi,knm,nj->kij', M_mat, hess_phi_u, M_mat) / 2.0
-        EG_atoms = -grad_E
+        d2B = bspline_prime2(u) # Shape (N, order, 3)
+        # 1. Prepare Spline Components (N, order)
+        Bx, By, Bz = B[:,:,0], B[:,:,1], B[:,:,2]
+        dBx, dBy, dBz = dB[:,:,0], dB[:,:,1], dB[:,:,2]
+        d2Bx, d2By, d2Bz = d2B[:,:,0], d2B[:,:,1], d2B[:,:,2]
+
+        # 2. Helper to compute 3D Outer Product: (N, k, k, k)
+        def outer3(x, y, z):
+             # x(N, k, 1, 1) * y(N, 1, k, 1) * z(N, 1, 1, k)
+             return x.unsqueeze(2).unsqueeze(3) * y.unsqueeze(1).unsqueeze(3) * z.unsqueeze(1).unsqueeze(2)
+        # 3. Compute Hessian Components on the Fractional Grid (N, k, k, k)
+        H_xx = outer3(d2Bx, By, Bz)
+        H_yy = outer3(Bx, d2By, Bz)
+        H_zz = outer3(Bx, By, d2Bz)
+        H_xy = outer3(dBx, dBy, Bz) # Also H_yx
+        H_xz = outer3(dBx, By, dBz) # Also H_zx
+        H_yz = outer3(Bx, dBy, dBz) # Also H_zy
+
+        # 4. Construct the Full Hessian Tensor for the Grid Patch
+        # Stack into shape (N, 3, 3, k, k, k)
+        row0 = torch.stack([H_xx, H_xy, H_xz], dim=1)
+        row1 = torch.stack([H_xy, H_yy, H_yz], dim=1)
+        row2 = torch.stack([H_xz, H_yz, H_zz], dim=1)
+        hess_patch = torch.stack([row0, row1, row2], dim=1) # (N, 3, 3, k, k, k)
+        # 5. Interpolate (Convolution with Grid Potential)
+        # phi_loc usually comes in as (N, k*k*k) or (N, k, k, k).
+        # We ensure it is (N, 1, 1, k, k, k) to broadcast against the 3x3 hessian.
+        if phi_loc.ndim == 2: # Flat (N, k^3)
+             k = B.shape[1]
+             phi_patch = phi_loc.view(-1, 1, 1, k, k, k)
+             print("FIRST PHI LOC OPTION")
+        else:
+             phi_patch = phi_loc.unsqueeze(1).unsqueeze(1) # (N, 1, 1, k, k, k)
+
+        # Sum over the grid dimensions (last 3 dims)
+        hess_phi_u = torch.sum(hess_patch * phi_patch, dim=(-3, -2, -1)) # Result: (N, 3, 3)
+
+        # 6. Transform Fractional Hessian to Real Space
+        # Formula: H_real = M_mat.T @ H_frac @ M_mat
+        # M_mat is the Reciprocal Box Matrix (u = M*r)
+
+        # Einstein Summation:
+        # m, i -> M_mat (transposed logic in formula, assuming M_mat is 3x3)
+        # k = atoms
+        # n, m = fractional indices
+        # j = real indices
+        grad_E = torch.einsum('mi, kmn, nj -> kij', M_mat, hess_phi_u, M_mat)
+        # 7. Finalize
+        EG_atoms = -grad_E # Field Gradient is negative Hessian of Potential
 
     return phi_atoms, E_atoms, EG_atoms
 def compute_pme(coords, box, q, p, t, kappa, k_max, rank):
@@ -452,14 +437,8 @@ def compute_pme(coords, box, q, p, t, kappa, k_max, rank):
     # Gradient Correction (Quadrupole)
     # Factor: 16 * k^5 / 15 * sqrt(pi) * Q
 
-    t_vec = Q_dict['theta_vec']
-    t_full = torch.zeros(t_vec.shape[0], 3, 3, device=t_vec.device)
-    t_full[:,0,0] = t_vec[:,0]; t_full[:,1,1] = t_vec[:,3]; t_full[:,2,2] = t_vec[:,5]
-    t_full[:,0,1] = t_vec[:,1]; t_full[:,1,0] = t_vec[:,1]
-    t_full[:,0,2] = t_vec[:,2]; t_full[:,2,0] = t_vec[:,2]
-    t_full[:,1,2] = t_vec[:,4]; t_full[:,2,1] = t_vec[:,4]
 
-    grad_correction = kappa_over_root_pi * (16 * kappa_val**4 / 15.0) * t_full
+    grad_correction = kappa_over_root_pi * (16 * kappa_val**4 / 15.0) * t
     #print(f"CARTESIAN PME  Atom 0 Field Grad Self Correction: {grad_correction[0].tolist()}")
     long_range_field_gradient += grad_correction
 
