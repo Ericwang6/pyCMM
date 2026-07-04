@@ -4,7 +4,7 @@ from ase.units import Bohr, Hartree
 from ase.stress import (
     full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 )
-
+from collections import defaultdict
 # from cmm.parameters import Parameterizer
 # from cmm.coordinate_manager import CoordinateManager
 # from cmm.topology import Topology
@@ -30,22 +30,26 @@ class CMMCalculator(Calculator):
         box: torch.Tensor,
         output_folder: os.PathLike = ".",
         use_cache=True,
-        profile=False
+        profile=False,
+        use_cuda_graph=False,
+        rebuild_nblist_interval=25
     ):
         super().__init__()
         self._system = system
         self._topology = topology
-        self.coords = coords
-        self.box = box
+        self.coords = torch.zeros_like(coords, requires_grad=True)
+        self.box = torch.zeros_like(box, requires_grad=True)
+
+        with torch.no_grad():
+            self.coords.copy_(coords)
+            self.box.copy_(box)
         
         self.output_folder = output_folder
         os.makedirs(os.path.abspath(self.output_folder), exist_ok=True)
-
-        self._checkpoint_counter = 0
         
         self.atoms = Atoms(
-            positions=coords.detach().cpu().numpy() * Bohr,
-            cell=box.detach().cpu().numpy() * Bohr,
+            positions=coords.numpy(force=True) * Bohr,
+            cell=box.numpy(force=True) * Bohr,
             pbc=[system.use_ewald, system.use_ewald, system.use_ewald],
             symbols=topology.atomSymbols
         )
@@ -62,191 +66,34 @@ class CMMCalculator(Calculator):
             'stress': np.zeros((3, 3))
         }
         self._run_profile = profile
-        self._profiler = {'forward': 0.0, 'backward': 0.0}
+        self._profiler = defaultdict(float)
         self._profiler_count = 0
+
+        # run the system immediately to initalize Ewald, induced_dipoles etc
+        self.cutoff_verlet = self._system.cutoff_lr + 3.0 # in bohr
+        self.use_cuda_graph = use_cuda_graph
+        
+        if self.use_cuda_graph:
+            assert self._system.use_customized_ops, 'CUDA graph has to be used with customized ops'
+        
+        with torch.no_grad():
+            self.pairs = self._system.rebuild_nblist(self.coords, self.cutoff_verlet, self.box)
+            # self.pairs = torch.full((int(pairs.shape[0]*1.5), 2), -1, device=pairs.device, dtype=pairs.dtype)
+            # self.pairs[:pairs.shape[0]].copy_(pairs)
+
+        self.step_counter = 0
+        self._minimization = True
+        self._rebuild_nblist_interval = rebuild_nblist_interval
+        self._start_graph = 100
+        self._cuda_graph = torch.cuda.CUDAGraph()
+        self._evaluate_ff()
     
-    # def save_state(self, filename: str):
-    #     """
-    #     Save the state of the CMM_ASE calculator for restart purposes.
-    #     """
-    #     import json, os
-
-    #     # Create a dictionary with all the necessary information
-    #     state = {
-    #         'positions': self.coords.cpu().detach().numpy().tolist(),
-    #         'velocities': self.atoms.get_velocities().tolist(),  # Save velocities
-    #         'cell': self.box.cpu().detach().numpy().tolist(),
-    #         'atom_labels': self._cm.labels,
-    #         'atom_type_names': [self._params._atom_type_names[i] for i in range(len(self._params._atom_type_names))],
-    #         'bonds': self._topology.bonded_atoms.cpu().detach().numpy().tolist(),
-    #         'cutoff_max': self.system.,
-    #         'cutoff_ewald': float(self._ff.cutoff_ewald.item()),
-    #         'cutoff_short_range': float(self._ff.cutoff_sr.item()),
-    #         'require_coord_grads': self._cm._need_coordinate_grads,
-    #         'require_box_grads': self._cm._need_box_grads,
-    #         'device': str(self.coords.device),
-    #         'torch_dtype': str(self.coords.dtype),
-    #         'output_folder': str(self.output_folder),
-    #         'solve_tolerance': self._ff.solve_tolerance.cpu().detach().numpy().tolist(),
-    #         'ewald_tolerance': self._ff.ewald_tolerance.cpu().detach().numpy().tolist(),
-    #         'use_ewald': self._ff.use_ewald,
-    #         'use_polarization': self._ff.use_polarization,
-    #     }
-
-    #     # Ensure output directory exists
-    #     os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
-
-    #     # Save the dictionary to a JSON file
-    #     with open(filename, 'w') as f:
-    #         json.dump(state, f, indent=2)
-
-    # @classmethod
-    # def load_state(cls, filename, ff=None):
-    #     """
-    #     Load a CMM_ASE calculator from a saved state file.
-    #     """
-    #     import json
-    #     import torch
-    #     from cmm.coordinate_manager import CoordinateManager
-    #     from cmm.topology import Topology
-    #     from cmm.parameters import Parameterizer
-    #     from cmm.force_field import CMM
-    #     import os
-    #     import numpy as np
-    #     from ase.io import read as ase_read
-
-    #     # Load the state from the JSON file
-    #     with open(filename, 'r') as f:
-    #         state = json.load(f)
-
-    #     # Check for trajectory file to load velocities
-    #     traj_filename = None
-    #     if filename.endswith('.json'):
-    #         traj_filename = filename.replace('.json', '.traj')
-    #     else:
-    #         traj_filename = filename + '.traj'
-
-    #     has_traj = os.path.exists(traj_filename)
-
-    #     # Determine device and dtype
-    #     device = state.get('device', 'cpu')
-    #     if device == 'cpu':
-    #         device = torch.device('cpu')
-    #     else:
-    #         # Handle CUDA devices
-    #         device = torch.device(device if torch.cuda.is_available() else 'cpu')
-
-    #     # Determine torch dtype
-    #     dtype_str = state.get('torch_dtype', 'torch.float64')
-    #     if dtype_str == 'torch.float64':
-    #         dtype = torch.float64
-    #     elif dtype_str == 'torch.float32':
-    #         dtype = torch.float32
-    #     else:
-    #         dtype = torch.float64  # Default to float64
-
-    #     # Convert positions and cell to tensors
-    #     positions = torch.tensor(state['positions'], dtype=dtype, 
-    #                             requires_grad=state['require_coord_grads'],
-    #                             device=device)
-    #     box = torch.tensor(state['cell'], dtype=dtype,
-    #                       requires_grad=state['require_box_grads'],
-    #                       device=device)
-    #     bonds = np.array(state['bonds'])
-    #     topology = Topology(bonds, positions.size(0), device)
-    #     cm = CoordinateManager(positions, box, state['cutoff_max'],
-    #                          state['atom_labels'], topology.all_intramolecular_pairs)
-    #     if ff is None:
-    #         use_ewald = state['use_ewald']
-    #         use_polarization = state['use_polarization']
-    #         solve_tolerance = torch.tensor(state['solve_tolerance'], device=device, dtype=dtype)
-    #         ewald_tolerance = torch.tensor(state['ewald_tolerance'], device=device, dtype=dtype)
-    #         cutoff_ewald = torch.tensor(state['cutoff_ewald'], device=device, dtype=dtype)
-    #         cutoff_short_range = torch.tensor(state['cutoff_short_range'], device=device, dtype=dtype)
-    #         ff = CMM(
-    #             cutoff_ewald=cutoff_ewald, cutoff_short_range=cutoff_short_range,
-    #             use_ewald=use_ewald, use_polarization=use_polarization,
-    #             solve_tolerance=solve_tolerance, ewald_tolerance=ewald_tolerance
-    #         )
-
-    #     # Create Parameterizer
-    #     pairs, _, _ = cm.get_distances_vectors_and_pairs()
-    #     parameters = Parameterizer(
-    #         state['atom_type_names'], pairs, topology.angle_atoms,
-    #         ff.atomic_params, ff.pair_params, ff.pair_pair_params, 
-    #         ff.pair_angle_params, ff.angle_params
-    #     )
-
-    #     # Create CMM_ASE calculator
-    #     calculator = cls(ff, cm, topology, parameters, output_folder=state['output_folder'])
-    #     calculator.atoms.set_velocities(np.array(state['velocities']))
-    #     calculator.atoms.set_pbc([use_ewald, use_ewald, use_ewald])
-
-    #     return calculator
+    def set_minimization(self):
+        self._minimization = True
     
-    # @classmethod
-    # def load_last_state(cls, directory: str, ff=None):
-    #     """
-    #     Load a CMM_ASE calculator from the most recent saved state file in a directory.
-
-    #     This method searches the specified directory for checkpoint files and loads
-    #     the most recent one based on the timestamp in the filename.
-    #     """
-    #     import os
-    #     import re
-    #     import glob
-
-    #     # Pattern to match checkpoint files with timestamps
-    #     # Expected format: checkpoint_YYYYMMDD_HHMMSS.json
-    #     checkpoint_pattern = os.path.join(directory, "checkpoint_*.json")
-    #     checkpoint_files = glob.glob(checkpoint_pattern)
-
-    #     if not checkpoint_files:
-    #         # Also try to match any .json file that might be a checkpoint
-    #         alternative_pattern = os.path.join(directory, "*.json")
-    #         checkpoint_files = glob.glob(alternative_pattern)
-
-    #     if not checkpoint_files:
-    #         raise FileNotFoundError(f"No checkpoint files found in {directory}")
-
-    #     # Extract timestamps from filenames
-    #     timestamp_pattern = re.compile(r'.*_(\d{8}_\d{6})\.json$')
-
-    #     # Try to find files with timestamps (like checkpoint_20220101_120000.json)
-    #     timestamped_files = []
-    #     for filepath in checkpoint_files:
-    #         match = timestamp_pattern.match(filepath)
-    #         if match:
-    #             timestamp = match.group(1)
-    #             timestamped_files.append((filepath, timestamp))
-
-    #     if timestamped_files:
-    #         # Sort by timestamp (most recent last)
-    #         timestamped_files.sort(key=lambda x: x[1])
-    #         latest_file = timestamped_files[-1][0]
-    #     else:
-    #         # If no files match the timestamp pattern, use file modification time
-    #         checkpoint_files.sort(key=os.path.getmtime)
-    #         latest_file = checkpoint_files[-1]
-
-    #     return cls.load_state(latest_file, ff=ff)
-    
-    # def create_checkpoint(self, filename_prefix='checkpoint'):
-    #     """
-    #     Create a checkpoint that can be used to restart the simulation.
-
-    #     Args:
-    #         filename_prefix (str): Prefix for the checkpoint files.
-
-    #     Returns:
-    #         str: Name of the checkpoint file.
-    #     """
-    #     import os, time
-    #     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    #     json_filename = os.path.join(self.output_folder, f"{filename_prefix}_{timestamp}.json")
-    #     self.save_state(json_filename)
-    #     return json_filename
-
+    def unset_minimization(self):
+        self._minimization = False
+        
     def reset_profiler(self):
         for key in self._profiler:
             self._profiler[key] = 0.0
@@ -257,26 +104,48 @@ class CMMCalculator(Calculator):
             print(f"{key}: {self._profiler[key] / self._profiler_count * 1000:.4f} ms")
     
     def _evaluate_ff(self):
-        if self._run_profile:
-            torch.cuda.synchronize()
-            start = time.time()
-        self._energies = self._system.getEnergy(self.coords, self.box)
-        if self._run_profile:
-            torch.cuda.synchronize()
-            end = time.time()
-            self._profiler['forward'] += end - start
-            self._profiler_count += 1
-
-        if self.coords.requires_grad:
+        if (not self.use_cuda_graph) or (self.step_counter <= self._start_graph):
+            if self.coords.grad is not None:
+                self.coords.grad.zero_()
+            if self.box.grad is not None:
+                self.box.grad.zero_()
             if self._run_profile:
                 torch.cuda.synchronize()
-                start = time.time()
-            self._energies['total'].backward()
+                start = time.perf_counter()
+                torch.cuda.nvtx.range_push("CMM-Forward")
+            self._energies = self._system.getEnergy(self.coords, self.box)
+            if self._run_profile:
+                torch.cuda.nvtx.range_pop()
+                torch.cuda.synchronize()
+                end = time.perf_counter()
+                self._profiler['forward'] += end - start
+                self._profiler_count += 1
+
+            if self.coords.requires_grad:
+                if self._run_profile:
+                    torch.cuda.synchronize()
+                    start = time.perf_counter()
+                    torch.cuda.nvtx.range_push("CMM-Backward")
+                self._energies['total'].backward()
+                if self._run_profile:
+                    torch.cuda.nvtx.range_pop()
+                    torch.cuda.synchronize()
+                    end = time.perf_counter()
+                    self._profiler['backward'] += end - start
+        else:
             if self._run_profile:
                 torch.cuda.synchronize()
-                end = time.time()
-                self._profiler['backward'] += end - start
-
+                start = time.perf_counter()
+                torch.cuda.nvtx.range_push("CMM-GRAPH")
+            self._cuda_graph.replay()
+            if self._run_profile:
+                torch.cuda.synchronize()
+                torch.cuda.nvtx.range_pop()
+                end = time.perf_counter()
+                self._profiler['graph'] += end - start
+                self._profiler_count += 1
+            
+        
         # Store results so that ASE can access them #
         self.results['energy'] = self._energies['total'].item() * Hartree
         if self.coords.grad is not None:
@@ -288,20 +157,59 @@ class CMMCalculator(Calculator):
                 self.results['stress'] = self.results['stress'] + ((
                     torch.matmul(self.box.grad.T, self.box)
                  ) / torch.det(self.box)).cpu().detach().numpy() * (Hartree / Bohr**3)
+        
+        if not self._minimization:
+            self.step_counter += 1
+
+        # rebuild_nblist = self._minimization or (self.step_counter % self._rebuild_nblist_interval == 0)
+        # if rebuild_nblist:
+        #     self.pairs = self._system.rebuild_nblist(self.coords, self.cutoff_verlet, self.box)
+        # record graph
+        if self.use_cuda_graph and ((self.step_counter == self._start_graph) or (self.step_counter > self._start_graph and rebuild_nblist)):
+            if self._run_profile: torch.cuda.nvtx.range_push("CMM-setup stream")
+            if not hasattr(self, '_graph_stream'):
+                self._graph_stream = torch.cuda.Stream()
+            self._cuda_graph = torch.cuda.CUDAGraph()
+            self._energies = {}
+            if self.step_counter == self._start_graph:
+                new_coords = torch.zeros_like(self.coords, requires_grad=True)
+                new_box = torch.zeros_like(self.box, requires_grad=True)
+                with torch.no_grad():
+                    new_coords.copy_(self.coords)
+                    new_box.copy_(self.box)
+                self.coords = new_coords
+                self.box = new_box
+            torch.cuda.synchronize()
+            self._graph_stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(self._graph_stream):
+                self.coords.grad = None
+                self.box.grad = None
+                self._energies = self._system.getEnergy(self.coords, self.box, self.pairs)
+                self._energies['total'].backward()
+            torch.cuda.current_stream().wait_stream(self._graph_stream)
+
+            self.coords.grad = None
+            self.box.grad = None
+            if self._run_profile: 
+                torch.cuda.nvtx.range_pop()
+                torch.cuda.nvtx.range_push("CMM-build graph")
+            with torch.cuda.graph(self._cuda_graph, stream=self._graph_stream):
+                self._energies = self._system.getEnergy(self.coords, self.box, self.pairs)
+                self._energies['total'].backward()
+            if self._run_profile:
+                torch.cuda.nvtx.range_pop()
     
-    def _update_coords(self, new_coords):
-        coords = torch.tensor(
-            new_coords, device=self.coords.device, dtype=self.coords.dtype,
-            requires_grad=self.coords.requires_grad
-        )
-        self.coords = coords
+    def _update_coords(self, new_coords: np.ndarray):
+        with torch.no_grad():
+            coords_tensor_cpu = torch.from_numpy(new_coords).to(
+                dtype=self.coords.dtype, non_blocking=True).pin_memory()
+            self.coords.copy_(coords_tensor_cpu, non_blocking=True)
     
-    def _update_box(self, new_box):
-        box = torch.tensor(
-            new_box, device=self.box.device, dtype=self.box.dtype,
-            requires_grad=self.box.requires_grad
-        )
-        self.box = box
+    def _update_box(self, new_box: np.ndarray):
+        with torch.no_grad():
+            box_tensor_cpu = torch.from_numpy(new_box).to(
+                dtype=self.coords.dtype, non_blocking=True).pin_memory()
+            self.box.copy_(box_tensor_cpu, non_blocking=True)
 
     def calculate(self, atoms=None, properties=None, system_changes=['positions', 'cell']):
         if properties is None:

@@ -15,7 +15,7 @@ from ase.units import fs, bar, kB
 import openmm.app as app
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from cmm.interfaces import CMMCalculator
 from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     ff = ForceFieldXML(ff_path, device='cuda')
     pdb = app.PDBFile(pdb_path)
     top = Topology.fromOpenmm(pdb.topology, device)
-    system = ff.parametrize(top, use_fd_morse=True, cutoff_sr=5.0, use_lr_dispersion=True, use_hardness_change=False)
+    system = ff.parametrize(top, use_fd_morse=True, cutoff_sr=9.0, use_lr_dispersion=True, use_hardness_change=False)
 
     coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
     box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=True)
@@ -147,7 +147,7 @@ if __name__ == '__main__':
     dyn.attach(traj.write, interval=1000)
 
     log = create_all_logger('npt_298K_2000ps.log', atoms, dyn)
-    dyn.attach(log, interval=50)
+    dyn.attach(log, interval=100)
 
     dyn.run(1000000)
     atoms.write('npt_298K_2000ps.xyz')

@@ -119,6 +119,12 @@ class Topology:
             return self._dihedrals_tensor if not transpose else self._dihedrals_tensor.T.contiguous()
         else:
             return self._dihedrals if not transpose else self._dihedrals_tensor.T.detach().cpu().numpy().tolist()
+    
+    def getExclusionMatrix(self, asTensor: bool = True):
+        if asTensor:
+            return self._exclusion_matrix_tensor
+        else:
+            return self._exclusion_matrix
 
     def _build(self):
         connect_data = {i+1: set() for i in range(self.cutoff)}
@@ -160,6 +166,16 @@ class Topology:
         
         self._intra_pairs = list(intra_pairs)
         self._intra_pairs_tensor = torch.tensor(self._intra_pairs, device=self.device)
+
+        self._exclusion_matrix = [[] for _ in range(self.natoms)]
+        for i, j in self._intra_pairs:
+            self._exclusion_matrix[i].append(j)
+            self._exclusion_matrix[j].append(i)
+        nexcl = max([len(excl) for excl in self._exclusion_matrix])
+        for i in range(self.natoms):
+            for _ in range(nexcl-len(self._exclusion_matrix[i])):
+                self._exclusion_matrix[i].append(-1)
+        self._exclusion_matrix_tensor = torch.tensor(self._exclusion_matrix, device=self.device)
 
     def _find_polarization_groups_and_scatter_indices(self):
         """

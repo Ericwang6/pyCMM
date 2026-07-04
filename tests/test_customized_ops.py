@@ -31,8 +31,9 @@ def test_customized_ops():
     coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
     box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=True)
 
-    system_ref = ff.parametrize(top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-7, use_hardness_change=False, cutoff_sr=9.0, use_switch=True, use_customized_ops=False)
+    system_ref = ff.parametrize(top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-7, ewald_tolerance=1e-9, use_hardness_change=False, cutoff_sr=9.0, use_switch=True, use_customized_ops=False)
     energies_ref = system_ref.getEnergy(coords, box)
+    print(f"Ewald Kmax: {system_ref.k_max}")
     energies_ref['total'].backward()
     coords_grad_ref = coords.grad.numpy(force=True)
     coords.grad = None

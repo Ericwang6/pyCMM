@@ -4,7 +4,7 @@ import numpy as np
 
 from cmm.coordinate_manager import CoordinateManager
 from cmm.topology import Topology
-from cmm.settings import Settings, MolecularDynamicsSettings, NeighborListSettings, PolarizationSettings, ShortRangeSettings
+from cmm.legacy.settings import Settings, MolecularDynamicsSettings, NeighborListSettings, PolarizationSettings, ShortRangeSettings
 from cmm.misc_utils import read_from_tinker_xyz
 from cmm.parameters import Parameterizer
 from cmm.system import System, create_system_from_ext_xyz_file

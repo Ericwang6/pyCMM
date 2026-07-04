@@ -241,7 +241,8 @@ def convert_qforce_to_cmm(
                     attrs.append((n, r0, k, phi0))
                 
                 torsion_bond_attrs[key] = attrs
-        elif force.attrib['name'] == 'DihedralAngle' and force.attrib['particles'] == '4':
+        elif force.attrib['name'] == 'DihedralAngleAngle' or (
+                force.attrib['name'] == 'DihedralAngle' and force.attrib['particles'] == '4'):
             for taa in force.findall("Bonds/Bond"):
                 p1, p2, p3, p4 = map(int, [taa.attrib[f'p{i+1}'] for i in range(4)])
                 torsion_types = [atypes[p] for p in [p1, p2, p3, p4]]

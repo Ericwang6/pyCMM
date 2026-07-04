@@ -32,7 +32,7 @@ class NPTLangevinMonteCarloBarostat(Langevin):
         trajectory=None,
         logfile=None,
         loginterval=1,
-        communicator=world,
+        comm=world,
         rng=None,
         append_trajectory=False
     ):
@@ -46,7 +46,7 @@ class NPTLangevinMonteCarloBarostat(Langevin):
             trajectory=trajectory,
             logfile=logfile,
             loginterval=loginterval,
-            communicator=communicator,
+            comm=comm,
             rng=rng,
             append_trajectory=append_trajectory,
         )

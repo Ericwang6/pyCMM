@@ -1,4 +1,4 @@
-import os
+import os, sys
 import torch
 
 import numpy as np
@@ -87,9 +87,9 @@ class Optimizer:
                     self.enforce_iso_pol_indices.append(index)
             
             if len(self.opt_params[can_param_name].shape) > 1:
-                param_mask = torch.tensor(mask).reshape(-1, 1)
+                param_mask = torch.tensor(mask, device=ff.device).reshape(-1, 1)
             else:
-                param_mask = torch.tensor(mask)
+                param_mask = torch.tensor(mask, device=ff.device)
             
             self.masks[can_param_name] = param_mask
         
@@ -172,6 +172,14 @@ class Optimizer:
                     param *= mask
                 self.logger.warning(f'Some values in {name} are forcibly set to positive')
 
+    def print_params(self):
+        print("===== Optimizing Parameters =====")
+        for name, param in self.opt_params.items():
+            print(name, param)
+        print("===== Parameter Gradient =====")
+        for name, param in self.opt_params.items():
+            print(name, param.grad)
+
 
 def weight_mse(y_true: torch.Tensor, y_pred: torch.Tensor, weights=None):
     if weights is None:
@@ -195,6 +203,11 @@ def interaction_weight(arr: torch.Tensor):
 
 def misquitta_weight(energies: torch.Tensor, alpha=0.4, e0=25):
     return torch.exp(-alpha * torch.log(energies / e0) ** 2)
+
+
+def boltzmann_weight(energies: torch.Tensor):
+    kbT = 8.314 * 298.15 / 1000
+    return torch.exp(-energies/kbT)
 
 
 def read_ase_log(logfile):
@@ -255,6 +268,8 @@ class Trainer:
             self.weight_func = weight_func
         elif weight_func == 'interaction':
             self.weight_func = interaction_weight
+        elif weight_func == 'boltzmann':
+            self.weight_func = boltzmann_weight
         else:
             raise NotImplementedError(f"Unsupported weighting: {weight_func}")
 
@@ -284,12 +299,14 @@ class Trainer:
         
         return res, ref, ref_charge, charge
     
-    def train(self, datas, num_epoch: int = 10, **kwargs):
+    def train(self, datas, num_epoch: int = 10, use_batch: bool = False, **kwargs):
         systems = [self.ff.parametrize(Topology.fromOpenmm(data.topology), batch=True, **kwargs) for data in datas]
         losses = [[] for _ in range(len(datas))]
 
         for n in range(num_epoch):
-
+            
+            self.optimizer.zero_grad()
+            
             for i, (data, system) in enumerate(zip(datas, systems)):
                 res, ref, ref_charge, charge = self.evaluate(data, system)
                 loss_weight = self.target_weights.get(data.__class__.__name__, 1000.0)
@@ -316,11 +333,21 @@ class Trainer:
                     qloss = torch.sum((ref_charge - charge) ** 2)
                     total_loss += qloss * self.qsum_constr
 
-                self.optimizer.zero_grad()
-                total_loss.backward()
+                if use_batch:
+                    self.optimizer.zero_grad()
+                    total_loss.backward()
+                    self.optimizer.step()
+                else:
+                    total_loss.backward()
+
+            if not use_batch:
                 self.optimizer.step()
+                    
 
         return losses
+
+    def print_params(self):
+        self.optimizer.print_params()
 
     def compute_density_loss_and_gradient(
         self,
@@ -339,6 +366,7 @@ class Trainer:
         device = self.ff.device
 
         weights = [weights for _ in range(len(pdbs))] if isinstance(weights, float) else weights
+        calc_densities = []
         for n, (pdb, traj_path, ref_d, temp, weight) in enumerate(zip(pdbs, trajs, ref_densities, temperatures, weights, strict=True)):
             top = Topology.fromPDB(pdb, device)
             system = self.ff.parametrize(top, batch=False, expand_parametrizers_during_init=False, **kwargs)
@@ -347,7 +375,7 @@ class Trainer:
             density_param_grad = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
 
             densities = []
-            for atoms in tqdm(traj, total=len(traj), desc=f'Processing {n}'):
+            for atoms in tqdm(traj, total=len(traj), desc=f'Processing {n}', disable=not sys.stdout.isatty()):
                 coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
                 box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
                 energy = system.getEnergy(coords, box)['total'] * HARTREE2KCAL
@@ -363,16 +391,19 @@ class Trainer:
                     g.zero_()
             
             avg_d = np.mean(densities)
+            calc_densities.append(avg_d)
             beta = 1 / (temp * kB * EV2KCAL)
 
             loss = 0.5*(avg_d-ref_d)**2
-            print(f"Density Calculated: {avg_d:.5f}, Reference: {ref_d:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weight}")
+            print(f"Density Calculated: {avg_d:.5f}, Reference: {ref_d:.5f}, Error: {avg_d-ref_d:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weight}")
             for key in self.optimizer.opt_params:
                 grad = -beta * (density_param_grad[key] / len(traj) - param_grad[key] * (avg_d / len(traj)) ) * (avg_d - ref_d) * weight
                 grads[key].add_(grad)
         
         for key in grads:
             self.optimizer.opt_params[key].grad += grads[key] / len(pdbs)
+        
+        return np.array(calc_densities)
     
     def compute_heat_of_vap_loss_and_gradient(
         self,
@@ -393,6 +424,7 @@ class Trainer:
         device = self.ff.device
 
         weights = [weights for _ in range(len(ref_hs))] if isinstance(weights, float) else weights
+        calc_hs = []
         for n in range(len(liq_pdbs)):
             liq_top = Topology.fromPDB(liq_pdbs[n], device)
             liq_system = self.ff.parametrize(liq_top, batch=False, expand_parametrizers_during_init=False, **kwargs)
@@ -402,7 +434,7 @@ class Trainer:
 
             u_liq = []
             t_liq = []
-            for atoms in tqdm(liq_traj, total=len(liq_traj), desc=f'Processing liq-phase {n}'):
+            for atoms in tqdm(liq_traj, total=len(liq_traj), desc=f'Processing liq-phase {n}', disable=not sys.stdout.isatty()):
                 coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
                 box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
                 energy = liq_system.getEnergy(coords, box)['total'] * HARTREE2KCAL
@@ -444,7 +476,7 @@ class Trainer:
                 t_gas = []
                 gas_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
                 gas_u_du_dparam = {key: torch.zeros_like(value) for key, value in self.optimizer.opt_params.items()}
-                for atoms in tqdm(gas_traj, total=len(gas_traj), desc=f'Processing gas-phase {n}'):
+                for atoms in tqdm(gas_traj, total=len(gas_traj), desc=f'Processing gas-phase {n}', disable=not sys.stdout.isatty()):
                     coords = torch.tensor(atoms.get_positions() / BOHR2ANG, device=device, requires_grad=False)
                     box = torch.tensor(atoms.get_cell().array / BOHR2ANG, device=device, requires_grad=False)
                     energy = gas_system.getEnergy(coords, box)['total'] * HARTREE2KCAL
@@ -469,6 +501,7 @@ class Trainer:
             dh = u_gas_avg - u_liq_avg / num_mols + kB * EV2KCAL * temperatures[n]
             if t_gas_avg is not None:
                 dh -= kB * EV2KCAL * (t_gas_avg - t_liq_avg) * (3 * gas_top.natoms - 6) / 2
+            calc_hs.append(dh)
             
             for key in self.optimizer.opt_params:
                 if len(gas_duavg_dparam) > 0:
@@ -478,8 +511,10 @@ class Trainer:
                 grads[key].add_(grad)
 
             loss = 0.5*(ref_hs[n]-dh)**2
-            print(f"Delta H Calculated: {dh:.5f}, Reference: {ref_hs[n]:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weights[n]}")
+            print(f"Delta H Calculated: {dh:.5f}, Reference: {ref_hs[n]:.5f}, Error: {dh-ref_hs[n]:.5f}, L2 Loss: {loss}, Weighted L2 Loss: {loss*weights[n]}")
 
         for key in grads:
             self.optimizer.opt_params[key].grad += grads[key] / len(liq_pdbs)
+        
+        return np.array(calc_hs)
 

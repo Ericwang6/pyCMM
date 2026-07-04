@@ -21,7 +21,6 @@ from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
 from cmm.units import BOHR2NM, BOHR2ANG
 torch.set_printoptions(precision=8)
-torch.set_default_dtype(torch.float64)
 
 
 def read_coords_from_xyz(xyz, device):
@@ -70,13 +69,12 @@ def create_all_logger(filename: str, atoms, dynamics):
         # 1 amu = 1.66054e-24 g; 1 Å^3 = 1e-24 cm^3
         density = total_mass_amu * 1.66054e-24 / (volume_A3 * 1e-24)
 
-         # record wall-clock elapsed time since logger start (HH:MM:SS.mmm)
+         # record time
         end = time.time()
-        dur_ms = int((end - start) * 1000)
-        hrs, rem = divmod(dur_ms, 3600 * 1000)
-        mins, rem = divmod(rem, 60 * 1000)
-        secs, ms = divmod(rem, 1000)
-        timestr = f'{hrs:02}:{mins:02}:{secs:02}.{ms:03d}'
+        dur = int(end - start)
+        hrs, secs = divmod(dur, 3600)
+        mins, secs = divmod(secs, 60)
+        timestr = f'{hrs:02}:{mins:02}:{secs:02}'
 
         # Write a line of data to the log file
         msg = f'{step:6d}  {time_fs:8.2f}  {temperature:10.2f}  {total_energy:12.6f}  {density:12.6f}  {timestr}'
@@ -91,9 +89,7 @@ if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
 
     ff_path = 'water.xml'
-    # pdb_path = 'water_216.pdb'
-
-    pdb_path = '/pscratch/sd/e/eric6/torchff-lib/tests/water/water_3000.pdb'
+    pdb_path = 'water_216.pdb'
 
     # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/tests/data/water_refit.xml'
     # pdb_path = '/pscratch/sd/e/eric6/pycmm-dev/tests/data/water_216.pdb'
@@ -105,13 +101,7 @@ if __name__ == '__main__':
     ff = ForceFieldXML(ff_path, device='cuda')
     pdb = app.PDBFile(pdb_path)
     top = Topology.fromOpenmm(pdb.topology, device)
-    system = ff.parametrize(
-        top, 
-        use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-7, ewald_tolerance=1e-9,
-        use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, 
-        use_customized_ops=False,
-        use_pme=False
-    )
+    system = ff.parametrize(top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-5, use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, use_customized_ops=True)
 
     coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
     box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=False)
@@ -133,12 +123,12 @@ if __name__ == '__main__':
     MaxwellBoltzmannDistribution(atoms, temperature_K=temperature, force_temp=True)
     Stationary(atoms)
 
-    dyn = VelocityVerlet(atoms, 1.0*fs)
-    traj = Trajectory('water_md_nve_1ns.traj', 'a', atoms)
-    dyn.attach(traj.write, interval=1000)
-    log = create_all_logger('water216_1ns.log', atoms, dyn)
-    dyn.attach(log, interval=100)
+    dyn = VelocityVerlet(atoms, 0.5*fs)
+    traj = Trajectory('water_md_nve_1ns_0.5fs.traj', 'a', atoms)
+    dyn.attach(traj.write, interval=2000)
+    log = create_all_logger('water216_1ns_0.5fs.log', atoms, dyn)
+    dyn.attach(log, interval=2000)
 
-    dyn.run(1000000)
+    dyn.run(2000000)
 
     calc.print_profiler()

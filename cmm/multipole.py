@@ -4,6 +4,8 @@ import torch
 from enum import IntEnum
 from .pbc import applyPBC
 
+_POLYTENSOR_CACHE = {}
+
 
 class AxisTypes(IntEnum):
     ZThenX            = 0
@@ -167,6 +169,7 @@ def rotateMultipoles(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor,
     quad = rotateQuadrupoles(quad, rotMatrix)[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]]
     return torch.hstack((mono, dipo, quad))
 
+
 @torch.compile
 def convertMultipolesToPolytensor(mono: torch.Tensor, dipo: torch.Tensor, quad: torch.Tensor):
     """
@@ -187,7 +190,20 @@ def convertMultipolesToPolytensor(mono: torch.Tensor, dipo: torch.Tensor, quad: 
     mPoles: torch.Tensor
         Multipoles [q, ux, uy, uz, Qxx, Qxy, Qxz, Qyy, Qyz, Qzz], shape (N, 10)
     """
-    return torch.hstack((mono.unsqueeze(1), dipo, quad[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]])) * torch.tensor([1., 1., 1., 1., 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=mono.device)
+    return torch.hstack(
+        (mono.unsqueeze(1), dipo, 
+        quad[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]])) * torch.tensor([1., 1., 1., 1., 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], 
+        device=mono.device
+    )
+    # key = (mono.device, mono.dtype)
+    # if key not in _POLYTENSOR_CACHE:
+    #     _POLYTENSOR_CACHE[key] = {
+    #         'scale': torch.tensor([1., 1., 1., 1., 1/3, 2/3, 2/3, 1/3, 2/3, 1/3], device=mono.device, dtype=mono.dtype),
+    #         'qi': torch.tensor([0, 0, 0, 1, 1, 2], device=mono.device, dtype=torch.long),
+    #         'qj': torch.tensor([0, 1, 2, 1, 2, 2], device=mono.device, dtype=torch.long),
+    #     }
+    # c = _POLYTENSOR_CACHE[key]
+    # return torch.hstack((mono.unsqueeze(1), dipo, quad[:, c['qi'], c['qj']])) * c['scale']
 
 
 def computeCartesianQuadrupoles(quad_s: torch.Tensor):

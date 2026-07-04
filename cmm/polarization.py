@@ -3,13 +3,12 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from torch_scatter import segment_csr
-from .ewald import Ewald
 
-try:
-    import torchff
-    import torchff_cmm
-except:
-    pass
+import torchff
+import torchff_cmm
+from torchff.ewald import Ewald
+from torchff.pme import PME
+
 
 from contextlib import contextmanager
 
@@ -44,6 +43,7 @@ def get_field_dependent_polarizabilities(
     damp_factor_a = alpha_damp_max_a * (1 - torch.exp(-alpha_damp_exponent_a * elec_field_mag_sq_a))
     return polarizabilities_a - damp_factor_a.view(-1, 1, 1) * polarizabilities_a
 
+PLACEHOLDER = torch.tensor([])
 
 class CMMPolarization(nn.Module):
     '''
@@ -58,7 +58,8 @@ class CMMPolarization(nn.Module):
         rcut_sr, rcut_lr,
         rtol=1e-5, atol=0, maxiter=400, n_extrapolate_from=5, verbose=False,
         use_lr=True,
-        use_customized_ops=True
+        use_customized_ops=True,
+        use_pme=False
     ):
         super().__init__()
         self.natoms = natoms
@@ -72,6 +73,7 @@ class CMMPolarization(nn.Module):
         self.maxiter = maxiter
         self.verbose = verbose
         self.use_lr = use_lr
+        assert self.use_lr, 'use_lr=False is not supported!'
 
         self.n_extrapolate_from = n_extrapolate_from
         self.n_solves = 0
@@ -87,14 +89,19 @@ class CMMPolarization(nn.Module):
         self.use_customized_ops = use_customized_ops
         self.ewald = None
         self._set_ewald = False
+        self.use_pme = use_pme
 
         self.rcut_lr = rcut_lr
         self.rcut_sr = rcut_sr
 
     def set_ewald(self, alpha_ewald, k_max, device, dtype):
         self.alpha_ewald = alpha_ewald
-        self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops)
-        self.ewald.to(device=device, dtype=dtype)
+        if self.use_pme and self.use_customized_ops:
+            self.ewald = PME(alpha_ewald, k_max, 1, True, True)
+        else:
+            self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops, True).to(device=device, dtype=dtype)
+            if not self.use_customized_ops:
+                self.ewald = torch.compile(self.ewald)
         self._set_ewald = True
     
     def store_output(self, solution_vector: torch.Tensor):
@@ -141,14 +148,14 @@ class CMMPolarization(nn.Module):
         with torch.no_grad():
             with timer("  ***POL-EXTRAPOLATE"):
                 self.get_extrapolated_guess_from_outputs()
-                guess_solution = self.guess_solution if self.guess_solution.numel() > 0 else guess
+                guess_solution = self.guess_solution if self.n_solves >= self.n_extrapolate_from else guess
 
             with timer("  ***POL-SOLVE"):
                 induced_multipoles, _ = self.solve(
                     coords, box, b_vector, guess_solution, 
                     eta, polarizabilities, inverse_polarizabilities, **kwargs
                 )
-
+                
             with timer("  ***POL-STORE"):
                 self.store_output(induced_multipoles)
             
@@ -239,7 +246,7 @@ class CMMPolarization(nn.Module):
         with timer("  POL-MATMUL-RECIP"):
             # Get reciprocal space field data (ewald + self contribution)
             if self.use_lr:
-                ewald_potential, ewald_field = self.ewald(
+                _, ewald_potential, ewald_field = self.ewald(
                         coords, box, induced_charges, induced_dipoles
                 )
                 if not self.use_customized_ops:
@@ -272,17 +279,19 @@ class CMMPolarization(nn.Module):
     ):
         if not self.use_customized_ops:
             tmp = self.compute_product_with_polarization_matrix(coords, box, induced_multipoles, eta, inverse_polarizabilities, **kwargs)
-            return torch.dot(induced_multipoles, 0.5*tmp-b_vector)
+            return torch.dot(
+                induced_multipoles, 
+                0.5*tmp-b_vector
+            )
         else:
             vec_out = torch.zeros(self.natoms*4+self.n_pol_groups, device=coords.device, dtype=coords.dtype)
             with timer("  POL-MATMUL-RECIP"):
                 # Get reciprocal space field data (ewald + self contribution)
-                if self.use_lr:
-                    induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
-                    induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
-                    ewald_potential, ewald_field = self.ewald(
-                            coords, box, induced_charges, induced_dipoles
-                    )
+                induced_charges = torch.narrow(induced_multipoles, 0, 0, self.natoms)
+                induced_dipoles = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(self.natoms, 3) 
+                ewald_energy, _, _ = self.ewald(
+                    coords, box, induced_charges, induced_dipoles
+                )
             with timer("  POL-MATMUL-CHARGE"):
                 # Get sum of induced charges in every polarization group
                 constraints = segment_csr(induced_charges[self.pol_group_indices_a], self.pol_group_segment_indices, reduce='sum')
@@ -296,14 +305,14 @@ class CMMPolarization(nn.Module):
                 lagrange_muls_a.scatter_add_(0, self.pol_group_indices_a, expanded_lagrange_muls)
         
             with timer("  POL-MATMUL-OTHER"):
-                vec_out[:self.natoms] += eta * induced_charges + lagrange_muls_a + ewald_potential
-                vec_out[self.natoms:self.natoms*4] += torch.bmm(inverse_polarizabilities, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten() - ewald_field.flatten()
+                vec_out[:self.natoms] += eta * induced_charges + lagrange_muls_a
+                vec_out[self.natoms:self.natoms*4] += torch.bmm(inverse_polarizabilities, induced_dipoles.unsqueeze(-1)).squeeze(-1).flatten()
                 vec_out[-self.n_pol_groups:] += constraints
 
             ene = torch.dot(induced_multipoles, 0.5*vec_out-b_vector) + torch.ops.torchff.cmm_polarization_energy_from_induced_multipoles(
-                kwargs['dist_vecs'], kwargs['pairs'], kwargs['dist_vecs_excl'], kwargs['pairs_excl'],
+                coords, box, kwargs['pairs'], kwargs['pairs_excl'],
                 induced_multipoles, kwargs['b_elec_ij'], self.alpha_ewald, self.rcut_sr, self.rcut_lr, self.natoms
-            )
+            ) + ewald_energy
             return ene
         
     def direct_polarization_guess_with_charge(self, vec_in: torch.Tensor, polarizabilities: torch.Tensor, eta: torch.Tensor):

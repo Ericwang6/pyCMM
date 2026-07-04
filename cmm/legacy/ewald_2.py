@@ -12,23 +12,26 @@ except Exception as e:
 class Ewald(nn.Module):
     def __init__(self, alpha: float, max_hkl: int, rank: int, use_customized_ops: bool = False):
         super().__init__()
-        sym_factors = []
-        all_hkl = []
-        for h in range(0, max_hkl+1):
-            for k in range(-max_hkl, max_hkl+1):
-                for l in range(-max_hkl, max_hkl+1):
-                    if h == 0 and k == 0 and l == 0:
-                        continue
-                    all_hkl.append([float(h), float(k), float(l)])
-                    sym_factors.append(2.0 if h > 0 else 1.0)
-                        
-        self.register_buffer('sym_factors', torch.tensor(sym_factors).unsqueeze(1))
-        self.register_buffer('all_hkl', torch.tensor(all_hkl))
-        self.alpha = alpha
-        self.alpha2 = alpha * alpha
-        self.alpha_over_root_pi = self.alpha / torch.sqrt(torch.tensor(torch.pi))
+        self.max_hkl = max_hkl
         self.rank = rank
         self.use_customized_ops = use_customized_ops
+        self.alpha = alpha
+
+        if not self.use_customized_ops:
+            sym_factors = []
+            all_hkl = []
+            for h in range(0, max_hkl+1):
+                for k in range(-max_hkl, max_hkl+1):
+                    for l in range(-max_hkl, max_hkl+1):
+                        if h == 0 and k == 0 and l == 0:
+                            continue
+                        all_hkl.append([float(h), float(k), float(l)])
+                        sym_factors.append(2.0 if h > 0 else 1.0)
+                            
+            self.register_buffer('sym_factors', torch.tensor(sym_factors).unsqueeze(1))
+            self.register_buffer('all_hkl', torch.tensor(all_hkl))
+            self.alpha2 = alpha * alpha
+            self.alpha_over_root_pi = self.alpha / torch.sqrt(torch.tensor(torch.pi))
     
     def forward(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
         if self.use_customized_ops:
@@ -37,13 +40,8 @@ class Ewald(nn.Module):
             return self._forward_python(coords, box, q, p, t)
     
     def _forward_cpp(self, coords, box, q, p, t):
-        res = torch.ops.torchff.ewald_long_range_potential(coords, box, q, p, t, self.all_hkl, self.sym_factors, self.alpha, self.rank)
-        if self.rank == 2:
-            return res
-        elif self.rank == 1:
-            return res[0], res[1]
-        else:
-            return res[0]
+        res = torch.ops.torchff.ewald_long_range(coords, box, q, p, t, self.max_hkl, self.rank, self.alpha)
+        return res[:-1]
     
     def _forward_python(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
         box_inv = torch.inverse(box)
@@ -82,7 +80,8 @@ class Ewald(nn.Module):
         potential = torch.sum(phi_expanded.real, dim=0) / (torch.pi * V)
         potential = potential - 2 * self.alpha_over_root_pi * q  # self contributions
         if self.rank == 0:
-            return potential
+            energy = 0.5 * torch.sum(potential * q)
+            return potential, None, None, energy
         
         field = 2 * (
             torch.matmul(phi_expanded.T, torch.complex(torch.zeros_like(kvectors), kvectors)).real
@@ -90,7 +89,8 @@ class Ewald(nn.Module):
         field = field + self.alpha_over_root_pi * (4 * self.alpha2 / 3) * p
 
         if self.rank == 1:
-            return potential, field
+            energy = 0.5 * (torch.sum(potential * q) - torch.sum(field * p))
+            return potential, field, None, energy
         
         k_outer = torch.einsum('bi,bj->bij', kvectors, kvectors).reshape(-1, 9)
         field_grad = 4 * torch.pi * (
@@ -99,4 +99,5 @@ class Ewald(nn.Module):
         field_grad = field_grad + self.alpha_over_root_pi * (16 * self.alpha2 * self.alpha2 / 5) * t / 3
 
         if self.rank == 2:
-            return potential, field, field_grad
+            energy = 0.5 * (torch.sum(potential * q) - torch.sum(field * p) - torch.sum(field_grad * t) / 3)
+            return potential, field, field_grad, energy

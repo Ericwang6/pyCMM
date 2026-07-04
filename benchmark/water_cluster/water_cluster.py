@@ -8,7 +8,7 @@ import torch
 import openmm.app as app
 from ase.optimize import LBFGS
 
-from cmm.interfaces import CMMCalculator
+from cmm.ase import CMMCalculator
 from cmm.ffxml import ForceFieldXML
 from cmm.topology import Topology
 from cmm.units import BOHR2NM, BOHR2ANG, HARTREE2KCAL
@@ -33,8 +33,8 @@ if __name__ == '__main__':
     device = 'cpu'
     df = pd.read_csv(os.path.join(os.path.dirname(__file__), 'reference.csv'))
 
-    ff_path = '../../optimization/water_aalim.xml'
-    output_dir = 'output/'
+    ff_path = '/pscratch/sd/e/eric6/pycmm-dev/workspace_water/water_opt.xml'
+    output_dir = 'output_new/'
 
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
