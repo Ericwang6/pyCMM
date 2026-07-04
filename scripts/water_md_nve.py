@@ -90,17 +90,9 @@ if __name__ == '__main__':
     device = 'cuda'
     torch.set_default_dtype(torch.float64)
 
-    ff_path = 'water.xml'
-    # pdb_path = 'water_216.pdb'
-
-    pdb_path = '/pscratch/sd/e/eric6/torchff-lib/tests/water/water_3000.pdb'
-
-    # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/tests/data/water_refit.xml'
-    # pdb_path = '/pscratch/sd/e/eric6/pycmm-dev/tests/data/water_216.pdb'
-
-    # ff_path = '/pscratch/sd/e/eric6/pycmm-dev/optimization/cmm_ethane.xml'
-    # pdb_path = '/pscratch/sd/e/eric6/pycmm-dev/workspace_new/ethane_216_gaff_opt.pdb'
-    # pdb_path = '/pscratch/sd/e/eric6/pycmm-dev/workspace_new/methanol_216_gaff_opt.pdb'
+    _here = os.path.dirname(__file__)
+    ff_path = os.environ.get('CMM_FF', os.path.join(_here, '..', 'tests', 'data', 'water_refit.xml'))
+    pdb_path = os.environ.get('CMM_PDB', os.path.join(_here, '..', 'tests', 'data', 'water_216.pdb'))
 
     ff = ForceFieldXML(ff_path, device='cuda')
     pdb = app.PDBFile(pdb_path)
@@ -109,7 +101,7 @@ if __name__ == '__main__':
         top, 
         use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-7, ewald_tolerance=1e-9,
         use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, 
-        use_customized_ops=False,
+        use_customized_ops=True,
         use_pme=False
     )
 
@@ -121,7 +113,7 @@ if __name__ == '__main__':
 
     # Optimization
     opt = LBFGS(atoms, logfile='opt.log')
-    opt.run(fmax=0.05, steps=2000)
+    opt.run(fmax=0.05, steps=int(os.environ.get('CMM_OPT_STEPS', 2000)))
     atoms.write('opt.xyz')
     print("Optimization finished")
 
@@ -139,6 +131,6 @@ if __name__ == '__main__':
     log = create_all_logger('water216_1ns.log', atoms, dyn)
     dyn.attach(log, interval=100)
 
-    dyn.run(1000000)
+    dyn.run(int(os.environ.get('CMM_NVE_STEPS', 1000000)))
 
     calc.print_profiler()
