@@ -348,7 +348,8 @@ class ForceFieldXML:
         angleParametrizer = AngleParametrizer(angleTypes, top, 'Angle')
         angleParams = [
             'theta_eq', 'k_theta', 'r_eq_1', 'r_eq_2', 'k_bb', 'k_ba_1', 'k_ba_2',
-            'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb'
+            'j_cf_angle', 'k_hardness_angle', 'j_cf_bb', 'k_hardness_bb',
+            'ang_dip_deriv_1', 'ang_dip_deriv_2'
         ]
         for p in angleParams:
             angleParametrizer.registerParameters(p, self.pset.find(f'Angles/Angle/{p}', self._empty_tensor))
@@ -550,7 +551,7 @@ class ForceFieldXML:
             top,
             name='Polarization'
         )
-        for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz', 'alpha_damp_exponent', 'alpha_damp_max']:
+        for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz','alpha_damp_exponent', 'alpha_damp_max']:
             polParametrizer.registerParameters(p, self.pset.find(f'Polarization/Pol/{p}'))
         parametrizers['Polarization'] = polParametrizer
 

@@ -6,7 +6,8 @@ __all__ = [
     "computeBondBondCoupling", "computeCosAnglePotential", "computeBondAngleCoupling",
     "computeChargeFluxBond", "computeChargeFluxBondBond", "computeChargeFluxAngle",
     "computeHardnessChangeBond", "computeHardnessChangeBondBond", "computeHardnessChangeAngle",
-    "computeFieldDependentMorseParams", "computeHarmonicBondPotential", "computeHarmonicAnglePotential"
+    "computeFieldDependentMorseParams", "computeHarmonicBondPotential", "computeHarmonicAnglePotential",
+    "computeFieldDependentCosAngleParams"
 ]
 
 def computeBondFromVecs(drVecs):
@@ -133,6 +134,7 @@ def computeFieldDependentMorseParams(
     # topology builder will have to look at the specific bond and force field terms
     # requested so that it can set up the bond indices appropriately. -Joe
     E_proj_p = torch.sum(bond_vecs_p * E_field_p, dim=-1) / bond_dists_p
+    #uncomment ct lines to use Morse CT expression
     dr_e_p = E_proj_p * dipole_1_p / (k_e_p - E_proj_p * dipole_2_p) #+ ct_slope_1_p * dQ_ct_p * dQ_ct_p
     k_e_fd = k_e_p - (3 * k_e_p * torch.sqrt(0.5 * k_e_p / D_e_p) * dr_e_p + E_proj_p * dipole_2_p) #+ ct_slope_2_p * dQ_ct_p * dQ_ct_p
     
@@ -204,3 +206,65 @@ def computeTorsionAngleAngleCoupling(
     else:
         energy = k * (angles2 - theta_eq_2) * (angles1 - theta_eq_1) * (1 + torch.cos(torsions * per - phase))
     return torch.where(energy > minv, energy, minv)
+
+@torch.compile
+def computeFieldDependentCosAngleParams(
+        bond_vecs_1_p: torch.Tensor,    # vec from B→A (or bisector direction)
+        bond_vecs_2_p: torch.Tensor,    # vec from B→C
+        theta_p: torch.Tensor,          # current angle θ (radians)
+        theta_eq_p: torch.Tensor,       # equilibrium angle θ₀
+        k_p: torch.Tensor,              # force constant k
+        dmu_dtheta_p: torch.Tensor,     # |∂μ/∂θ| at θ₀ (charge × length)
+        d2mu_dtheta2_p: torch.Tensor,   # |∂²μ/∂θ²| at θ₀ (charge × length; pass zeros to ignore)
+        E_field_p: torch.Tensor,        # electric field vector at atom B
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Evaluates the field-dependent force constant and equilibrium angle for the
+    cosine-harmonic angle potential.
+
+    Works analogously to computeFieldDependentMorseParams: the field is
+    projected onto the angle bisector direction at atom B, then used to
+    compute cosine-space coupling constants lambda1 and lambda2, which shift the
+    effective equilibrium and soften/stiffen the force constant.
+
+    All input tensors should have N_fd_angle entries.
+
+    Returns:
+        k_eff       — field-modified force constant
+        cos_theta0_eff — field-modified cos(theta_0)
+        theta0_eff  — arccos of the above (radians)
+    """
+    # Bisector direction: normalize the sum of the two unit bond vectors.
+    norm1 = torch.norm(bond_vecs_1_p, dim=-1, keepdim=True)
+    norm2 = torch.norm(bond_vecs_2_p, dim=-1, keepdim=True)
+    bisector = bond_vecs_1_p / norm1 + bond_vecs_2_p / norm2
+    bisector_norm = torch.norm(bisector, dim=-1, keepdim=True)
+    bisector_hat = bisector / bisector_norm          # unit bisector d_hat
+
+    # Project field onto the bisector at B (scalar, one per angle)
+    eps = torch.sum(E_field_p * bisector_hat, dim=-1)   # epsilon = field * d_hat
+
+    # Angular dipole couplings at theta0 (Eq. 4 of the PDF)
+    mu_prime  = dmu_dtheta_p  * eps   # mu' =  |dmu/dheta| * epsilon
+    mu_dprime = d2mu_dtheta2_p * eps  # mu'' = |d2mu/dtheta2| * epsilon
+
+    sin_t0  = torch.sin(theta_eq_p)
+    cos_t0  = torch.cos(theta_eq_p)
+    sin2_t0 = sin_t0 * sin_t0
+
+    # Cosine-space coupling constants (Eqs. 6–7)
+    lambda1 = -mu_prime / sin_t0
+    lambda2 = (mu_dprime - (cos_t0 / sin_t0) * mu_prime) / sin2_t0
+
+    # Field-dependent parameters (Eqs. 9–11)
+    k_eff = k_p - lambda2
+
+    # Guard against unphysical softening (mirrors the clamp in the Morse function)
+    k_eff = torch.clamp(k_eff, 0.4 * k_p)
+
+    cos_theta0_eff = cos_t0 + lambda1 / k_eff
+    # Clamp to valid arccos domain before inverting
+    cos_theta0_eff = torch.clamp(cos_theta0_eff, -1.0 + 1e-6, 1.0 - 1e-6)
+    theta0_eff = torch.arccos(cos_theta0_eff)
+
+    return (k_eff, cos_theta0_eff, theta0_eff)

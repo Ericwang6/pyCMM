@@ -301,7 +301,7 @@ class CMMPolarization(nn.Module):
                 vec_out[-self.n_pol_groups:] += constraints
 
             ene = torch.dot(induced_multipoles, 0.5*vec_out-b_vector) + torch.ops.torchff.cmm_polarization_energy_from_induced_multipoles(
-                kwargs['dist_vecs'], kwargs['pairs'], kwargs['dist_vecs_excl'], kwargs['pairs_excl'],
+                coords, box, kwargs['pairs'].to(torch.int64), kwargs['pairs_excl'].to(torch.int64),
                 induced_multipoles, kwargs['b_elec_ij'], self.alpha_ewald, self.rcut_sr, self.rcut_lr, self.natoms
             )
             return ene

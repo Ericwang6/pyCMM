@@ -103,7 +103,7 @@ def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_
     metrics = {}
     for key in keys:
         ax.plot(xdata, ene_ref[key], 'o-', color=EDA_COLORS[key], label=key)
-        if ene_cmm:
+        if ene_cmm is not None:
             ax.plot(xdata, ene_cmm[key], 'o--', color=EDA_COLORS[key])
             metrics[key] = report_metrics(ene_cmm[key], ene_ref[key])
     

@@ -88,13 +88,13 @@ if __name__ == '__main__':
     device = 'cuda'
     torch.set_default_dtype(torch.float64)
 
-    ff_path = 'water.xml'
+    ff_path = 'water-aalim-angd.xml'
     pdb_path = 'water_216.pdb'
 
     ff = ForceFieldXML(ff_path, device='cuda')
     pdb = app.PDBFile(pdb_path)
     top = Topology.fromOpenmm(pdb.topology, device)
-    system = ff.parametrize(top, use_fd_morse=True, use_polarization=True, polarization_tolerance=1e-5, use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, use_customized_ops=True)
+    system = ff.parametrize(top, use_fd_morse=True, use_fd_angle=True, use_polarization=True, polarization_tolerance=1e-7, use_hardness_change=False, use_lr_dispersion=True, cutoff_sr=9.0, use_switch=True, use_customized_ops=True)
 
     coords = torch.tensor(pdb.getPositions(asNumpy=True)._value / BOHR2NM, device=device, requires_grad=True)
     box = torch.tensor([[vec.x / BOHR2NM, vec.y / BOHR2NM, vec.z / BOHR2NM] for vec in pdb.topology.getPeriodicBoxVectors()], device=device, requires_grad=True)
@@ -121,6 +121,6 @@ if __name__ == '__main__':
     log = create_all_logger('water216_nve_1ps_1e-5_0.25fs.log', atoms, dyn)
     dyn.attach(log, interval=10)
 
-    dyn.run(500)
+    dyn.run(1000)
 
     calc.print_profiler()

@@ -215,6 +215,9 @@ class QChemReader:
         _read_coords = False
         old_version = None
         coords_lines = []
+        #NEW
+        dipoles = []          # will collect ALL dipole blocks, we want the last one
+        _read_dipole = False
 
         disp_id = "E_disp" if not use_cls_disp else "E_cls_disp"
 
@@ -227,6 +230,16 @@ class QChemReader:
                         old_version = True
                     else:
                         old_version = False
+                #NEW dipole block
+                if line.startswith('Dipole Moment (Debye)'):
+                    _read_dipole = True
+                    continue
+                if _read_dipole:
+                    content = line.split()
+                    dipo = [float(content[1]), float(content[3]), float(content[5])]
+                    dipoles.append(np.array(dipo))
+                    _read_dipole = False
+                    continue
                 
                 if (not old_version) and line.startswith("Decomposition of frozen interaction energy"):
                     _read = True
@@ -271,7 +284,7 @@ class QChemReader:
                     elif content[0] == "TOTAL":
                         res["TOTAL"] = float(content[1])
                         _read = False
-                        break
+                        #break
         
         # process coordinate lines
         atoms = []
@@ -317,8 +330,12 @@ class QChemReader:
         if unit == "kcal":
             for key in res.keys():
                 res[key] /= 4.184
+        # dipoles list has: [frag1_dipole, frag2_dipole, ..., dimer_dipole]
+        # The last entry is always the full system dipole from the main EDA job
+        dimer_dipole = dipoles[-1] if dipoles else None
+        frag_dipoles = dipoles[:-1] if len(dipoles) > 1 else []
 
-        return atoms, coords, charges, res
+        return atoms, coords, charges, res, dimer_dipole, frag_dipoles
     
     @staticmethod
     def read_out(out: Union[TextIO, os.PathLike]):

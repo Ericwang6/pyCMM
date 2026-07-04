@@ -87,7 +87,7 @@ class PolarizabilityData:
         coords = torch.tensor(np.array(coords) / BOHR2ANG)
         pols = torch.tensor(np.array(pols))
         return cls(top, coords, pol=pols, charge=mol.charge)
-    
+
 
 @dataclass
 class EdaData:
@@ -95,6 +95,8 @@ class EdaData:
     coords: torch.Tensor
     energies: Dict[str, torch.Tensor]
     eda_df: pd.DataFrame = None
+    dimer_dipoles_qm: torch.Tensor = None    
+    frag_dipoles_qm: list = None             
     num: int = field(init=False)
 
     def __post_init__(self):
@@ -141,14 +143,25 @@ class EdaData:
         top = app.PDBFile(pdb_file).topology
         coords = []
         energies = defaultdict(list)
+        dimer_dipoles = []      
+        frag_dipoles_list = []  
         for out in out_files:
-            _, coord, _, ene = QChemReader.read_eda_out(out, **kwargs)
+            #_, coord, _, ene = QChemReader.read_eda_out(out, **kwargs)
+            _, coord, _, ene, dimer_dipo, frag_dipos = QChemReader.read_eda_out(out, **kwargs)
             coord = np.vstack(coord)
             for key in ene.keys():
                 energies[key].append(ene[key])
             coords.append(coord)
+            if dimer_dipo is not None:               
+                dimer_dipoles.append(dimer_dipo)     
+            frag_dipoles_list.append(frag_dipos)     
+
 
         coords = torch.tensor(np.array(coords) / BOHR2ANG)
+        # Store dipoles as tensor (n_configs, 3) in Debye            
+        dimer_dipoles_tensor = torch.tensor(                         
+            np.array(dimer_dipoles)                                  
+        ) if dimer_dipoles else None  
 
         energies = {
             "perm_elec": torch.tensor(energies['CLS_ELEC']),
@@ -160,6 +173,8 @@ class EdaData:
         }
         
         data = cls(top, coords, energies)
+        data.dimer_dipoles_qm = dimer_dipoles_tensor   
+        data.frag_dipoles_qm  = frag_dipoles_list      
         return data
     
     @classmethod

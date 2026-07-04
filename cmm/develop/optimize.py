@@ -25,15 +25,14 @@ class Optimizer:
         additional_positive_constraints: List[str] = list(),
         fit_pair_params_only: bool = False,
         enforce_iso_pol: List[str] = list(),
+        physical_decay: bool = False,
+        
         **kwargs
     ):
-
-        # Logging
-        self.logger = kwargs.get('logger', None)
+        self.logger = kwargs.pop('logger', None)
         if self.logger is None:
             self.logger = Logger
 
-        # Set Parameters to be Optimized
         self.opt_params: Dict[str, torch.Tensor] = {}
         for force_name in ff.pset.data:
             for item_name in ff.pset.data[force_name]:
@@ -60,7 +59,6 @@ class Optimizer:
         
         self.logger.info(f"The following parameters are being optimized: \n{'\n'.join(self.opt_params.keys())}")
 
-        # Set AtomTypes to be optimized
         self.freeze_types = freeze_types.copy()
         if freeze_water:
             self.freeze_types.append('ow')
@@ -87,22 +85,35 @@ class Optimizer:
                 param_mask = torch.tensor(mask)
             
             self.masks[can_param_name] = param_mask
+        # ── Physical decay constraints ─────────────────────────────────────
+        self.physical_decay = physical_decay
+        self.physical_decay_constraints = []
+        if self.physical_decay:
+            # b parameters: O should decay slower → b_O < b_H
+            b_params_O_less = [
+                'ChargePenetration/CP/b_elec',
+                'PauliRepulsion/Pauli/b_pauli',
+                'ExchangePolarization/Xpol/b_xpol',
+                'ChargeTransfer/Direct/b_ct',
+                'Dispersion/Disp/b_disp',
+            ]
+            for can_param_name in self.opt_params:
+                if can_param_name in b_params_O_less:
+                    self.physical_decay_constraints.append(
+                        (can_param_name, 0, 1, 'O_less')
+                    )
+        # ──────────────────────────────────────────────────────────────────
         
-        # params enforced to be positive
         predefined_positive_constraints = [
             'ChargePenetration/CP/Z', 'ChargePenetration/CP/b_elec', 'ChargePenetration/Pair/b_elec',
             'PauliRepulsion/Pauli/q_pauli', 'PauliRepulsion/Pauli/b_pauli', 'PauliRepulsion/Pair/b_pauli',
             'ExchangePolarization/Xpol/b_xpol', 'ExchangePolarization/Pair/b_xpol',
             'Dispersion/Disp/C6_disp', 'Dispersion/Disp/b_disp', 'Dispersion/Pair/b_disp', 'Dispersion/Pair/C6_disp',
-            # 'ChargeTransfer/Direct/q_ct_don', 
             'ChargeTransfer/Direct/b_ct', 'ChargeTransfer/Pair/b_ct', 'ChargeTransfer/Indirect/eps_ct',
             'Polarization/Pol/eta', 'Polarization/Pol/alpha_xx', 'Polarization/Pol/alpha_yy', 'Polarization/Pol/alpha_zz',
             'Polarization/Pol/alpha_damp_exponent', 'Polarization/Pol/alpha_damp_max',
             'Bonds/Bond/r_eq', 'Bonds/Bond/D', 'Bonds/Bond/k_b',
             'Angles/Angle/theta_eq', 'Angles/Angle/k_theta',
-            # from here are the equilibrium values in the coupling terms
-            # by definition they should be asscoicated with their values and not re-defined in the 
-            # terms, but the current codes do this
             'Torsions/Torsion/theta_eq_1', 'Torsions/Torsion/theta_eq_2',
             'Angles/Angle/r_eq_1', 'Angles/Angle/r_eq_2', 
             'AngleAngleCoupling/AngleAngle/theta_eq_1', 'AngleAngleCoupling/AngleAngle/theta_eq_2',
@@ -116,10 +127,8 @@ class Optimizer:
         
         self.logger.info(f"The following parameters are enforced to be positive during optimization: \n{'\n'.join(self.positive_constraints)}")
         
-        # set torch optimizer
         self.set_torch_optimizer(optim, lr, **kwargs)
 
-        # set L2 regularization
         self.l2 = l2
         self.l2_params = l2_params
         self.l2_params_tensors = {}
@@ -149,9 +158,9 @@ class Optimizer:
             param.grad = param.grad * self.masks[name]
         
         if self.enforce_iso_pol_indices:
-            grad = (self.opt_params['Polarization/Pol/alpha_xx'].grad[self.enforce_iso_pol_indices] + \
-                self.opt_params['Polarization/Pol/alpha_yy'].grad[self.enforce_iso_pol_indices] + \
-                self.opt_params['Polarization/Pol/alpha_zz'].grad[self.enforce_iso_pol_indices] ) / 3
+            grad = (self.opt_params['Polarization/Pol/alpha_xx'].grad[self.enforce_iso_pol_indices] +
+                self.opt_params['Polarization/Pol/alpha_yy'].grad[self.enforce_iso_pol_indices] +
+                self.opt_params['Polarization/Pol/alpha_zz'].grad[self.enforce_iso_pol_indices]) / 3
             self.opt_params['Polarization/Pol/alpha_xx'].grad[self.enforce_iso_pol_indices] = grad
             self.opt_params['Polarization/Pol/alpha_yy'].grad[self.enforce_iso_pol_indices] = grad
             self.opt_params['Polarization/Pol/alpha_zz'].grad[self.enforce_iso_pol_indices] = grad
@@ -166,6 +175,29 @@ class Optimizer:
                     param.clamp_(min=1e-6)
                     param *= mask
                 self.logger.warning(f'Some values in {name} are forcibly set to positive')
+        # ── Physical decay constraints ─────────────────────────────────────
+        if self.physical_decay:
+            with torch.no_grad():
+                for can_param_name, O_idx, H_idx, constraint in self.physical_decay_constraints:
+                    if can_param_name not in self.opt_params:
+                        continue
+                    param = self.opt_params[can_param_name]
+                    val_O = param[O_idx].item()
+                    val_H = param[H_idx].item()
+
+                    if constraint == 'O_less':
+                        # b_O < b_H: O decays slower (smaller b)
+                        if val_O >= val_H:
+                            mid = (val_O + val_H) / 2
+                            param[O_idx] = mid * 0.99
+                            param[H_idx] = mid * 1.01
+                            self.logger.warning(
+                                f'Physical decay enforced for {can_param_name}: '
+                                f'b_O={val_O:.4f} >= b_H={val_H:.4f}, '
+                                f'corrected to b_O={param[O_idx].item():.4f}, '
+                                f'b_H={param[H_idx].item():.4f}'
+                            )
+        # ──────────────────────────────────────────────────────────────────
 
 
 def weight_mse(y_true: torch.Tensor, y_pred: torch.Tensor, weights=None):
@@ -173,7 +205,6 @@ def weight_mse(y_true: torch.Tensor, y_pred: torch.Tensor, weights=None):
         weights = torch.ones_like(y_true) / y_true.numel()
     else:
         weights = weights / torch.sum(weights)
-
     loss = torch.sum((y_true - y_pred) ** 2 * weights)
     return loss
 
@@ -201,13 +232,12 @@ class Trainer:
         eda_weights = dict(), 
         qsum_constr: float = 1e5, 
         weight_func: str | Callable | None = 'interaction',
-        imbalance_loss: float = 1.0
+        imbalance_loss: float = 1.0,
     ):
         self.ff = ff
         self.optimizer = optimizer
         self.optimize_charge = 'Multipoles/Multipole/c0' in self.optimizer.opt_params
 
-        # weights
         self.target_weights = {
             'EdaData': 1.0,
             'EspData': 1000.0,
@@ -244,7 +274,7 @@ class Trainer:
         if isinstance(data, EdaData):
             res = system.getEnergy(data.coords, energy_in_kcal=True, include_bonded=False)
             ref = data.energies
-            ref_charge, charge = torch.zeros_like(res['charges']), torch.zeros_like(res['charges'])   
+            ref_charge, charge = torch.zeros_like(res['charges']), torch.zeros_like(res['charges'])
         elif isinstance(data, EspData):
             res = system.getEnergy(data.coord.unsqueeze(0), grid=[data.grid])
             res, ref, charge = res['grid_epot'][0], data.esp, res['charges']

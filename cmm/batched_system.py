@@ -13,7 +13,8 @@ from .bonded import (
     computeTorsionBondCoupling, computeTorsionAngleAngleCoupling, 
     computeChargeFluxBond, computeChargeFluxAngle, computeChargeFluxBondBond,
     computeHardnessChangeBond, computeHardnessChangeAngle, computeHardnessChangeBondBond,
-    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential
+    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential,
+    computeFieldDependentCosAngleParams
 )
 from .multipole import (
     computeLocal2GlobalRotationMatrixBatch,
@@ -31,7 +32,7 @@ from .short_range import (
 from .dispersion import computeDispersionFromPairs
 from .polarization import get_field_dependent_polarizabilities
 from .electrostatics import computePermanentElectricPotentialExpansion
-from .units import HARTREE2KCAL
+from .units import HARTREE2KCAL, BOHR2ANG
 
 
 class BatchedSystem(nn.Module):
@@ -41,6 +42,7 @@ class BatchedSystem(nn.Module):
         top: Topology,
         parametrizers: Dict[str, Parametrizer],
         use_fd_morse: bool = True,
+        use_fd_angle: bool = True,
         use_polarization: bool = True,
         use_hardness_change: bool = False,
         **kwargs
@@ -60,6 +62,7 @@ class BatchedSystem(nn.Module):
         self._has_torsions = self.ndihedrals > 0
 
         self.use_fd_morse = use_fd_morse
+        self.use_fd_angle = use_fd_angle
         self.use_hardness_change = use_hardness_change
 
         # polarization settings
@@ -510,6 +513,28 @@ class BatchedSystem(nn.Module):
                 ene_pol_ct = torch.bmm(solutions_ct.unsqueeze(1), 0.5 * torch.bmm(A_matrix, solutions_ct.unsqueeze(2)) - b_vector_ct.unsqueeze(2)).squeeze()
                 ene_ct_indirect = ene_pol_ct - ene_pol
         
+        if self.use_polarization and self._has_nb:
+            # solutions_ct is shape (nbz, natoms*4 + n_pol_groups)
+            # first natoms entries = induced charges (q_ind)
+            # next 3*natoms entries = induced dipoles (mu_ind), x/y/z interleaved
+            n = self.natoms
+            q_ind  = solutions_ct[:, :n*4:4]              # (nbz, natoms) — every 4th entry starting at 0
+            mu_ind = torch.stack([
+                solutions_ct[:, 1:n*4:4],                 # x components
+                solutions_ct[:, 2:n*4:4],                 # y components  
+                solutions_ct[:, 3:n*4:4],                 # z components
+            ], dim=-1)                                     # (nbz, natoms, 3)
+
+            # (q_perm + q_ind) * coords + (mu_perm + mu_ind)
+            total_mono = mono.reshape(nbz, n) + q_ind
+            total_dipo = dipo.reshape(nbz, n, 3) + mu_ind
+            total_dipoles = torch.sum(
+                total_mono.unsqueeze(-1) * coords + total_dipo,
+                dim=1
+            )  # (nbz, 3)
+        else:
+            total_dipoles = permanent_dipoles
+        
         # Field-dependent morse 
         if not self.parametrizers['Bond'].is_empty:
             
@@ -541,7 +566,33 @@ class BatchedSystem(nn.Module):
             ene_bond = torch.sum(ene_bond_list.reshape(nbz, -1), dim=1)
         else:
             ene_bond = torch.zeros(nbz, dtype=dtype, device=device)
+        # Field-dependent cosine-harmonic angle
+        if self.use_fd_angle and not self.parametrizers['Angle'].is_empty:
+            angleIndices = self.parametrizers['Angle'].getExpandParameters("atomIndices")
+            theta_eq_fd = self.parametrizers['Angle'].getExpandParameters("theta_eq")
+            k_th_fd = self.parametrizers['Angle'].getExpandParameters("k_theta")
+            dmu_dtheta = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_1')
+            d2mu_dtheta2 = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_2')
 
+            bondVecs_ij_fd = coords[:, angleIndices[:, 0]] - coords[:, angleIndices[:, 1]]
+            bondVecs_kj_fd = coords[:, angleIndices[:, 2]] - coords[:, angleIndices[:, 1]]
+            thetas_fd = computeAngleFromVecs(bondVecs_ij_fd, bondVecs_kj_fd)
+
+            # field at central O atom (atom index 1 in each angle)
+            efield_angle = efield.reshape(nbz, self.natoms, 3)[:, angleIndices[:, 1], :]  # (nbz, n_angles, 3)
+
+            from .bonded import computeFieldDependentCosAngleParams
+            k_eff, _, theta0_eff = computeFieldDependentCosAngleParams(
+                bondVecs_ij_fd, bondVecs_kj_fd,
+                thetas_fd, theta_eq_fd, k_th_fd,
+                dmu_dtheta, d2mu_dtheta2,
+                efield_angle
+            )
+
+            ene_angle_fd   = torch.sum(computeCosAnglePotential(thetas_fd, theta0_eff, k_eff).reshape(nbz, -1), dim=1)
+            ene_angle_base = torch.sum(computeCosAnglePotential(thetas_fd, theta_eq_fd, k_th_fd).reshape(nbz, -1), dim=1)
+            ene_angle = ene_angle + (ene_angle_fd - ene_angle_base)
+       
         energies = {
             "perm_elec": ene_elec,
             "elec_pol": ene_pol,
@@ -551,7 +602,7 @@ class BatchedSystem(nn.Module):
             "pauli": ene_pauli,
             "disp": ene_disp,
             "pol": ene_pol + ene_xpol,
-            "ct": ene_ct_indirect + ene_ct_direct,
+            "ct": ene_ct_indirect + ene_ct_direct
         }
 
         if include_bonded:
@@ -576,7 +627,7 @@ class BatchedSystem(nn.Module):
         energies['total'] = ene_total
 
         energies.update({"charges": charges,
-            "dipoles": permanent_dipoles,
+            "dipoles": total_dipoles,
             "grid_epot": grid_epot,
             "grid_efield": grid_efield,
             "grid_efield_grad": grid_efield_grad,

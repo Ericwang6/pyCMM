@@ -28,6 +28,7 @@ class Ewald(nn.Module):
         self.alpha2 = alpha * alpha
         self.alpha_over_root_pi = self.alpha / torch.sqrt(torch.tensor(torch.pi))
         self.rank = rank
+        self.k_max = max_hkl
         self.use_customized_ops = use_customized_ops
     
     def forward(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
@@ -37,13 +38,15 @@ class Ewald(nn.Module):
             return self._forward_python(coords, box, q, p, t)
     
     def _forward_cpp(self, coords, box, q, p, t):
-        res = torch.ops.torchff.ewald_long_range_potential(coords, box, q, p, t, self.all_hkl, self.sym_factors, self.alpha, self.rank)
+        energy, pot, field = torch.ops.torchff.ewald_long_range_all(
+        coords, box, q, p, t, self.k_max, self.alpha
+        )
         if self.rank == 2:
-            return res
+            return energy, pot, field
         elif self.rank == 1:
-            return res[0], res[1]
+            return pot, field
         else:
-            return res[0]
+            return pot
     
     def _forward_python(self, coords: torch.Tensor, box: torch.Tensor, q: torch.Tensor, p: Optional[torch.Tensor] = None, t: Optional[torch.Tensor] = None):
         box_inv = torch.inverse(box)
