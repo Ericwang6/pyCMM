@@ -58,7 +58,8 @@ class Optimizer:
             if remove:
                 self.opt_params.pop(remove)
         
-        self.logger.info(f"The following parameters are being optimized: \n{'\n'.join(self.opt_params.keys())}")
+        opt_param_names = '\n'.join(self.opt_params.keys())
+        self.logger.info(f"The following parameters are being optimized: \n{opt_param_names}")
 
         # Set AtomTypes to be optimized
         self.freeze_types = freeze_types.copy()
@@ -97,7 +98,7 @@ class Optimizer:
             # 'ChargeTransfer/Direct/q_ct_don', 
             'ChargeTransfer/Direct/b_ct', 'ChargeTransfer/Pair/b_ct', 'ChargeTransfer/Indirect/eps_ct',
             'Polarization/Pol/eta', 'Polarization/Pol/alpha_xx', 'Polarization/Pol/alpha_yy', 'Polarization/Pol/alpha_zz',
-            'Polarization/Pol/alpha_damp_exponent', 'Polarization/Pol/alpha_damp_max',
+            'Polarization/Pol/sat_c_iso', 'Polarization/Pol/sat_c_ani', 'Polarization/Pol/sat_w', 'Polarization/Pol/sat_e0',
             'Bonds/Bond/r_eq', 'Bonds/Bond/D', 'Bonds/Bond/k_b',
             'Angles/Angle/theta_eq', 'Angles/Angle/k_theta',
             # from here are the equilibrium values in the coupling terms
@@ -114,7 +115,8 @@ class Optimizer:
             if (can_param_name in predefined_positive_constraints) or (can_param_name in additional_positive_constraints) or (param_name in additional_positive_constraints):
                 self.positive_constraints.append(can_param_name)
         
-        self.logger.info(f"The following parameters are enforced to be positive during optimization: \n{'\n'.join(self.positive_constraints)}")
+        positive_constraint_names = '\n'.join(self.positive_constraints)
+        self.logger.info(f"The following parameters are enforced to be positive during optimization: \n{positive_constraint_names}")
         
         # set torch optimizer
         self.set_torch_optimizer(optim, lr, **kwargs)

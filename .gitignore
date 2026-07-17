@@ -6,6 +6,8 @@ checkpoint*.json
 tests/scratch/*
 water216_cell_*.json
 
+docs/
+
 # Notebooks
 notebooks/
 

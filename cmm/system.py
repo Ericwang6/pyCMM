@@ -38,7 +38,8 @@ from .dispersion import computeDispersionFromPairs, computeLongRangeDispersionCo
 from .ewald import Ewald
 from .pme_helper import PME
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
-from .polarization import get_field_dependent_polarizabilities, CMMPolarization
+from .polarization import CMMPolarization
+from .dipole_saturation import unit_field_axis
 from .switching_functions import SwitchFunction
 
 import time, os
@@ -85,6 +86,7 @@ class System(nn.Module):
         use_pme: bool = False,
         use_lr_dispersion: bool = True,
         use_polarization: bool = True,
+        use_dipole_saturation: bool = True,
         use_switch: bool = True,
         use_hardness_change: bool = True,
         switch_buffer: float = 2.0,
@@ -132,6 +134,7 @@ class System(nn.Module):
 
         # polarization settings
         self.use_polarization = use_polarization
+        self.use_dipole_saturation = use_dipole_saturation
         self.n_pol_groups = self.top.n_pol_groups
         self.pol_group_indices_a = self.top.pol_group_indices_a
         self.pol_group_segment_indices = self.top.pol_group_segment_indices
@@ -618,12 +621,15 @@ class System(nn.Module):
                             eta_times_2 = eta * 2
 
                             alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
-                            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")
-                            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")
-
+                            # free-ion polarizabilities; saturation enters the solve instead
                             polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                            
+                            sat_c_iso = self.parametrizers['Polarization'].getExpandParameters("sat_c_iso")
+                            sat_c_ani = self.parametrizers['Polarization'].getExpandParameters("sat_c_ani")
+                            sat_w = self.parametrizers['Polarization'].getExpandParameters("sat_w")
+                            sat_e0 = self.parametrizers['Polarization'].getExpandParameters("sat_e0")
+                            sat_alpha_iso = torch.diagonal(polarizabilities, dim1=-2, dim2=-1).mean(dim=-1)
+                            sat_axis = unit_field_axis(efield)
+
                         # Evaluate initial guess #
                         if self.last_induced_multipoles.numel() == 0:
                             self.last_induced_multipoles = self.polarization_solver.direct_polarization_guess_without_charge(polarizabilities, efield)
@@ -648,6 +654,13 @@ class System(nn.Module):
                                 self.last_induced_multipoles,
                                 eta_times_2,
                                 polarizabilities,
+                                use_dipole_saturation=self.use_dipole_saturation,
+                                sat_axis=sat_axis,
+                                sat_alpha_iso=sat_alpha_iso,
+                                sat_c_iso=sat_c_iso,
+                                sat_c_ani=sat_c_ani,
+                                sat_w=sat_w,
+                                sat_e0=sat_e0,
                                 pairs_lr_i_a=pairs_lr_bidir[:, 0], pairs_lr_j_a=pairs_lr_bidir[:, 1],
                                 pairs_sr_i_a=pairs_sr_bidir[:, 0], pairs_sr_j_a=pairs_sr_bidir[:, 1],
                                 pairs_excl_i_a=self.pairs_i_excl_bidir, pairs_excl_j_a=self.pairs_j_excl_bidir,
@@ -942,16 +955,19 @@ class System(nn.Module):
                             eta_times_2 = eta * 2
 
                             alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")
-                            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")
-                            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")
-
+                            # free-ion polarizabilities; saturation enters the solve instead
                             polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-                            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-                            
+                            sat_c_iso = self.parametrizers['Polarization'].getExpandParameters("sat_c_iso")
+                            sat_c_ani = self.parametrizers['Polarization'].getExpandParameters("sat_c_ani")
+                            sat_w = self.parametrizers['Polarization'].getExpandParameters("sat_w")
+                            sat_e0 = self.parametrizers['Polarization'].getExpandParameters("sat_e0")
+                            sat_alpha_iso = torch.diagonal(polarizabilities, dim1=-2, dim2=-1).mean(dim=-1)
+                            sat_axis = unit_field_axis(efield)
+
                         # Evaluate initial guess #
                         if self.last_induced_multipoles.numel() == 0:
                             self.last_induced_multipoles = self.polarization_solver.direct_polarization_guess_without_charge(polarizabilities, efield)
-                            
+
                         with timer("  Polarization-compute"):
                             ene_pol, induced_multipoles, induced_ewald_field_grad= self.polarization_solver(
                                 coords,
@@ -960,6 +976,13 @@ class System(nn.Module):
                                 self.last_induced_multipoles,
                                 eta_times_2,
                                 polarizabilities,
+                                use_dipole_saturation=self.use_dipole_saturation,
+                                sat_axis=sat_axis,
+                                sat_alpha_iso=sat_alpha_iso,
+                                sat_c_iso=sat_c_iso,
+                                sat_c_ani=sat_c_ani,
+                                sat_w=sat_w,
+                                sat_e0=sat_e0,
                                 pairs=pairs_lr.to(torch.int32),
                                 pairs_excl=self.pairs_excl.to(torch.int32),
                                 b_elec_ij=b_elec_ij,

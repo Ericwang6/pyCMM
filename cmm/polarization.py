@@ -1,10 +1,11 @@
-import os, time
+import os, time, warnings
 from typing import Tuple
 import torch
 import torch.nn as nn
 from torch_scatter import segment_csr
 from .ewald import Ewald
 from.pme_helper import PME
+from .dipole_saturation import saturation_energy, saturation_secant_matrix
 
 try:
     import torchff
@@ -34,13 +35,18 @@ else:
         yield
 
 
-@torch.compile
 def get_field_dependent_polarizabilities(
         polarizabilities_a: torch.Tensor,
         elec_field_a: torch.Tensor,
         alpha_damp_exponent_a: torch.Tensor,
         alpha_damp_max_a: torch.Tensor
     ):
+    warnings.warn(
+        "get_field_dependent_polarizabilities is deprecated: field-dependent "
+        "polarizability scaling has been replaced by dipole saturation "
+        "(cmm.dipole_saturation, sat_c_iso/sat_c_ani/sat_w parameters).",
+        DeprecationWarning, stacklevel=2
+    )
     elec_field_mag_sq_a = torch.sum(elec_field_a * elec_field_a, dim=1)
     damp_factor_a = alpha_damp_max_a * (1 - torch.exp(-alpha_damp_exponent_a * elec_field_mag_sq_a))
     return polarizabilities_a - damp_factor_a.view(-1, 1, 1) * polarizabilities_a
@@ -144,11 +150,26 @@ class CMMPolarization(nn.Module):
         guess,
         eta,
         polarizabilities,
+        use_dipole_saturation: bool = False,
+        sat_axis=None,
+        sat_alpha_iso=None,
+        sat_c_iso=None,
+        sat_c_ani=None,
+        sat_w=None,
+        sat_e0=None,
+        sat_max_iter: int = 10,
+        sat_tol: float = 1e-9,
         **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with timer("  ***POL-INV-ALPHA"):
             inverse_polarizabilities = torch.inverse(polarizabilities)
-        
+
+        use_sat = use_dipole_saturation and sat_c_iso is not None and bool(
+            torch.any(sat_c_iso != 0) or torch.any(sat_c_ani != 0)
+        )
+        if use_sat and sat_e0 is None:
+            sat_e0 = torch.full_like(sat_c_iso, 0.05)
+
         with torch.no_grad():
             with timer("  ***POL-EXTRAPOLATE"):
                 self.get_extrapolated_guess_from_outputs()
@@ -156,15 +177,37 @@ class CMMPolarization(nn.Module):
 
             with timer("  ***POL-SOLVE"):
                 induced_multipoles, _ = self.solve(
-                    coords, box, b_vector, guess_solution, 
+                    coords, box, b_vector, guess_solution,
                     eta, polarizabilities, inverse_polarizabilities, **kwargs
                 )
+                if use_sat:
+                    # Outer Picard loop: rebuild the dipole self-block with the
+                    # secant matrix K(mu) so that the fixed point satisfies
+                    # alpha^-1 mu + grad U_sat(mu) = E_tot exactly.
+                    mu = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(-1, 3)
+                    for _ in range(sat_max_iter):
+                        K = saturation_secant_matrix(mu, sat_alpha_iso, sat_axis, sat_c_iso, sat_c_ani, sat_w, field_scale=sat_e0)
+                        B = inverse_polarizabilities + K
+                        induced_multipoles, _ = self.solve(
+                            coords, box, b_vector, induced_multipoles,
+                            eta, torch.inverse(B), B, **kwargs
+                        )
+                        mu_new = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(-1, 3)
+                        dmu = torch.max(torch.abs(mu_new - mu))
+                        mu = mu_new
+                        if dmu < sat_tol:
+                            break
 
             with timer("  ***POL-STORE"):
                 self.store_output(induced_multipoles)
-            
+
         with timer("  ***POL-ENERGY"):
+            # quadratic part always uses the free-ion alpha^-1; the saturation
+            # self-energy is added explicitly below
             ene, ewald_field_grad = self.compute_polarization_energy(coords, box, induced_multipoles, b_vector, eta, inverse_polarizabilities, **kwargs)
+            if use_sat:
+                mu = torch.narrow(induced_multipoles, 0, self.natoms, 3 * self.natoms).reshape(-1, 3)
+                ene = ene + torch.sum(saturation_energy(mu, sat_alpha_iso, sat_axis, sat_c_iso, sat_c_ani, sat_w, field_scale=sat_e0))
         if self.use_customized_ops and ewald_field_grad is not None:
             return ene, induced_multipoles, ewald_field_grad
         else:

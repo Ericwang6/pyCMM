@@ -29,7 +29,9 @@ from .short_range import (
     computeShortRangePolarizationDampFactors
 )
 from .dispersion import computeDispersionFromPairs
-from .polarization import get_field_dependent_polarizabilities
+from .dipole_saturation import (
+    unit_field_axis, saturation_energy, saturation_secant_matrix
+)
 from .electrostatics import computePermanentElectricPotentialExpansion
 from .units import HARTREE2KCAL
 
@@ -43,6 +45,9 @@ class BatchedSystem(nn.Module):
         use_fd_morse: bool = True,
         use_polarization: bool = True,
         use_hardness_change: bool = False,
+        use_dipole_saturation: bool = True,
+        sat_max_iter: int = 10,
+        sat_tol: float = 1e-9,
         **kwargs
     ):
         super().__init__()
@@ -64,6 +69,9 @@ class BatchedSystem(nn.Module):
 
         # polarization settings
         self.use_polarization = use_polarization
+        self.use_dipole_saturation = use_dipole_saturation
+        self.sat_max_iter = sat_max_iter
+        self.sat_tol = sat_tol
         self.n_pol_groups = self.top.n_pol_groups
         self.pol_group_indices_a = self.top.pol_group_indices_a
         self.pol_group_segment_indices = self.top.pol_group_segment_indices
@@ -118,12 +126,16 @@ class BatchedSystem(nn.Module):
         for _, parametrizer in self.parametrizers.items():
             parametrizer.expandParameters()
     
-    def getEnergy(self, coords: torch.Tensor, grid: List[torch.Tensor] = list(), energy_in_kcal: bool = False, include_bonded: bool = True):
+    def getEnergy(self, coords: torch.Tensor, grid: List[torch.Tensor] = list(), energy_in_kcal: bool = False, include_bonded: bool = True, ext_field: torch.Tensor = None):
         '''
         Parameters
         ----------
         coords: torch.Tensor
             Shape (n_bz, n_atoms, 3)
+        ext_field: torch.Tensor, optional
+            Uniform external electric field in a.u., shape (3,) or (n_bz, 3).
+            Added to the permanent field (and potential) driving the
+            polarization solve; used for finite-field polarizabilities.
         '''
         self.expandParametrizers()
 
@@ -283,6 +295,7 @@ class BatchedSystem(nn.Module):
         ene_xpol = torch.zeros(nbz, device=device, dtype=dtype)
         ene_pauli = torch.zeros(nbz, device=device, dtype=dtype)
         ene_disp = torch.zeros(nbz, device=device, dtype=dtype)
+        induced_molecular_dipole = torch.zeros((nbz, 3), device=device, dtype=dtype)
         # these two variables are used in evaluate fd-morse
         efield = torch.zeros((self.natoms*nbz, 3), device=device, dtype=dtype)
         dq_a = torch.zeros(self.natoms*nbz, device=device, dtype=dtype)
@@ -325,10 +338,16 @@ class BatchedSystem(nn.Module):
             inv_eta = 1 / eta_times_2
 
             alpha = self.parametrizers['Polarization'].getExpandParameters("alpha")[expand_to_batch_indices]
-            alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")[expand_to_batch_indices]
-            alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")[expand_to_batch_indices]
+            # free-ion polarizabilities: left untouched, saturation enters the solve instead
             polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+            sat_c_iso = self.parametrizers['Polarization'].getExpandParameters("sat_c_iso")[expand_to_batch_indices]
+            sat_c_ani = self.parametrizers['Polarization'].getExpandParameters("sat_c_ani")[expand_to_batch_indices]
+            sat_w = self.parametrizers['Polarization'].getExpandParameters("sat_w")[expand_to_batch_indices]
+            sat_e0 = self.parametrizers['Polarization'].getExpandParameters("sat_e0")[expand_to_batch_indices]
+            alpha_iso = torch.diagonal(polarizabilities, dim1=-2, dim2=-1).mean(dim=-1)
+            use_sat = self.use_dipole_saturation and bool(
+                torch.any(sat_c_iso != 0) or torch.any(sat_c_ani != 0)
+            )
             # shape nbz,3,3
             molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
             # shape nbz, 3, 3
@@ -486,12 +505,21 @@ class BatchedSystem(nn.Module):
                     1
                 )
 
+                # optional uniform external field (finite-field polarizabilities)
+                efield_tot = efield
+                epot_tot = epot
+                if ext_field is not None:
+                    e_ext = torch.as_tensor(ext_field, device=device, dtype=dtype).reshape(-1, 3)
+                    e_ext_a = e_ext.expand(nbz, 3).unsqueeze(1).expand(nbz, self.natoms, 3).reshape(-1, 3)
+                    efield_tot = efield + e_ext_a
+                    epot_tot = epot - torch.sum(coords_flatten * e_ext_a, dim=-1)
+
                 # fill b-vector
                 b_vector = torch.zeros((nbz, self.natoms*4+self.n_pol_groups), device=device, dtype=dtype)
-                b_vector[:, self._fill_bvec_epot_indices] = -epot.reshape(nbz, -1)
-                b_vector[:, self._fill_bvec_efield_indices] = efield.reshape(nbz, -1)
+                b_vector[:, self._fill_bvec_epot_indices] = -epot_tot.reshape(nbz, -1)
+                b_vector[:, self._fill_bvec_efield_indices] = efield_tot.reshape(nbz, -1)
 
-                # fill A-matrix
+                # fill A-matrix (free-ion dipole self-block)
                 inverse_polarizabilities = torch.inverse(polarizabilities)
                 A_matrix = torch.zeros((nbz, self.n_pol_groups+self.natoms*4, self.n_pol_groups+self.natoms*4), device=device, dtype=dtype)
                 A_matrix[:, self._row_indices_1x1, self._row_indices_1x1] = eta_times_2.reshape(nbz, -1)
@@ -500,15 +528,52 @@ class BatchedSystem(nn.Module):
                 A_matrix[:, self._row_indices_4x4_transpose, self._col_indices_4x4_transpose] = pol_tensor.permute(0, 2, 1).reshape(nbz, -1)
                 A_matrix[:, self._row_indices_constraint, self._col_indices_constraint] = torch.ones((nbz, self.natoms), dtype=dtype, device=device)
                 A_matrix[:, self._col_indices_constraint, self._row_indices_constraint] = torch.ones((nbz, self.natoms), dtype=dtype, device=device)
-                solutions = torch.linalg.solve(A_matrix, b_vector)
-                ene_pol = torch.bmm(solutions.unsqueeze(1), 0.5 * torch.bmm(A_matrix, solutions.unsqueeze(2)) - b_vector.unsqueeze(2)).squeeze()
-                
+
+                sat_axis = unit_field_axis(efield_tot) if use_sat else None
+
+                def solve_polarization(bv):
+                    """Solve the (possibly saturated) polarization equations.
+
+                    Returns the solution vector and the variational energy
+                    1/2 x^T A0 x - b^T x + sum_i U_sat,i(mu_i), where A0 keeps
+                    the free-ion dipole block. With saturation, the dipole
+                    self-block is updated with the secant matrix K(mu) until
+                    self-consistency, so the fixed point satisfies
+                    alpha^-1 mu + grad U_sat(mu) = E_tot exactly.
+                    """
+                    x = torch.linalg.solve(A_matrix, bv)
+                    e_sat = torch.zeros(nbz, device=device, dtype=dtype)
+                    if use_sat:
+                        for _ in range(self.sat_max_iter):
+                            mu = x[:, self._fill_bvec_efield_indices].reshape(-1, 3)
+                            K = saturation_secant_matrix(mu, alpha_iso, sat_axis, sat_c_iso, sat_c_ani, sat_w, field_scale=sat_e0)
+                            A_sat = A_matrix.clone()
+                            A_sat[:, self._row_indices_3x3, self._col_indices_3x3] = (inverse_polarizabilities + K).reshape(nbz, -1)
+                            x_new = torch.linalg.solve(A_sat, bv)
+                            dmu = torch.max(torch.abs(
+                                x_new[:, self._fill_bvec_efield_indices] - x[:, self._fill_bvec_efield_indices]
+                            ))
+                            x = x_new
+                            if dmu < self.sat_tol:
+                                break
+                        mu = x[:, self._fill_bvec_efield_indices].reshape(-1, 3)
+                        e_sat = saturation_energy(mu, alpha_iso, sat_axis, sat_c_iso, sat_c_ani, sat_w, field_scale=sat_e0).reshape(nbz, -1).sum(dim=1)
+                    ene = torch.bmm(x.unsqueeze(1), 0.5 * torch.bmm(A_matrix, x.unsqueeze(2)) - bv.unsqueeze(2)).squeeze() + e_sat
+                    return x, ene
+
+                solutions, ene_pol = solve_polarization(b_vector)
+
                 b_vector_ct = torch.zeros_like(b_vector)
                 b_vector_ct.copy_(b_vector)
                 b_vector_ct[:, -self.n_pol_groups:] = dq_groups
-                solutions_ct = torch.linalg.solve(A_matrix, b_vector_ct)
-                ene_pol_ct = torch.bmm(solutions_ct.unsqueeze(1), 0.5 * torch.bmm(A_matrix, solutions_ct.unsqueeze(2)) - b_vector_ct.unsqueeze(2)).squeeze()
+                solutions_ct, ene_pol_ct = solve_polarization(b_vector_ct)
                 ene_ct_indirect = ene_pol_ct - ene_pol
+
+                # induced molecular dipole P = sum_i (q_i r_i + mu_i) from the
+                # converged polarization solution (finite-field polarizability)
+                q_ind = solutions[:, self._fill_bvec_epot_indices]
+                mu_ind = solutions[:, self._fill_bvec_efield_indices].reshape(nbz, self.natoms, 3)
+                induced_molecular_dipole = torch.sum(q_ind.unsqueeze(-1) * coords, dim=1) + torch.sum(mu_ind, dim=1)
         
         # Field-dependent morse 
         if not self.parametrizers['Bond'].is_empty:
@@ -577,6 +642,7 @@ class BatchedSystem(nn.Module):
 
         energies.update({"charges": charges,
             "dipoles": permanent_dipoles,
+            "induced_molecular_dipole": induced_molecular_dipole,
             "grid_epot": grid_epot,
             "grid_efield": grid_efield,
             "grid_efield_grad": grid_efield_grad,

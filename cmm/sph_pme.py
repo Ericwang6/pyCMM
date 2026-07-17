@@ -10,7 +10,8 @@ from itertools import combinations
 
 torch.set_printoptions(profile="full")
 diff_flag = 1
-torch.set_default_device("cuda")
+if torch.cuda.is_available():
+    torch.set_default_device("cuda")
 
 ########################################################################################################################
 def get_recip_vectors(N,box):

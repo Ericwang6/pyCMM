@@ -5,7 +5,8 @@ import math
 import numpy as np
 from itertools import combinations
 torch.set_printoptions(profile="full")
-torch.set_default_device("cuda")
+if torch.cuda.is_available():
+    torch.set_default_device("cuda")
 
 ########################################################################################################################
 def get_recip_vectors(N,box):
