@@ -170,3 +170,57 @@ def test_uniform_field_saturation_sublinear():
     p1, p2 = induced(e1), induced(e2)
     assert p1 > 0
     assert p2 / p1 < 2.0 * 0.999  # sublinear growth for the saturating Cl-
+
+
+def test_quadrupole_point_charge_analytic():
+    # packed d2(phi) of a point charge q at distance r along x:
+    # diag(2, -1, -1) * q/r^3  ->  |G0|^2 = 6 q^2/r^6, U = -3 C q^2 / r^6
+    from cmm.quadrupole_polarization import quadrupole_polarization_energy
+    q, r, C = 1.3, 4.0, 25.0
+    g = torch.tensor([[2.0, 0.0, 0.0, -1.0, 0.0, -1.0]]) * (q / r ** 3)
+    e = quadrupole_polarization_energy(g, torch.tensor([C]))
+    assert torch.allclose(e, torch.tensor([-3.0 * C * q * q / r ** 6]), rtol=1e-12)
+
+    # a pure-trace gradient (unphysical, but exercises the traceless projection)
+    g_trace = torch.tensor([[1.0, 0.0, 0.0, 1.0, 0.0, 1.0]])
+    assert torch.allclose(quadrupole_polarization_energy(g_trace, torch.tensor([C])), torch.zeros(1))
+
+
+def test_quad_pol_end_to_end_far_field():
+    # two monovalent ions far apart: the field gradient at each ion is that of
+    # a +/-1 point charge, so energies['quad_pol'] -> -3 (C_i + C_j) / r^6
+    app = pytest.importorskip('openmm.app')
+    from cmm.ffxml import ForceFieldXML
+    from cmm.topology import Topology
+
+    scans = os.environ.get(
+        'CMM_DATA', os.path.join(os.path.dirname(__file__), '..', '..', 'CMM_Data')
+    )
+    pdb_file = os.path.join(scans, 'ion_water', 'ion_ion_scans', 'na_cl_scan.pdb')
+    if not os.path.exists(pdb_file):
+        pytest.skip('CMM_Data not available')
+
+    pdb = app.PDBFile(pdb_file)
+    ff = ForceFieldXML(
+        os.path.join(os.path.dirname(__file__), '..', 'scripts', 'ion_water_refit.xml'),
+        device='cpu', float_dtype=torch.float64
+    )
+    types = list(ff.pset.find('Polarization/Pol/type'))
+    C = 40.0
+    with torch.no_grad():
+        ff.pset.find('Polarization/Pol/quad_pol')[types.index('cl-')] = C
+
+    top = Topology.fromOpenmm(pdb.topology, 'cpu')
+    system = ff.parametrize(top, batch=True)
+    r = 40.0  # bohr, far enough that CP damping is negligible
+    coords = torch.tensor([[[0.0, 0.0, 0.0], [r, 0.0, 0.0]]])
+    res = system.getEnergy(coords)
+    expected = -3.0 * C / r ** 6
+    assert torch.allclose(res['quad_pol'][0], torch.tensor(expected), rtol=1e-6)
+
+    # the term lands in the pol channel: switching it off changes pol by exactly quad_pol
+    with torch.no_grad():
+        ff.pset.find('Polarization/Pol/quad_pol')[types.index('cl-')] = 0.0
+    res0 = system.getEnergy(coords)
+    assert torch.allclose(res['elec_pol'][0] - res0['elec_pol'][0], res['quad_pol'][0], atol=1e-14)
+    assert torch.allclose(res0['quad_pol'], torch.zeros(1))

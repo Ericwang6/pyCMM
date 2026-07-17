@@ -268,18 +268,18 @@
 		<Pair type1="ca2+" type2="i-" b_ct="1.6874186735250438"/>
 	</ChargeTransfer>
 	<Polarization>
-		<Pol type="ow" eta="0.0" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="li+" eta="1.2899" alpha_xx="0.1586152" alpha_yy="0.1586152" alpha_zz="0.1586152" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="na+" eta="0.77541" alpha_xx="0.9542199" alpha_yy="0.9542199" alpha_zz="0.9542199" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="k+" eta="0.49979" alpha_xx="5.5376271" alpha_yy="5.5376271" alpha_zz="5.5376271" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="rb+" eta="0.42997" alpha_xx="8.6857518" alpha_yy="8.6857518" alpha_zz="8.6857518" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="cs+" eta="0.3528" alpha_xx="15.7177865" alpha_yy="15.7177865" alpha_zz="15.7177865" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="f-" eta="0.19808" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" sat_c_iso="5.0858204359455375" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.04224860001781717"/>
-		<Pol type="cl-" eta="0.19955" alpha_xx="32.2880907" alpha_yy="32.2880907" alpha_zz="32.2880907" sat_c_iso="7.95494597222216" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.06380128528445003"/>
-		<Pol type="br-" eta="0.20469" alpha_xx="42.7172275" alpha_yy="42.7172275" alpha_zz="42.7172275" sat_c_iso="8.003713193035361" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05744697328711986"/>
-		<Pol type="i-" eta="0.25137" alpha_xx="64.1111144" alpha_yy="64.1111144" alpha_zz="64.1111144" sat_c_iso="7.820614871297199" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.04439312119667761"/>
-		<Pol type="mg2+" eta="2.4916" alpha_xx="0.4822524" alpha_yy="0.4822524" alpha_zz="0.4822524" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
-		<Pol type="ca2+" eta="1.1944" alpha_xx="3.2809409" alpha_yy="3.2809409" alpha_zz="3.2809409" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05"/>
+		<Pol type="ow" eta="0.0" alpha_xx="4.45992" alpha_yy="6.07259" alpha_zz="4.55391" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="hw" eta="0.561535" alpha_xx="2.22001" alpha_yy="1.66835" alpha_zz="0.183855" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="li+" eta="1.2899" alpha_xx="0.1586152" alpha_yy="0.1586152" alpha_zz="0.1586152" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="na+" eta="0.77541" alpha_xx="0.9542199" alpha_yy="0.9542199" alpha_zz="0.9542199" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="k+" eta="0.49979" alpha_xx="5.5376271" alpha_yy="5.5376271" alpha_zz="5.5376271" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="rb+" eta="0.42997" alpha_xx="8.6857518" alpha_yy="8.6857518" alpha_zz="8.6857518" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="21.926265536266282"/>
+		<Pol type="cs+" eta="0.3528" alpha_xx="15.7177865" alpha_yy="15.7177865" alpha_zz="15.7177865" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="73.87228755381909"/>
+		<Pol type="f-" eta="0.19808" alpha_xx="11.7270176" alpha_yy="11.7270176" alpha_zz="11.7270176" sat_c_iso="6.126367850630151" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.01817534072898102" quad_pol="0.4213880868213248"/>
+		<Pol type="cl-" eta="0.19955" alpha_xx="32.2880907" alpha_yy="32.2880907" alpha_zz="32.2880907" sat_c_iso="8.152481640405453" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.062083746056205646" quad_pol="1.2555397803572714"/>
+		<Pol type="br-" eta="0.20469" alpha_xx="42.7172275" alpha_yy="42.7172275" alpha_zz="42.7172275" sat_c_iso="8.401530707802195" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05684370525414099" quad_pol="4.297126047514964"/>
+		<Pol type="i-" eta="0.25137" alpha_xx="64.1111144" alpha_yy="64.1111144" alpha_zz="64.1111144" sat_c_iso="7.793920184541232" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.043636921734461195" quad_pol="1e-06"/>
+		<Pol type="mg2+" eta="2.4916" alpha_xx="0.4822524" alpha_yy="0.4822524" alpha_zz="0.4822524" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
+		<Pol type="ca2+" eta="1.1944" alpha_xx="3.2809409" alpha_yy="3.2809409" alpha_zz="3.2809409" sat_c_iso="0.0" sat_c_ani="0.0" sat_w="1.0" sat_e0="0.05" quad_pol="0.0"/>
 	</Polarization>
 </ForceField>

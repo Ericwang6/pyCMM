@@ -57,15 +57,25 @@ def halide_mask(ff):
     return mask
 
 
+def type_mask(ff, type_names):
+    types = list(ff.pset.find('Polarization/Pol/type'))
+    mask = torch.zeros(len(types))
+    for t in type_names:
+        mask[types.index(t)] = 1.0
+    return mask
+
+
 def run_stage(ff, datas, param_groups, num_epoch, log_every=25):
-    """param_groups: list of (pset_path, lr). Only halide entries train."""
-    mask = halide_mask(ff)
-    params = []
-    for path, lr in param_groups:
+    """param_groups: list of (pset_path, lr, mask) — mask selects which type
+    entries of that parameter train (defaults to the halides when None)."""
+    groups = []
+    for path, lr, mask in param_groups:
         p = ff.pset.find(path)
         p.requires_grad_(True)
-        params.append({'params': [p], 'lr': lr})
-    optimizer = torch.optim.Adam(params)
+        groups.append({'params': [p], 'lr': lr,
+                       'mask': halide_mask(ff) if mask is None else mask,
+                       'path': path})
+    optimizer = torch.optim.Adam([{k: g[k] for k in ('params', 'lr')} for g in groups])
 
     systems = [ff.parametrize(Topology.fromOpenmm(d.top), batch=True) for d in datas]
     for n in range(num_epoch):
@@ -76,26 +86,26 @@ def run_stage(ff, datas, param_groups, num_epoch, log_every=25):
             loss = weight_mse(data.energies['pol'], res['pol'], weights)
             optimizer.zero_grad()
             loss.backward()
-            for g in optimizer.param_groups:
-                for p in g['params']:
-                    if p.grad is not None:
-                        p.grad *= mask
+            for g in groups:
+                p = g['params'][0]
+                if p.grad is not None:
+                    p.grad *= g['mask']
             optimizer.step()
             epoch_loss += loss.item()
         with torch.no_grad():
-            for path, _ in param_groups:
-                p = ff.pset.find(path)
+            for g in groups:
+                path, p, m = g['path'], g['params'][0], g['mask'].bool()
                 if path.endswith('sat_e0'):
-                    p.data[mask.bool()] = p.data[mask.bool()].clamp(E0_MIN, E0_MAX)
+                    p.data[m] = p.data[m].clamp(E0_MIN, E0_MAX)
                 elif path.endswith('sat_w'):
-                    p.data[mask.bool()] = p.data[mask.bool()].clamp(0.1, 10.0)
+                    p.data[m] = p.data[m].clamp(0.1, 10.0)
                 elif path.endswith('sat_c_ani'):
                     # either sign is well-defined (free-ion limit exact, energy
                     # bounded, SPD floor in the solver); negative = extra
                     # axial damping instead of a parallel rise
-                    p.data[mask.bool()] = p.data[mask.bool()].clamp(-10.0, 10.0)
+                    p.data[m] = p.data[m].clamp(-10.0, 10.0)
                 else:
-                    p.data[mask.bool()] = p.data[mask.bool()].clamp_min(1e-6)
+                    p.data[m] = p.data[m].clamp_min(1e-6)
         if n % log_every == 0 or n == num_epoch - 1:
             print(f'epoch {n:4d}  sum pol loss = {epoch_loss:.4f}')
 
@@ -136,29 +146,26 @@ def main():
         ff.pset.find('Polarization/Pol/sat_c_ani').zero_()  # isotropic-only
 
     print('\n===== stage 1: sat_c_iso only (sat_e0 = 0.05 a.u. fixed) =====')
-    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.05)], args.epochs1)
+    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.05, None)], args.epochs1)
     report(ff, datas)
 
     print('\n===== stage 2: sat_c_iso + per-ion sat_e0 =====')
-    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.02),
-                          ('Polarization/Pol/sat_e0', 0.002)], args.epochs2)
+    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.02, None),
+                          ('Polarization/Pol/sat_e0', 0.002, None)], args.epochs2)
     report(ff, datas)
 
-    # ---- anisotropic term: seed and fit with the isotropic part frozen ----
-    mask = halide_mask(ff).bool()
+    # ---- direct quadrupole polarization: halides + the big soft cations ----
+    quad_mask = type_mask(ff, HALIDE_TYPES + ['rb+', 'cs+'])
     with torch.no_grad():
-        ff.pset.find('Polarization/Pol/sat_c_ani').data[mask] = 0.1
-        ff.pset.find('Polarization/Pol/sat_w').data[mask] = 1.0
-    print('\n===== stage 3: sat_c_ani + sat_w (isotropic frozen) =====')
-    run_stage(ff, datas, [('Polarization/Pol/sat_c_ani', 0.005),
-                          ('Polarization/Pol/sat_w', 0.02)], args.epochs3)
+        ff.pset.find('Polarization/Pol/quad_pol').data[quad_mask.bool()] = 2.0
+    print('\n===== stage 3: quad_pol alone (saturation frozen) =====')
+    run_stage(ff, datas, [('Polarization/Pol/quad_pol', 0.3, quad_mask)], args.epochs3)
     report(ff, datas)
 
-    print('\n===== stage 4: joint fine-tune (all four, small lr) =====')
-    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.01),
-                          ('Polarization/Pol/sat_e0', 0.001),
-                          ('Polarization/Pol/sat_c_ani', 0.002),
-                          ('Polarization/Pol/sat_w', 0.01)], args.epochs4)
+    print('\n===== stage 4: joint fine-tune (c_iso, e0, quad_pol) =====')
+    run_stage(ff, datas, [('Polarization/Pol/sat_c_iso', 0.01, None),
+                          ('Polarization/Pol/sat_e0', 0.001, None),
+                          ('Polarization/Pol/quad_pol', 0.1, quad_mask)], args.epochs4)
     report(ff, datas)
     print('\n--- divalent pairs (held out, not fit) ---')
     report(ff, datas_divalent)
@@ -166,12 +173,11 @@ def main():
     types = ff.pset.find('Polarization/Pol/type')
     c_iso = ff.pset.find('Polarization/Pol/sat_c_iso')
     e0 = ff.pset.find('Polarization/Pol/sat_e0')
-    c_ani = ff.pset.find('Polarization/Pol/sat_c_ani')
-    w = ff.pset.find('Polarization/Pol/sat_w')
+    qp = ff.pset.find('Polarization/Pol/quad_pol')
     print('\n=== fitted parameters ===')
     for i, t in enumerate(types):
         print(f'{t:6s} sat_c_iso={c_iso[i].item():10.5f} sat_e0={e0[i].item():10.5f} '
-              f'sat_c_ani={c_ani[i].item():10.5f} sat_w={w[i].item():10.5f}')
+              f'quad_pol={qp[i].item():10.5f}')
 
     ff.save(args.out)
     print(f'\nwrote {args.out}')

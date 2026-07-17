@@ -99,6 +99,7 @@ class Optimizer:
             'ChargeTransfer/Direct/b_ct', 'ChargeTransfer/Pair/b_ct', 'ChargeTransfer/Indirect/eps_ct',
             'Polarization/Pol/eta', 'Polarization/Pol/alpha_xx', 'Polarization/Pol/alpha_yy', 'Polarization/Pol/alpha_zz',
             'Polarization/Pol/sat_c_iso', 'Polarization/Pol/sat_c_ani', 'Polarization/Pol/sat_w', 'Polarization/Pol/sat_e0',
+            'Polarization/Pol/quad_pol',
             'Bonds/Bond/r_eq', 'Bonds/Bond/D', 'Bonds/Bond/k_b',
             'Angles/Angle/theta_eq', 'Angles/Angle/k_theta',
             # from here are the equilibrium values in the coupling terms

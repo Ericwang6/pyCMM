@@ -40,6 +40,7 @@ from .pme_helper import PME
 from .electrostatics import computeDampFactorsErfc, computeDampFactorsErf
 from .polarization import CMMPolarization
 from .dipole_saturation import unit_field_axis
+from .quadrupole_polarization import quadrupole_polarization_energy
 from .switching_functions import SwitchFunction
 
 import time, os
@@ -668,6 +669,19 @@ class System(nn.Module):
                                 pol_interaction_tensor_sr=pol_tensor,
                                 direct_field_tensor_excl=realSpaceTensor_excl,
                             )
+
+                        # direct (non-SCF) quadrupole polarization from the
+                        # permanent field gradient
+                        quad_pol = self.parametrizers['Polarization'].getExpandParameters("quad_pol")
+                        if torch.any(quad_pol != 0):
+                            # real-space edata[:, 4:10] holds packed +d2(phi);
+                            # the ewald module returns the true grad(E) = -d2(phi)
+                            grad_packed = edata[:, 4:10]
+                            if self.use_ewald:
+                                grad_packed = grad_packed - ewald_field_gradient[:, [0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]]
+                            elif self.use_pme:
+                                raise NotImplementedError("quad_pol not supported with PME recip yet")
+                            ene_pol = ene_pol + torch.sum(quadrupole_polarization_energy(grad_packed, quad_pol))
                 else:
                     ene_pol = torch.tensor(0.0, device=coords.device)
 
@@ -963,6 +977,8 @@ class System(nn.Module):
                             sat_e0 = self.parametrizers['Polarization'].getExpandParameters("sat_e0")
                             sat_alpha_iso = torch.diagonal(polarizabilities, dim1=-2, dim2=-1).mean(dim=-1)
                             sat_axis = unit_field_axis(efield)
+                            if torch.any(self.parametrizers['Polarization'].getExpandParameters("quad_pol") != 0):
+                                raise NotImplementedError("quad_pol not supported with use_customized_ops (real-space field gradient not returned by the fused op)")
 
                         # Evaluate initial guess #
                         if self.last_induced_multipoles.numel() == 0:

@@ -553,7 +553,7 @@ class ForceFieldXML:
         for p in ['eta', 'alpha_xx', 'alpha_yy', 'alpha_zz']:
             polParametrizer.registerParameters(p, self.pset.find(f'Polarization/Pol/{p}'))
         # dipole-saturation parameters (optional in the xml; default = no saturation)
-        for p, default in [('sat_c_iso', 0.0), ('sat_c_ani', 0.0), ('sat_w', 1.0), ('sat_e0', 0.05)]:
+        for p, default in [('sat_c_iso', 0.0), ('sat_c_ani', 0.0), ('sat_w', 1.0), ('sat_e0', 0.05), ('quad_pol', 0.0)]:
             vals = self.pset.find(f'Polarization/Pol/{p}', default='missing')
             if not torch.is_tensor(vals):
                 vals = torch.full_like(self.pset.find('Polarization/Pol/eta'), default)

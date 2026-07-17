@@ -92,6 +92,8 @@ def pair_polarizability_scan(ff, data, use_sat=True):
 
 
 def plot_scan_energies(ff, root, outpath):
+    quad_pol_t = ff.pset.find('Polarization/Pol/quad_pol')
+    has_quad = bool(torch.any(quad_pol_t != 0))
     fig, axes = plt.subplots(len(CATIONS), len(ANIONS), figsize=(15, 21),
                              sharex=False, constrained_layout=True)
     for i, cat in enumerate(CATIONS):
@@ -106,7 +108,19 @@ def plot_scan_energies(ff, root, outpath):
 
             ax.plot(r, e_eda, 'o', ms=4, color=C_REF, label='EDA (pol)', zorder=3)
             ax.plot(r, e_base, '--', lw=2, color=C_BASE, label='CMM, no saturation')
-            ax.plot(r, e_sat, '-', lw=2, color=C_MODEL, label='CMM, saturation')
+            if has_quad:
+                quad_backup = quad_pol_t.detach().clone()
+                try:
+                    with torch.no_grad():
+                        quad_pol_t.zero_()
+                    e_sat_only = model_pol_scan(ff, data, use_sat=True)
+                finally:
+                    with torch.no_grad():
+                        quad_pol_t.copy_(quad_backup)
+                ax.plot(r, e_sat_only, ':', lw=2, color='#009E73', label='CMM, saturation only')
+                ax.plot(r, e_sat, '-', lw=2, color=C_MODEL, label='CMM, saturation + quad pol')
+            else:
+                ax.plot(r, e_sat, '-', lw=2, color=C_MODEL, label='CMM, saturation')
 
             lo = min(e_eda.min(), e_sat.min())
             ax.set_ylim(1.3 * lo, 2.0)

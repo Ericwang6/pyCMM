@@ -32,6 +32,7 @@ from .dispersion import computeDispersionFromPairs
 from .dipole_saturation import (
     unit_field_axis, saturation_energy, saturation_secant_matrix
 )
+from .quadrupole_polarization import quadrupole_polarization_energy
 from .electrostatics import computePermanentElectricPotentialExpansion
 from .units import HARTREE2KCAL
 
@@ -296,6 +297,7 @@ class BatchedSystem(nn.Module):
         ene_pauli = torch.zeros(nbz, device=device, dtype=dtype)
         ene_disp = torch.zeros(nbz, device=device, dtype=dtype)
         induced_molecular_dipole = torch.zeros((nbz, 3), device=device, dtype=dtype)
+        ene_qpol = torch.zeros(nbz, device=device, dtype=dtype)
         # these two variables are used in evaluate fd-morse
         efield = torch.zeros((self.natoms*nbz, 3), device=device, dtype=dtype)
         dq_a = torch.zeros(self.natoms*nbz, device=device, dtype=dtype)
@@ -344,6 +346,7 @@ class BatchedSystem(nn.Module):
             sat_c_ani = self.parametrizers['Polarization'].getExpandParameters("sat_c_ani")[expand_to_batch_indices]
             sat_w = self.parametrizers['Polarization'].getExpandParameters("sat_w")[expand_to_batch_indices]
             sat_e0 = self.parametrizers['Polarization'].getExpandParameters("sat_e0")[expand_to_batch_indices]
+            quad_pol = self.parametrizers['Polarization'].getExpandParameters("quad_pol")[expand_to_batch_indices]
             alpha_iso = torch.diagonal(polarizabilities, dim1=-2, dim2=-1).mean(dim=-1)
             use_sat = self.use_dipole_saturation and bool(
                 torch.any(sat_c_iso != 0) or torch.any(sat_c_ani != 0)
@@ -569,6 +572,12 @@ class BatchedSystem(nn.Module):
                 solutions_ct, ene_pol_ct = solve_polarization(b_vector_ct)
                 ene_ct_indirect = ene_pol_ct - ene_pol
 
+                # direct (non-SCF) quadrupole polarization from the permanent
+                # field gradient; lands in the pol channel
+                if torch.any(quad_pol != 0):
+                    ene_qpol = quadrupole_polarization_energy(edata[:, 4:10], quad_pol).reshape(nbz, -1).sum(dim=1)
+                    ene_pol = ene_pol + ene_qpol
+
                 # induced molecular dipole P = sum_i (q_i r_i + mu_i) from the
                 # converged polarization solution (finite-field polarizability)
                 q_ind = solutions[:, self._fill_bvec_epot_indices]
@@ -610,6 +619,7 @@ class BatchedSystem(nn.Module):
         energies = {
             "perm_elec": ene_elec,
             "elec_pol": ene_pol,
+            "quad_pol": ene_qpol,
             "ct_direct": ene_ct_direct,
             "ct_indirect": ene_ct_indirect,
             "xpol": ene_xpol,
