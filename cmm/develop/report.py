@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import openmm.unit as unit
-from .metrics import plot_correlation, plot_eda_scan
+from .metrics import plot_correlation, plot_eda_scan, as_numpy
 from ..units import HARTREE2KCAL, BOHR2ANG
 
 
@@ -15,7 +15,7 @@ def report_dipos(trainer, data, report_norm=True):
         dipo_qm = np.linalg.norm(ref.numpy(force=True), axis=1)
     else:
         dipo_cmm = res.numpy(force=True).flatten()
-        dipo_qm = res.numpy(force=True).flatten()
+        dipo_qm = ref.numpy(force=True).flatten()
     fig, ax = plt.subplots(1, 1, figsize=(4, 4), constrained_layout=True)
     plot_correlation(dipo_qm, dipo_cmm, 'QM Dipole Moment (a.u.)', 'CMM Dipole Moment (a.u.)', ax=ax)
 
@@ -31,18 +31,22 @@ def report_esp(trainer, data):
 def report_eda_scan(trainer, data, xdata=None, xlabel=None, **kwargs):
     with torch.no_grad():
         res, ref, _, _ = trainer.evaluate(data)
-    
+
     if xdata is None:
         if data.eda_df is not None:
             if 'k_index' in data.eda_df.columns:
                 xdata = data.eda_df['k_index'].values
                 xlabel = 'k_index' if xlabel is None else xlabel
             else:
-                xdata = data.eda_df['dist'].values
-                xlabel = 'dist' if xlabel is None else xlabel
+                dist_col = 'dist' if 'dist' in data.eda_df.columns else 'distances'
+                xdata = data.eda_df[dist_col].values
+                xlabel = 'Distance (Å)' if xlabel is None else xlabel
         else:
-            masses = torch.tensor([at.element.mass.value_in_unit(unit.dalton) for at in data.top.atoms()], dtype=data.coords.dtype, device=data.coords.device).reshape(-1, 1)
-            natoms = [len(list(res.atoms())) for res in data.top.residues()]
+            masses = torch.tensor(
+                [at.element.mass.value_in_unit(unit.dalton) for at in data.topology.atoms()],
+                dtype=data.coords.dtype, device=data.coords.device
+            ).reshape(-1, 1)
+            natoms = [len(list(r.atoms())) for r in data.topology.residues()]
             com1 = torch.sum(data.coords[:, :natoms[0]] * masses[:natoms[0]], dim=-2) / torch.sum(masses[:natoms[0]])
             com2 = torch.sum(data.coords[:, natoms[0]:] * masses[natoms[0]:], dim=-2) / torch.sum(masses[natoms[0]:])
             com_dist = torch.norm(com1 - com2, dim=1) * BOHR2ANG
@@ -55,30 +59,61 @@ def report_eda_scan(trainer, data, xdata=None, xlabel=None, **kwargs):
                     ref[key] = ref[key][argsort]
             xdata = com_dist[argsort]
             xlabel = 'COM Dist. (Angstrom)' if xlabel is None else xlabel
-    
-    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
-    plot_eda_scan(
-        xdata,
-        ref,
-        res,
-        xlabel=xlabel,
-        ax=axes[0],
-        **kwargs
-    )
 
+    fig, axes = plt.subplots(1, 4, figsize=(20, 4))
+
+    # Panel 1 — QM only
+    plot_eda_scan(
+        xdata, ref, ene_cmm=None,
+        xlabel=xlabel, ylabel='QM Energy (kcal/mol)',
+        ax=axes[0], **kwargs
+    )
+    axes[0].set_title('QM')
+
+    # Panel 2 — CMM only
+    res_eda = {key: res[key] for key in ref if key in res}
+    plot_eda_scan(
+        xdata, res_eda, ene_cmm=None,
+        xlabel=xlabel, ylabel='CMM Energy (kcal/mol)',
+        ax=axes[1], **kwargs
+    )
+    axes[1].set_title('CMM')
+
+    # Panel 3 — Total QM vs CMM
+    xdata_np = as_numpy(xdata)
+    ref_total = as_numpy(ref['total'])
+    res_total = as_numpy(res['total'])
+
+    xmin_val = kwargs.get('xmin', -np.inf)
+    xmax_val = kwargs.get('xmax', np.inf)
+    mask = np.logical_and(xdata_np < xmax_val, xdata_np > xmin_val)
+
+    axes[2].plot(xdata_np[mask], ref_total[mask], 'o-',  color='black', label='QM total',  linewidth=2)
+    axes[2].plot(xdata_np[mask], res_total[mask], 's--', color='red',   label='CMM total', linewidth=2)
+    axes[2].set_xlabel(xlabel)
+    axes[2].set_ylabel('Energy (kcal/mol)')
+    axes[2].set_title('Total: QM vs CMM')
+    axes[2].legend()
+    axes[2].grid(True)
+
+    ymin_val = kwargs.get('ymin', None)
+    ymax_val = kwargs.get('ymax', None)
+    if ymin_val is not None:
+        axes[2].set_ylim(bottom=ymin_val)
+    if ymax_val is not None:
+        axes[2].set_ylim(top=ymax_val)
+
+    # Panel 4 — Error
     keys = ['perm_elec', 'pauli', 'disp', 'pol', 'ct', 'total']
-    with torch.no_grad():
-        error = {key: res[key] - ref[key] for key in keys}
+    error = {key: res[key] - ref[key] for key in keys}
     plot_eda_scan(
-        xdata,
-        error,
-        xlabel=xlabel,
-        ylabel='Energy Error (kcal/mol)',
-        ax=axes[1],
-        **kwargs
+        xdata, error, ene_cmm=None,
+        xlabel=xlabel, ylabel='Energy Error (kcal/mol)',
+        ax=axes[3], **kwargs
     )
-    return fig
+    axes[3].set_title('Error (CMM - QM)')
 
+    return fig
 
 def report_eda_cluster(trainer, data, **kwargs):
     with torch.no_grad():

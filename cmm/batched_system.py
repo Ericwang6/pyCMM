@@ -328,15 +328,15 @@ class BatchedSystem(nn.Module):
             alpha_damp_exponent = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_exponent")[expand_to_batch_indices]
             alpha_damp_max = self.parametrizers['Polarization'].getExpandParameters("alpha_damp_max")[expand_to_batch_indices]
             polarizabilities = rotateQuadrupoles(alpha, rotMatrices)
-            polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
-            # shape nbz,3,3
-            molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
-            # shape nbz, 3, 3
-            tmp_a = torch.sum((inv_eta.view(-1, 1, 1) * torch.einsum('ni,nj->nij', coords_flatten, coords_flatten)).reshape(nbz, -1, 3, 3), dim=1)
-            # shape nbz, 3
-            weighted_coords = torch.sum((inv_eta.view(-1, 1) * coords_flatten).reshape(nbz, -1, 3), dim=1)
-            tmp_b = torch.einsum('ni,nj->nij', weighted_coords, weighted_coords) / torch.sum(inv_eta.reshape(nbz, -1), dim=1).view(-1, 1, 1)
-            molecular_polarizability += tmp_a - tmp_b
+            # polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+            # # shape nbz,3,3
+            # molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
+            # # shape nbz, 3, 3
+            # tmp_a = torch.sum((inv_eta.view(-1, 1, 1) * torch.einsum('ni,nj->nij', coords_flatten, coords_flatten)).reshape(nbz, -1, 3, 3), dim=1)
+            # # shape nbz, 3
+            # weighted_coords = torch.sum((inv_eta.view(-1, 1) * coords_flatten).reshape(nbz, -1, 3), dim=1)
+            # tmp_b = torch.einsum('ni,nj->nij', weighted_coords, weighted_coords) / torch.sum(inv_eta.reshape(nbz, -1), dim=1).view(-1, 1, 1)
+            # molecular_polarizability += tmp_a - tmp_b
         else:
             molecular_polarizability = torch.zeros((nbz, 3, 3), device=device, dtype=dtype)
         
@@ -474,7 +474,16 @@ class BatchedSystem(nn.Module):
 
             epot = edata[:, 0]
             efield = -edata[:, 1:4]
-
+            if self.use_polarization:
+                polarizabilities = get_field_dependent_polarizabilities(polarizabilities, efield, alpha_damp_exponent, alpha_damp_max)
+                # shape nbz,3,3
+                molecular_polarizability = torch.sum(polarizabilities.reshape(nbz, -1, 3, 3), dim=1)
+                # shape nbz, 3, 3
+                tmp_a = torch.sum((inv_eta.view(-1, 1, 1) * torch.einsum('ni,nj->nij', coords_flatten, coords_flatten)).reshape(nbz, -1, 3, 3), dim=1)
+                # shape nbz, 3
+                weighted_coords = torch.sum((inv_eta.view(-1, 1) * coords_flatten).reshape(nbz, -1, 3), dim=1)
+                tmp_b = torch.einsum('ni,nj->nij', weighted_coords, weighted_coords) / torch.sum(inv_eta.reshape(nbz, -1), dim=1).view(-1, 1, 1)
+                molecular_polarizability += tmp_a - tmp_b
             ene_elec = torch.sum((elec_cp_ss_pairwise + elec_cp_cs_pairwise + ene_perm_elec_real_pairwise).reshape(nbz, -1), dim=1)
 
             # Polarization

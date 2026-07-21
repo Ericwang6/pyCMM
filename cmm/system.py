@@ -25,7 +25,8 @@ from .bonded import (
     computeTorsionBondCoupling, computeTorsionAngleAngleCoupling, 
     computeChargeFluxBond, computeChargeFluxAngle, computeChargeFluxBondBond,
     computeHardnessChangeBond, computeHardnessChangeAngle, computeHardnessChangeBondBond,
-    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential
+    computeBondAngleCoupling, computeFieldDependentMorseParams, computeMorseBondPotential,
+    computeFieldDependentCosAngleParams
 )
 from .multipole import (
     computeLocal2GlobalRotationMatrixBatch,
@@ -89,6 +90,7 @@ class System(nn.Module):
         expand_parametrizers_during_init: bool = True,
         periodic: bool = True,
         use_fd_morse: bool = True,
+        use_fd_angle: bool = True,
         use_ewald: bool = True,
         use_lr_dispersion: bool = True,
         use_polarization: bool = True,
@@ -126,6 +128,7 @@ class System(nn.Module):
             self.use_lr_dispersion = False
 
         self.use_fd_morse = use_fd_morse
+        self.use_fd_angle = use_fd_angle
         self.use_hardness_change = use_hardness_change
 
         # cutoff settings
@@ -146,7 +149,8 @@ class System(nn.Module):
             self.top.pol_group_indices_a, self.top.pol_group_segment_indices, self.top.pol_group_lengths_g, 
             rcut_sr=self.cutoff_sr, rcut_lr=self.cutoff_lr,
             rtol=polarization_tolerance, atol=0, maxiter=polarization_max_iteration, 
-            verbose=PROFILE, use_lr=True, use_customized_ops=use_customized_ops
+            verbose=PROFILE, use_lr=True, use_customized_ops=use_customized_ops,
+            use_pme=use_pme
         )
         self.polarization_solver.to(device=top.device, dtype=torch.get_default_dtype())
         self.polarization_max_iteration = polarization_max_iteration
@@ -224,7 +228,28 @@ class System(nn.Module):
         # Find appropriate ewald parameters. This should really be done by the CM.
         self.alpha_ewald = math.sqrt(-math.log10(2 * self.ewald_tolerance)) / self.cutoff_lr
 
-        if self.use_pme and self.use_customized_ops:
+        # if self.use_pme and self.use_customized_ops:
+        #     self.k_max = 2 * self.alpha_ewald * torch.norm(box, dim=1).max().item() / (3 * self.ewald_tolerance ** (1/5))
+        # else:
+        #     self.k_max = 50
+        #     for i in range(2, 50):
+        #         error_estimate = (i * math.sqrt(maxBoxLen * self.alpha_ewald) / 20.0) * math.exp(-torch.pi * torch.pi * i * i / (maxBoxLen * self.alpha_ewald * maxBoxLen * self.alpha_ewald))
+        #         if error_estimate < self.ewald_tolerance:
+        #             self.k_max = i
+        #             break
+            
+        
+        # print(f"K Max in Ewald/PME: {self.k_max}")
+        
+        # if self.use_pme and self.use_customized_ops:
+        #     self.ewald = PME(self.alpha_ewald, self.k_max, 2, self.use_customized_ops, return_fields=True).to(
+        #         device=box.device, dtype=box.dtype
+        #     )
+        # else:
+        #     self.ewald = Ewald(self.alpha_ewald, self.k_max, 2, self.use_customized_ops, return_fields=True).to(device=box.device, dtype=box.dtype)
+        #     if not self.use_customized_ops:
+        #         self.ewald = torch.compile(self.ewald)
+        if self.use_pme:
             self.k_max = 2 * self.alpha_ewald * torch.norm(box, dim=1).max().item() / (3 * self.ewald_tolerance ** (1/5))
         else:
             self.k_max = 50
@@ -237,7 +262,7 @@ class System(nn.Module):
         
         print(f"K Max in Ewald/PME: {self.k_max}")
         
-        if self.use_pme and self.use_customized_ops:
+        if self.use_pme:
             self.ewald = PME(self.alpha_ewald, self.k_max, 2, self.use_customized_ops, return_fields=True).to(
                 device=box.device, dtype=box.dtype
             )
@@ -830,6 +855,53 @@ class System(nn.Module):
                         ene_bond = torch.sum(computeMorseBondPotential(bonds, r_eq, D, beta))
             else:
                 ene_bond = torch.zeros((), device=coords.device)
+        with timer("FDAngle"):
+            if not self.parametrizers['Angle'].is_empty:
+                angleIndices = self.parametrizers['Angle'].getExpandParameters("atomIndices")
+                theta_eq = self.parametrizers['Angle'].getExpandParameters("theta_eq")
+                k_th = self.parametrizers['Angle'].getExpandParameters("k_theta")
+                r_eq_1 = self.parametrizers['Angle'].getExpandParameters("r_eq_1")
+                r_eq_2 = self.parametrizers['Angle'].getExpandParameters("r_eq_2")
+                k_bb = self.parametrizers['Angle'].getExpandParameters("k_bb")
+                k_ba_1 = self.parametrizers['Angle'].getExpandParameters("k_ba_1")
+                k_ba_2 = self.parametrizers['Angle'].getExpandParameters("k_ba_2")
+
+                if not self.use_customized_ops:
+                    # reuse already-computed geometry from Angle block
+                    if self.use_fd_angle:
+                        dmu_dtheta = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_1')
+                        d2mu_dtheta2 = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_2')
+                        k_eff, _, theta0_eff = computeFieldDependentCosAngleParams(
+                            bondVecs_ij, bondVecs_kj, theta, theta_eq, k_th,
+                            dmu_dtheta, d2mu_dtheta2, efield[angleIndices[:, 1]]
+                        )
+                        ene_angle = torch.sum(computeCosAnglePotential(theta, theta0_eff, k_eff))
+                    else:
+                        ene_angle = torch.sum(computeCosAnglePotential(theta, theta_eq, k_th))
+                    ene_bb = torch.sum(computeBondBondCoupling(r1, r2, r_eq_1, r_eq_2, k_bb))
+                    ene_ba = torch.sum(computeBondAngleCoupling(r1, r_eq_1, theta, theta_eq, k_ba_1) + computeBondAngleCoupling(r2, r_eq_2, theta, theta_eq, k_ba_2))
+                else:
+                    j_cf_bb = self.parametrizers['Angle'].getExpandParameters("j_cf_bb")
+                    j_cf_angle = self.parametrizers['Angle'].getExpandParameters("j_cf_angle")
+                    if self.use_fd_angle:
+                        dmu_dtheta = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_1')
+                        d2mu_dtheta2 = self.parametrizers['Angle'].getExpandParameters('ang_dip_deriv_2')
+                        ene_angle, _ = torch.ops.torchff.cmm_fd_angle(
+                            coords, angleIndices.to(torch.int64),
+                            theta_eq, k_th, r_eq_1, r_eq_2,
+                            k_bb, k_ba_1, k_ba_2,
+                            j_cf_bb, j_cf_angle,
+                            dmu_dtheta, d2mu_dtheta2,
+                            efield, -0.002
+                        )
+                    else:
+                        pass
+                        ene_bb = torch.tensor(0.0, device=coords.device)
+                        ene_ba = torch.tensor(0.0, device=coords.device)
+            else:
+                ene_angle = torch.tensor(0.0, device=coords.device)
+                ene_bb = torch.tensor(0.0, device=coords.device)
+                ene_ba = torch.tensor(0.0, device=coords.device)
 
 
         energies = {

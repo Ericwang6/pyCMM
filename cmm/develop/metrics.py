@@ -77,36 +77,73 @@ EDA_COLORS = {
 }
     
 
-def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_index', ylabel='Energy (kcal/mol)', xmin=-np.inf, xmax=np.inf, ymin=None, ymax=None):
+# def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_index', ylabel='Energy (kcal/mol)', xmin=-np.inf, xmax=np.inf, ymin=None, ymax=None):
     
-    if ymin:
-        plt.ylim(bottom=ymin)
-    if ymax:
-        plt.ylim(top=ymax)
+#     if ymin is not None:
+#         plt.ylim(bottom=ymin)
+#     if ymax is not None:
+#         plt.ylim(top=ymax)
 
+#     if ax is None:
+#         fig, ax = plt.subplots(1, 1, constrained_layout=True)
+    
+
+#     xdata = as_numpy(xdata)
+#     mask = np.logical_and(xdata < xmax, xdata > xmin)
+
+#     xdata = xdata[mask]
+#     ene_ref = {key: as_numpy(ene_ref[key])[mask] for key in ene_ref}
+#     if ene_cmm is not None:
+#         ene_cmm = {key: as_numpy(ene_cmm[key])[mask] for key in ene_ref}
+#     # Add this
+#     print("ene_cmm is None?", ene_cmm is None)
+#     print("ene_cmm keys:", list(ene_cmm.keys()) if ene_cmm is not None else "N/A")
+#     for key in keys:
+#         print(f"key={key}, in ene_ref={key in ene_ref}, in ene_cmm={ene_cmm is not None and key in ene_cmm}")
+    
+#     if len(keys) == 0:
+#         keys = list(EDA_COLORS.keys())
+    
+#     metrics = {}
+#     for key in keys:
+#         ax.plot(xdata, ene_ref[key], 'o-', color=EDA_COLORS[key], label=key)
+#         if ene_cmm:
+#             ax.plot(xdata, ene_cmm[key], 'o--', color=EDA_COLORS[key])
+#             metrics[key] = report_metrics(ene_cmm[key], ene_ref[key])
+    
+#     ax.legend()
+#     ax.set_xlabel(xlabel)
+#     ax.set_ylabel(ylabel)
+#     return metrics
+def plot_eda_scan(xdata, ene_ref, ene_cmm=None, ax=None, keys=list(), xlabel='k_index', ylabel='Energy (kcal/mol)', xmin=-np.inf, xmax=np.inf, ymin=None, ymax=None):
     if ax is None:
         fig, ax = plt.subplots(1, 1, constrained_layout=True)
-    
 
     xdata = as_numpy(xdata)
     mask = np.logical_and(xdata < xmax, xdata > xmin)
-
     xdata = xdata[mask]
-    ene_ref = {key: as_numpy(ene_ref[key])[mask] for key in ene_ref}
-    if ene_cmm:
-        ene_cmm = {key: as_numpy(ene_cmm[key])[mask] for key in ene_ref}
 
-    
+    ene_ref = {key: as_numpy(ene_ref[key])[mask] for key in ene_ref}
+    if ene_cmm is not None:
+        ene_cmm = {key: as_numpy(ene_cmm[key])[mask] for key in ene_ref if key in ene_cmm}
+
     if len(keys) == 0:
         keys = list(EDA_COLORS.keys())
-    
+
+    if ymin is not None:
+        ax.set_ylim(bottom=ymin)
+    if ymax is not None:
+        ax.set_ylim(top=ymax)
+
     metrics = {}
     for key in keys:
+        if key not in ene_ref:
+            continue
         ax.plot(xdata, ene_ref[key], 'o-', color=EDA_COLORS[key], label=key)
-        if ene_cmm:
+        if ene_cmm is not None and key in ene_cmm:
             ax.plot(xdata, ene_cmm[key], 'o--', color=EDA_COLORS[key])
             metrics[key] = report_metrics(ene_cmm[key], ene_ref[key])
-    
+
     ax.legend()
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)

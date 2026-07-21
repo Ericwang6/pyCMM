@@ -132,7 +132,8 @@ class EdaData:
         import openmm.app as app
         loaded_pdb = app.PDBFile(pdb_file)
         top = loaded_pdb.topology
-        atoms = [[at.element.symbol for at in residue] for residue in top.residues()]
+        #atoms = [[at.element.symbol for at in residue] for residue in top.residues()]
+        atoms = [[at.element.symbol for at in residue.atoms()] for residue in top.residues()]
         eda_df = pd.read_csv(csv_file)
         try:
             enes_ref = {

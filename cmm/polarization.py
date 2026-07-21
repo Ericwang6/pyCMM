@@ -96,8 +96,16 @@ class CMMPolarization(nn.Module):
 
     def set_ewald(self, alpha_ewald, k_max, device, dtype):
         self.alpha_ewald = alpha_ewald
-        if self.use_pme and self.use_customized_ops:
-            self.ewald = PME(alpha_ewald, k_max, 1, True, True)
+        # if self.use_pme and self.use_customized_ops:
+        #     self.ewald = PME(alpha_ewald, k_max, 1, True, True)
+        # else:
+        #     self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops, True).to(device=device, dtype=dtype)
+        #     if not self.use_customized_ops:
+        #         self.ewald = torch.compile(self.ewald)
+        # self._set_ewald = True
+        self.alpha_ewald = alpha_ewald
+        if self.use_pme:   # <-- was: if self.use_pme and self.use_customized_ops:
+            self.ewald = PME(alpha_ewald, k_max, 1, self.use_customized_ops, True).to(device=device, dtype=dtype)
         else:
             self.ewald = Ewald(alpha_ewald, k_max, 1, self.use_customized_ops, True).to(device=device, dtype=dtype)
             if not self.use_customized_ops:
